@@ -20,7 +20,7 @@ public sealed class MessageLoop
     private static readonly JsonElement _objectTypeElement =
         JsonDocument.Parse("\"object\"").RootElement.Clone();
 
-    public MessageLoop(AnthropicClient anthropic, string model = "claude-3-5-haiku-20241022")
+    public MessageLoop(AnthropicClient anthropic, string model = "claude-haiku-4-5-20251001")
     {
         _anthropic = anthropic;
         _model = model;
@@ -32,14 +32,14 @@ public sealed class MessageLoop
     /// <param name="systemPrompt">System prompt to send on every turn.</param>
     /// <param name="tools">Anthropic tool schemas to expose to Claude.</param>
     /// <param name="userMessage">Initial user message.</param>
-    /// <param name="mcpClient">MCP client used to execute tool calls.</param>
+    /// <param name="toolClientMap">Maps tool names to the MCP client that owns them.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Claude's final text response.</returns>
     public async Task<string> RunAsync(
         string systemPrompt,
         IReadOnlyList<Anthropic.Models.Messages.ToolUnion> tools,
         string userMessage,
-        McpClient mcpClient,
+        IReadOnlyDictionary<string, McpClient> toolClientMap,
         CancellationToken cancellationToken = default)
     {
         var messages = new List<Anthropic.Models.Messages.MessageParam>
@@ -90,6 +90,9 @@ public sealed class MessageLoop
             {
                 if (!block.TryPickToolUse(out var toolUse))
                     continue;
+
+                if (!toolClientMap.TryGetValue(toolUse.Name, out var mcpClient))
+                    throw new InvalidOperationException($"No MCP client registered for tool '{toolUse.Name}'.");
 
                 // Adapt IReadOnlyDictionary<string, JsonElement> → IReadOnlyDictionary<string, object?>
                 // without copying: forward the original dict through a lightweight adapter.

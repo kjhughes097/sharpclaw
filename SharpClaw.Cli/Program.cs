@@ -2,6 +2,23 @@
 using ModelContextProtocol.Client;
 using SharpClaw.Core;
 
+// ── Parse CLI arguments ──────────────────────────────────────────────────────
+
+if (args.Length < 1)
+{
+    Console.Error.WriteLine("Usage: SharpClaw.Cli <path-to-agent.md> [user-prompt]");
+    return 1;
+}
+
+var agentFilePath = args[0];
+if (!File.Exists(agentFilePath))
+{
+    Console.Error.WriteLine($"Error: Agent file not found: {agentFilePath}");
+    return 1;
+}
+
+var userPrompt = args.Length >= 2 ? args[1] : "Hello";
+
 // ── Configuration ────────────────────────────────────────────────────────────
 
 var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
@@ -11,49 +28,57 @@ if (string.IsNullOrWhiteSpace(apiKey))
     return 1;
 }
 
-// ── Connect to the MCP filesystem server ─────────────────────────────────────
-// The server is launched as a child process via npx.
-// We expose /tmp so Claude can list its contents.
+// ── Load persona ─────────────────────────────────────────────────────────────
 
-Console.WriteLine("Connecting to MCP filesystem server…");
+var persona = AgentPersonaLoader.Load(agentFilePath);
+Console.WriteLine($"Loaded agent: {persona.Name}");
+Console.WriteLine($"MCP servers:  {string.Join(", ", persona.McpServers)}");
 
-var transport = new StdioClientTransport(new StdioClientTransportOptions
+// ── Connect to MCP servers listed in the persona ─────────────────────────────
+
+var mcpClients = new List<McpClient>();
+var allTools = new List<Anthropic.Models.Messages.ToolUnion>();
+
+// Map from tool name → which MCP client owns it, for dispatching calls.
+var toolClientMap = new Dictionary<string, McpClient>();
+
+try
 {
-    Command = "npx",
-    Arguments = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
-    Name = "filesystem",
-});
+    foreach (var serverName in persona.McpServers)
+    {
+        Console.WriteLine($"Connecting to MCP server '{serverName}'…");
+        var transport = McpServerRegistry.Resolve(serverName);
+        var client = await McpClient.CreateAsync(transport);
+        mcpClients.Add(client);
 
-await using var mcpClient = await McpClient.CreateAsync(transport);
+        var tools = await client.ListToolsAsync();
+        Console.WriteLine($"  Discovered {tools.Count} tool(s):");
+        foreach (var t in tools)
+        {
+            Console.WriteLine($"    • {t.Name} — {t.Description}");
+            allTools.Add(MessageLoop.ToAnthropicTool(t));
+            toolClientMap[t.Name] = client;
+        }
+    }
 
-// ── Discover tools ───────────────────────────────────────────────────────────
+    // ── Run the agent loop ───────────────────────────────────────────────────
 
-var mcpTools = await mcpClient.ListToolsAsync();
-Console.WriteLine($"Discovered {mcpTools.Count} MCP tool(s):");
-foreach (var t in mcpTools)
-    Console.WriteLine($"  • {t.Name} — {t.Description}");
+    using var anthropic = new AnthropicClient(new Anthropic.Core.ClientOptions { ApiKey = apiKey });
+    var loop = new MessageLoop(anthropic);
 
-var anthropicTools = mcpTools.Select(MessageLoop.ToAnthropicTool).ToList();
+    Console.WriteLine($"\nUser: {userPrompt}\n");
 
-// ── Run the agent loop ───────────────────────────────────────────────────────
+    var answer = await loop.RunAsync(
+        systemPrompt: persona.SystemPrompt,
+        tools: allTools,
+        userMessage: userPrompt,
+        toolClientMap: toolClientMap);
 
-using var anthropic = new AnthropicClient(new Anthropic.Core.ClientOptions { ApiKey = apiKey });
-var loop = new MessageLoop(anthropic);
-
-const string SystemPrompt =
-    "You are a helpful assistant with access to the local filesystem. " +
-    "When asked about files, use the available tools to retrieve real information.";
-
-const string UserPrompt = "List the files in /tmp";
-
-Console.WriteLine($"\nUser: {UserPrompt}\n");
-
-var answer = await loop.RunAsync(
-    systemPrompt: SystemPrompt,
-    tools: anthropicTools,
-    userMessage: UserPrompt,
-    mcpClient: mcpClient);
-
-Console.WriteLine($"Assistant: {answer}");
-
-return 0;
+    Console.WriteLine($"Assistant: {answer}");
+    return 0;
+}
+finally
+{
+    foreach (var client in mcpClients)
+        await client.DisposeAsync();
+}
