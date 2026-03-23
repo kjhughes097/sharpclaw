@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using Anthropic;
 using McpContentBlock = ModelContextProtocol.Protocol.ContentBlock;
@@ -112,6 +114,159 @@ public sealed class AnthropicBackend : IAgentBackend
             });
 
             iteration++;
+        }
+    }
+
+    public async IAsyncEnumerable<AgentEvent> StreamAsync(
+        string systemPrompt,
+        IReadOnlyList<ToolSchema> tools,
+        IReadOnlyList<ChatMessage> history,
+        Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var anthropicTools = tools.Select(ToAnthropicTool).ToList();
+
+        var messages = new List<Anthropic.Models.Messages.MessageParam>();
+        foreach (var msg in history)
+        {
+            messages.Add(new Anthropic.Models.Messages.MessageParam
+            {
+                Role = msg.Role == ChatRole.User
+                    ? Anthropic.Models.Messages.Role.User
+                    : Anthropic.Models.Messages.Role.Assistant,
+                Content = new Anthropic.Models.Messages.MessageParamContent(msg.Content),
+            });
+        }
+
+        while (true)
+        {
+            var stream = _anthropic.Messages.CreateStreaming(
+                new Anthropic.Models.Messages.MessageCreateParams
+                {
+                    Model = _model,
+                    MaxTokens = 4096,
+                    System = systemPrompt,
+                    Tools = anthropicTools,
+                    Messages = messages,
+                },
+                cancellationToken);
+
+            // Accumulate the full response for the conversation history / tool-use loop.
+            var fullText = new StringBuilder();
+            var assistantBlocks = new List<Anthropic.Models.Messages.ContentBlockParam>();
+            var pendingTools = new List<(string Id, string Name, string InputJson)>();
+            string? curToolId = null;
+            string? curToolName = null;
+            var curToolInput = new StringBuilder();
+            var hasToolUse = false;
+
+            await foreach (var evt in stream.WithCancellation(cancellationToken))
+            {
+                if (evt.TryPickContentBlockStart(out var blockStart))
+                {
+                    if (blockStart.ContentBlock.TryPickToolUse(out var toolUse))
+                    {
+                        curToolId = toolUse.ID;
+                        curToolName = toolUse.Name;
+                        curToolInput.Clear();
+                    }
+                }
+                else if (evt.TryPickContentBlockDelta(out var blockDelta))
+                {
+                    if (blockDelta.Delta.TryPickText(out var textDelta))
+                    {
+                        fullText.Append(textDelta.Text);
+                        yield return new TokenEvent(textDelta.Text);
+                    }
+                    else if (blockDelta.Delta.TryPickInputJson(out var jsonDelta))
+                    {
+                        curToolInput.Append(jsonDelta.PartialJson);
+                    }
+                }
+                else if (evt.TryPickContentBlockStop(out _))
+                {
+                    if (curToolId is not null)
+                    {
+                        var inputJson = curToolInput.ToString();
+                        pendingTools.Add((curToolId, curToolName!, inputJson));
+
+                        // Build the assistant-side ToolUseBlockParam for the conversation history.
+                        var parsedInput = string.IsNullOrEmpty(inputJson)
+                            ? new Dictionary<string, JsonElement>()
+                            : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(inputJson)
+                              ?? new Dictionary<string, JsonElement>();
+
+                        assistantBlocks.Add(new Anthropic.Models.Messages.ContentBlockParam(
+                            new Anthropic.Models.Messages.ToolUseBlockParam
+                            {
+                                ID = curToolId,
+                                Name = curToolName!,
+                                Input = parsedInput,
+                            },
+                            element: null));
+
+                        hasToolUse = true;
+                        curToolId = null;
+                        curToolName = null;
+                    }
+                    else if (fullText.Length > 0)
+                    {
+                        // Text block finished — add to assistant blocks for history.
+                        assistantBlocks.Add(new Anthropic.Models.Messages.ContentBlockParam(
+                            new Anthropic.Models.Messages.TextBlockParam(fullText.ToString()),
+                            element: null));
+                    }
+                }
+            }
+
+            // Append the assistant turn to the conversation.
+            if (assistantBlocks.Count > 0)
+            {
+                messages.Add(new Anthropic.Models.Messages.MessageParam
+                {
+                    Role = Anthropic.Models.Messages.Role.Assistant,
+                    Content = new Anthropic.Models.Messages.MessageParamContent(assistantBlocks),
+                });
+            }
+
+            if (!hasToolUse)
+            {
+                yield return new DoneEvent(fullText.ToString());
+                yield break;
+            }
+
+            // Execute all pending tool calls and build the user turn.
+            var toolResults = new List<Anthropic.Models.Messages.ContentBlockParam>();
+            foreach (var (id, name, inputJson) in pendingTools)
+            {
+                var parsedArgs = string.IsNullOrEmpty(inputJson)
+                    ? new Dictionary<string, JsonElement>()
+                    : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(inputJson)
+                      ?? new Dictionary<string, JsonElement>();
+
+                var adaptedArgs = new JsonElementArgs(parsedArgs);
+                yield return new ToolCallEvent(name, adaptedArgs);
+
+                var call = new ToolCall(name, adaptedArgs);
+                var result = await toolDispatcher(call, cancellationToken);
+                yield return new ToolResultEvent(name, result.Content, result.IsError);
+
+                toolResults.Add(new Anthropic.Models.Messages.ContentBlockParam(
+                    new Anthropic.Models.Messages.ToolResultBlockParam(id)
+                    {
+                        Content = new Anthropic.Models.Messages.ToolResultBlockParamContent(result.Content),
+                        IsError = result.IsError,
+                    },
+                    element: null));
+            }
+
+            messages.Add(new Anthropic.Models.Messages.MessageParam
+            {
+                Role = Anthropic.Models.Messages.Role.User,
+                Content = new Anthropic.Models.Messages.MessageParamContent(toolResults),
+            });
+
+            // Loop back to stream the model's next response.
         }
     }
 

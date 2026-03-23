@@ -25,4 +25,17 @@ public interface IAgentBackend : IAsyncDisposable
         Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher,
         Action<string>? onProgress = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streams a conversation turn as a sequence of <see cref="AgentEvent"/>s.
+    /// Yields token deltas, tool call/result events, permission requests, and a
+    /// final done event. The internal tool-use loop continues until the model
+    /// produces a final text response.
+    /// </summary>
+    IAsyncEnumerable<AgentEvent> StreamAsync(
+        string systemPrompt,
+        IReadOnlyList<ToolSchema> tools,
+        IReadOnlyList<ChatMessage> history,
+        Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher,
+        CancellationToken cancellationToken = default);
 }

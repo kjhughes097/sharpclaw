@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
@@ -131,6 +132,19 @@ public sealed class CopilotBackend : IAgentBackend
         {
             return null;
         }
+    }
+
+    public async IAsyncEnumerable<AgentEvent> StreamAsync(
+        string systemPrompt,
+        IReadOnlyList<ToolSchema> tools,
+        IReadOnlyList<ChatMessage> history,
+        Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        // Copilot SDK doesn't expose a streaming API — fall back to blocking call.
+        var result = await CompleteAsync(systemPrompt, tools, history, toolDispatcher,
+            cancellationToken: cancellationToken);
+        yield return new DoneEvent(result);
     }
 
     public async ValueTask DisposeAsync()

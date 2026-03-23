@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
+using System.Threading.Channels;
 using SharpClaw.Core;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -23,6 +25,10 @@ var store = new SessionStore(dbPath);
 // ── Live agent runners keyed by session ID ───────────────────────────────────
 
 var runners = new ConcurrentDictionary<string, AgentRunner>();
+
+// ── In-flight message streams keyed by "sessionId/msgId" ─────────────────────
+
+var messageStreams = new ConcurrentDictionary<string, Channel<AgentEvent>>();
 
 // ── API key middleware ────────────────────────────────────────────────────────
 
@@ -51,6 +57,10 @@ app.Use(async (context, next) =>
 
     await next();
 });
+
+// ── JSON serializer options ──────────────────────────────────────────────────
+
+var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
@@ -102,7 +112,7 @@ app.MapPost("/sessions", async (CreateSessionRequest req, CancellationToken ct) 
     return Results.Ok(new { sessionId, persona = persona.Name });
 });
 
-// POST /sessions/{id}/messages — send a message, get the full reply.
+// POST /sessions/{id}/messages — non-blocking: enqueue message, return msgId.
 app.MapPost("/sessions/{id}/messages", async (string id, SendMessageRequest req, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.Message))
@@ -127,21 +137,96 @@ app.MapPost("/sessions/{id}/messages", async (string id, SendMessageRequest req,
     conversation.AddUser(req.Message);
     store.Append(id, userMsg);
 
-    // Run turn.
-    var answer = await runner.SendAsync(conversation.Messages, ct: ct);
+    // Create a channel for this message's events.
+    var msgId = Guid.NewGuid().ToString("N")[..8];
+    var streamKey = $"{id}/{msgId}";
+    var channel = Channel.CreateUnbounded<AgentEvent>();
+    messageStreams[streamKey] = channel;
 
-    // Append assistant message.
-    var assistantMsg = new ChatMessage(ChatRole.Assistant, answer);
-    conversation.AddAssistant(answer);
-    store.Append(id, assistantMsg);
-
-    return Results.Ok(new
+    // Fire-and-forget: run the agent turn in the background, writing events to the channel.
+    _ = Task.Run(async () =>
     {
-        sessionId = id,
-        role = "assistant",
-        content = answer,
-        messageCount = conversation.Count,
+        try
+        {
+            var fullText = new System.Text.StringBuilder();
+            await foreach (var evt in runner.StreamAsync(
+                conversation.Messages,
+                eventSink: e => channel.Writer.TryWrite(e),
+                ct: CancellationToken.None))
+            {
+                channel.Writer.TryWrite(evt);
+                if (evt is DoneEvent done)
+                    fullText.Append(done.Content);
+            }
+
+            // Persist assistant response.
+            if (fullText.Length > 0)
+            {
+                var assistantMsg = new ChatMessage(ChatRole.Assistant, fullText.ToString());
+                conversation.AddAssistant(fullText.ToString());
+                store.Append(id, assistantMsg);
+            }
+        }
+        catch (Exception ex)
+        {
+            channel.Writer.TryWrite(new DoneEvent($"Error: {ex.Message}"));
+        }
+        finally
+        {
+            channel.Writer.TryComplete();
+        }
     });
+
+    return Results.Ok(new { sessionId = id, messageId = msgId });
+});
+
+// GET /sessions/{id}/messages/{msgId}/stream — SSE stream of AgentEvents.
+app.MapGet("/sessions/{id}/messages/{msgId}/stream", async (string id, string msgId, HttpContext httpContext) =>
+{
+    var streamKey = $"{id}/{msgId}";
+    if (!messageStreams.TryGetValue(streamKey, out var channel))
+    {
+        httpContext.Response.StatusCode = 404;
+        await httpContext.Response.WriteAsJsonAsync(new { error = "Stream not found." });
+        return;
+    }
+
+    httpContext.Response.ContentType = "text/event-stream";
+    httpContext.Response.Headers.CacheControl = "no-cache";
+    httpContext.Response.Headers.Connection = "keep-alive";
+
+    var ct = httpContext.RequestAborted;
+    try
+    {
+        await foreach (var evt in channel.Reader.ReadAllAsync(ct))
+        {
+            var data = JsonSerializer.Serialize(evt, evt.GetType(), jsonOpts);
+            await httpContext.Response.WriteAsync($"event: {evt.Type}\ndata: {data}\n\n", ct);
+            await httpContext.Response.Body.FlushAsync(ct);
+        }
+    }
+    catch (OperationCanceledException) { }
+    finally
+    {
+        messageStreams.TryRemove(streamKey, out _);
+    }
+});
+
+// POST /sessions/{id}/permissions/{requestId} — resolve a pending permission request.
+app.MapPost("/sessions/{id}/permissions/{requestId}", (string id, string requestId, PermissionDecision decision) =>
+{
+    if (!runners.TryGetValue(id, out var runner))
+        return Results.NotFound(new { error = $"Session '{id}' not found." });
+
+    var gate = runner.PermissionGate;
+    if (gate is null)
+        return Results.StatusCode(500);
+
+    var resolved = gate.Resolve(requestId, decision.Allow);
+    if (!resolved)
+        return Results.NotFound(new { error = $"No pending permission request '{requestId}'." });
+
+    return Results.Ok(new { requestId, allowed = decision.Allow });
 });
 
 app.Run();
@@ -150,3 +235,4 @@ app.Run();
 
 record CreateSessionRequest(string? Persona);
 record SendMessageRequest(string? Message);
+record PermissionDecision(bool Allow);

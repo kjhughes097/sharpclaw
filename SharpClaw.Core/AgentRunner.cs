@@ -15,6 +15,7 @@ public sealed class AgentRunner : IAsyncDisposable
     private readonly List<ToolSchema> _toolSchemas = [];
     private readonly Dictionary<string, McpClient> _toolClientMap = [];
     private PermissionGate? _permissionGate;
+    private AsyncPermissionGate? _asyncPermissionGate;
     private IAgentBackend? _backend;
     private bool _initialized;
 
@@ -25,6 +26,11 @@ public sealed class AgentRunner : IAsyncDisposable
 
     public AgentPersona Persona => _persona;
     public IReadOnlyList<ToolSchema> Tools => _toolSchemas;
+
+    /// <summary>
+    /// Exposes the async permission gate for resolving pending permission requests (e.g. from the API).
+    /// </summary>
+    public AsyncPermissionGate? PermissionGate => _asyncPermissionGate;
 
     /// <summary>
     /// Connects MCP servers, builds the permission gate, and creates the backend.
@@ -49,6 +55,7 @@ public sealed class AgentRunner : IAsyncDisposable
         }
 
         _permissionGate = new PermissionGate(_persona.PermissionPolicy);
+        _asyncPermissionGate = new AsyncPermissionGate(_persona.PermissionPolicy);
         _backend = CreateBackend(_persona, _permissionGate);
         _initialized = true;
     }
@@ -73,6 +80,53 @@ public sealed class AgentRunner : IAsyncDisposable
             toolDispatcher: ToolDispatcher,
             onProgress: onProgress,
             cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// Streams a conversation turn as an async sequence of <see cref="AgentEvent"/>s.
+    /// Uses the <see cref="AsyncPermissionGate"/> for tool permission checks,
+    /// allowing external resolution (e.g. via HTTP).
+    /// </summary>
+    public IAsyncEnumerable<AgentEvent> StreamAsync(
+        IReadOnlyList<ChatMessage> history,
+        Action<AgentEvent>? eventSink = null,
+        CancellationToken ct = default)
+    {
+        if (!_initialized || _backend is null)
+            throw new InvalidOperationException("Call InitializeAsync before StreamAsync.");
+
+        var truncated = HistoryTruncator.Truncate(history, _persona.SystemPrompt);
+
+        return _backend.StreamAsync(
+            systemPrompt: _persona.SystemPrompt,
+            tools: _toolSchemas,
+            history: truncated,
+            toolDispatcher: (call, token) => AsyncToolDispatcher(call, eventSink, token),
+            cancellationToken: ct);
+    }
+
+    private async Task<ToolCallResult> AsyncToolDispatcher(
+        ToolCall call, Action<AgentEvent>? eventSink, CancellationToken ct)
+    {
+        var allowed = await _asyncPermissionGate!.EvaluateAsync(
+            call.Name,
+            call.Arguments as IReadOnlyDictionary<string, object?>,
+            eventSink,
+            ct);
+
+        if (!allowed)
+            return new ToolCallResult($"Tool '{call.Name}' was blocked by the permission policy.", IsError: true);
+
+        if (!_toolClientMap.TryGetValue(call.Name, out var mcpClient))
+            return new ToolCallResult($"No MCP client registered for tool '{call.Name}'.", IsError: true);
+
+        var callResult = await mcpClient.CallToolAsync(call.Name, call.Arguments, cancellationToken: ct);
+        var resultText = string.Join("\n",
+            callResult.Content
+                .OfType<ModelContextProtocol.Protocol.TextContentBlock>()
+                .Select(t => t.Text));
+
+        return new ToolCallResult(resultText, callResult.IsError ?? false);
     }
 
     private async Task<ToolCallResult> ToolDispatcher(ToolCall call, CancellationToken ct)
