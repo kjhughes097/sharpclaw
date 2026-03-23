@@ -33,10 +33,24 @@ public static class AgentPersonaLoader
 
         var frontmatter = deserializer.Deserialize<Frontmatter>(yaml) ?? new Frontmatter();
 
+        var permissionPolicy = new Dictionary<string, ToolPermission>();
+        if (frontmatter.PermissionPolicy is not null)
+        {
+            foreach (var (pattern, value) in frontmatter.PermissionPolicy)
+            {
+                var normalized = value.Replace("_", "");
+                if (Enum.TryParse<ToolPermission>(normalized, ignoreCase: true, out var perm))
+                    permissionPolicy[pattern] = perm;
+                else
+                    throw new FormatException($"Unknown permission '{value}' for tool pattern '{pattern}'. Expected: auto_approve, ask, or deny.");
+            }
+        }
+
         return new AgentPersona(
             Name: frontmatter.Name ?? Path.GetFileNameWithoutExtension("agent"),
             SystemPrompt: body.Trim(),
-            McpServers: frontmatter.McpServers ?? []);
+            McpServers: frontmatter.McpServers ?? [],
+            PermissionPolicy: permissionPolicy);
     }
 
     private static (string Yaml, string Body) SplitFrontmatter(string content)
@@ -114,5 +128,6 @@ public static class AgentPersonaLoader
     {
         public string? Name { get; set; }
         public List<string>? McpServers { get; set; }
+        public Dictionary<string, string>? PermissionPolicy { get; set; }
     }
 }

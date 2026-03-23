@@ -6,4 +6,5 @@ namespace SharpClaw.Core;
 public sealed record AgentPersona(
     string Name,
     string SystemPrompt,
-    IReadOnlyList<string> McpServers);
+    IReadOnlyList<string> McpServers,
+    IReadOnlyDictionary<string, ToolPermission> PermissionPolicy);

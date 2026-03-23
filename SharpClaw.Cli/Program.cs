@@ -61,6 +61,10 @@ try
         }
     }
 
+    // ── Build permission gate ─────────────────────────────────────────────────
+
+    var permissionGate = new PermissionGate(persona.PermissionPolicy);
+
     // ── Run the agent loop ───────────────────────────────────────────────────
 
     using var anthropic = new AnthropicClient(new Anthropic.Core.ClientOptions { ApiKey = apiKey });
@@ -72,7 +76,8 @@ try
         systemPrompt: persona.SystemPrompt,
         tools: allTools,
         userMessage: userPrompt,
-        toolClientMap: toolClientMap);
+        toolClientMap: toolClientMap,
+        permissionGate: permissionGate);
 
     Console.WriteLine($"Assistant: {answer}");
     return 0;

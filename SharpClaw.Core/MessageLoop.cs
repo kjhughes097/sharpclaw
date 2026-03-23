@@ -40,6 +40,7 @@ public sealed class MessageLoop
         IReadOnlyList<Anthropic.Models.Messages.ToolUnion> tools,
         string userMessage,
         IReadOnlyDictionary<string, McpClient> toolClientMap,
+        PermissionGate? permissionGate = null,
         CancellationToken cancellationToken = default)
     {
         var messages = new List<Anthropic.Models.Messages.MessageParam>
@@ -94,11 +95,25 @@ public sealed class MessageLoop
                 if (!toolClientMap.TryGetValue(toolUse.Name, out var mcpClient))
                     throw new InvalidOperationException($"No MCP client registered for tool '{toolUse.Name}'.");
 
-                // Adapt IReadOnlyDictionary<string, JsonElement> → IReadOnlyDictionary<string, object?>
-                // without copying: forward the original dict through a lightweight adapter.
+                var args = new JsonElementArgs(toolUse.Input);
+
+                // Check permission policy before executing the tool.
+                if (permissionGate is not null && !permissionGate.Evaluate(toolUse.Name, args))
+                {
+                    toolResults.Add(new Anthropic.Models.Messages.ContentBlockParam(
+                        new Anthropic.Models.Messages.ToolResultBlockParam(toolUse.ID)
+                        {
+                            Content = new Anthropic.Models.Messages.ToolResultBlockParamContent(
+                                $"Tool '{toolUse.Name}' was blocked by the permission policy."),
+                            IsError = true,
+                        },
+                        element: null));
+                    continue;
+                }
+
                 var callResult = await mcpClient.CallToolAsync(
                     toolUse.Name,
-                    new JsonElementArgs(toolUse.Input),
+                    args,
                     cancellationToken: cancellationToken);
 
                 var resultText = ExtractText(callResult.Content);
