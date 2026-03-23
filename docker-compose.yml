@@ -1,0 +1,15 @@
+services:
+  sharpclaw:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./agents:/personas:ro
+      - sharpclaw-data:/root/.local/share/sharpclaw
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
+      - PersonasDir=/personas
+
+volumes:
+  sharpclaw-data:
