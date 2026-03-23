@@ -1,16 +1,15 @@
 using System.Text.Json;
 using Anthropic;
-using ModelContextProtocol.Client;
 using McpContentBlock = ModelContextProtocol.Protocol.ContentBlock;
 using McpTextContentBlock = ModelContextProtocol.Protocol.TextContentBlock;
 
 namespace SharpClaw.Core;
 
 /// <summary>
-/// Runs an Anthropic Messages API tool-use loop, dispatching tool calls through
-/// a connected MCP client until Claude returns a final text response.
+/// <see cref="IAgentBackend"/> implementation that uses the Anthropic Messages API.
+/// Manages the tool-use loop internally, delegating tool execution to the caller-supplied dispatcher.
 /// </summary>
-public sealed class MessageLoop
+public sealed class AnthropicBackend : IAgentBackend
 {
     private readonly AnthropicClient _anthropic;
     private readonly string _model;
@@ -20,37 +19,33 @@ public sealed class MessageLoop
     private static readonly JsonElement _objectTypeElement =
         JsonDocument.Parse("\"object\"").RootElement.Clone();
 
-    public MessageLoop(AnthropicClient anthropic, string model = "claude-haiku-4-5-20251001")
+    public AnthropicBackend(AnthropicClient anthropic, string model = "claude-haiku-4-5-20251001")
     {
         _anthropic = anthropic;
         _model = model;
     }
 
-    /// <summary>
-    /// Runs the conversation loop until Claude produces a final answer.
-    /// </summary>
-    /// <param name="systemPrompt">System prompt to send on every turn.</param>
-    /// <param name="tools">Anthropic tool schemas to expose to Claude.</param>
-    /// <param name="userMessage">Initial user message.</param>
-    /// <param name="toolClientMap">Maps tool names to the MCP client that owns them.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Claude's final text response.</returns>
-    public async Task<string> RunAsync(
+    public async Task<string> CompleteAsync(
         string systemPrompt,
-        IReadOnlyList<Anthropic.Models.Messages.ToolUnion> tools,
-        string userMessage,
-        IReadOnlyDictionary<string, McpClient> toolClientMap,
-        PermissionGate? permissionGate = null,
+        IReadOnlyList<ToolSchema> tools,
+        IReadOnlyList<ChatMessage> history,
+        Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher,
         CancellationToken cancellationToken = default)
     {
-        var messages = new List<Anthropic.Models.Messages.MessageParam>
+        var anthropicTools = tools.Select(ToAnthropicTool).ToList();
+
+        // Seed conversation from the caller-supplied history.
+        var messages = new List<Anthropic.Models.Messages.MessageParam>();
+        foreach (var msg in history)
         {
-            new()
+            messages.Add(new Anthropic.Models.Messages.MessageParam
             {
-                Role = Anthropic.Models.Messages.Role.User,
-                Content = new Anthropic.Models.Messages.MessageParamContent(userMessage),
-            }
-        };
+                Role = msg.Role == ChatRole.User
+                    ? Anthropic.Models.Messages.Role.User
+                    : Anthropic.Models.Messages.Role.Assistant,
+                Content = new Anthropic.Models.Messages.MessageParamContent(msg.Content),
+            });
+        }
 
         while (true)
         {
@@ -60,7 +55,7 @@ public sealed class MessageLoop
                     Model = _model,
                     MaxTokens = 4096,
                     System = systemPrompt,
-                    Tools = tools,
+                    Tools = anthropicTools,
                     Messages = messages,
                 },
                 cancellationToken);
@@ -75,7 +70,6 @@ public sealed class MessageLoop
 
             if (response.StopReason?.Value() != Anthropic.Models.Messages.StopReason.ToolUse)
             {
-                // Claude is done — extract the first text block.
                 foreach (var block in response.Content)
                 {
                     if (block.TryPickText(out var textBlock))
@@ -84,7 +78,7 @@ public sealed class MessageLoop
                 return string.Empty;
             }
 
-            // Execute every tool call Claude requested.
+            // Execute every tool call the model requested.
             var toolResults = new List<Anthropic.Models.Messages.ContentBlockParam>();
 
             foreach (var block in response.Content)
@@ -92,42 +86,19 @@ public sealed class MessageLoop
                 if (!block.TryPickToolUse(out var toolUse))
                     continue;
 
-                if (!toolClientMap.TryGetValue(toolUse.Name, out var mcpClient))
-                    throw new InvalidOperationException($"No MCP client registered for tool '{toolUse.Name}'.");
-
                 var args = new JsonElementArgs(toolUse.Input);
-
-                // Check permission policy before executing the tool.
-                if (permissionGate is not null && !permissionGate.Evaluate(toolUse.Name, args))
-                {
-                    toolResults.Add(new Anthropic.Models.Messages.ContentBlockParam(
-                        new Anthropic.Models.Messages.ToolResultBlockParam(toolUse.ID)
-                        {
-                            Content = new Anthropic.Models.Messages.ToolResultBlockParamContent(
-                                $"Tool '{toolUse.Name}' was blocked by the permission policy."),
-                            IsError = true,
-                        },
-                        element: null));
-                    continue;
-                }
-
-                var callResult = await mcpClient.CallToolAsync(
-                    toolUse.Name,
-                    args,
-                    cancellationToken: cancellationToken);
-
-                var resultText = ExtractText(callResult.Content);
+                var call = new ToolCall(toolUse.Name, args);
+                var result = await toolDispatcher(call, cancellationToken);
 
                 toolResults.Add(new Anthropic.Models.Messages.ContentBlockParam(
                     new Anthropic.Models.Messages.ToolResultBlockParam(toolUse.ID)
                     {
-                        Content = new Anthropic.Models.Messages.ToolResultBlockParamContent(resultText),
-                        IsError = callResult.IsError,
+                        Content = new Anthropic.Models.Messages.ToolResultBlockParamContent(result.Content),
+                        IsError = result.IsError,
                     },
                     element: null));
             }
 
-            // Feed tool results back as the next user turn.
             messages.Add(new Anthropic.Models.Messages.MessageParam
             {
                 Role = Anthropic.Models.Messages.Role.User,
@@ -136,13 +107,10 @@ public sealed class MessageLoop
         }
     }
 
+    public ValueTask DisposeAsync() => default;
+
     // ─── Helpers ────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Converts API response <see cref="Anthropic.Models.Messages.ContentBlock"/> items
-    /// into the <see cref="Anthropic.Models.Messages.ContentBlockParam"/> form needed for
-    /// conversation history.
-    /// </summary>
     private static List<Anthropic.Models.Messages.ContentBlockParam> ResponseBlocksToParams(
         IReadOnlyList<Anthropic.Models.Messages.ContentBlock> blocks)
     {
@@ -172,9 +140,6 @@ public sealed class MessageLoop
         return result;
     }
 
-    /// <summary>
-    /// Joins all text content blocks from an MCP tool result into a single string.
-    /// </summary>
     private static string ExtractText(IList<McpContentBlock> content)
     {
         var parts = content
@@ -183,25 +148,18 @@ public sealed class MessageLoop
         return string.Join("\n", parts);
     }
 
-    // ─── Static factory ─────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Converts an <see cref="McpClientTool"/> into an Anthropic <see cref="Anthropic.Models.Messages.ToolUnion"/>.
-    /// </summary>
-    public static Anthropic.Models.Messages.ToolUnion ToAnthropicTool(McpClientTool mcpTool)
+    private static Anthropic.Models.Messages.ToolUnion ToAnthropicTool(ToolSchema schema)
     {
-        var schema = mcpTool.JsonSchema;
-
-        var typeEl = schema.TryGetProperty("type", out var t)
+        var typeEl = schema.InputSchema.TryGetProperty("type", out var t)
             ? t
             : _objectTypeElement;
 
         Dictionary<string, JsonElement>? propsDict = null;
-        if (schema.TryGetProperty("properties", out var propsEl))
+        if (schema.InputSchema.TryGetProperty("properties", out var propsEl))
             propsDict = propsEl.EnumerateObject().ToDictionary(p => p.Name, p => p.Value);
 
         List<string>? requiredList = null;
-        if (schema.TryGetProperty("required", out var reqEl))
+        if (schema.InputSchema.TryGetProperty("required", out var reqEl))
             requiredList = reqEl.EnumerateArray().Select(e => e.GetString()!).ToList();
 
         var inputSchema = new Anthropic.Models.Messages.InputSchema
@@ -213,8 +171,8 @@ public sealed class MessageLoop
 
         return new Anthropic.Models.Messages.ToolUnion(new Anthropic.Models.Messages.Tool
         {
-            Name = mcpTool.Name,
-            Description = mcpTool.Description,
+            Name = schema.Name,
+            Description = schema.Description,
             InputSchema = inputSchema,
         });
     }
@@ -222,10 +180,9 @@ public sealed class MessageLoop
 
 /// <summary>
 /// Adapts <see cref="IReadOnlyDictionary{String, JsonElement}"/> to
-/// <see cref="IReadOnlyDictionary{String, Object}"/> without copying entries,
-/// so that tool-call arguments can be forwarded to the MCP client as-is.
+/// <see cref="IReadOnlyDictionary{String, Object}"/> without copying entries.
 /// </summary>
-file sealed class JsonElementArgs : IReadOnlyDictionary<string, object?>
+internal sealed class JsonElementArgs : IReadOnlyDictionary<string, object?>
 {
     private readonly IReadOnlyDictionary<string, JsonElement> _inner;
 

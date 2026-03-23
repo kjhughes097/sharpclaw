@@ -50,7 +50,8 @@ public static class AgentPersonaLoader
             Name: frontmatter.Name ?? Path.GetFileNameWithoutExtension("agent"),
             SystemPrompt: body.Trim(),
             McpServers: frontmatter.McpServers ?? [],
-            PermissionPolicy: permissionPolicy);
+            PermissionPolicy: permissionPolicy,
+            Backend: frontmatter.Backend ?? "anthropic");
     }
 
     private static (string Yaml, string Body) SplitFrontmatter(string content)
@@ -129,5 +130,6 @@ public static class AgentPersonaLoader
         public string? Name { get; set; }
         public List<string>? McpServers { get; set; }
         public Dictionary<string, string>? PermissionPolicy { get; set; }
+        public string? Backend { get; set; }
     }
 }

@@ -1,5 +1,6 @@
 ---
 name: HomeAssistant
+backend: anthropic
 mcp_servers:
   - filesystem
 permission_policy:

@@ -7,4 +7,5 @@ public sealed record AgentPersona(
     string Name,
     string SystemPrompt,
     IReadOnlyList<string> McpServers,
-    IReadOnlyDictionary<string, ToolPermission> PermissionPolicy);
+    IReadOnlyDictionary<string, ToolPermission> PermissionPolicy,
+    string Backend);

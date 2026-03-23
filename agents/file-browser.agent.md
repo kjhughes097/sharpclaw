@@ -1,5 +1,6 @@
 ---
 name: FileBrowser
+backend: copilot
 mcp_servers:
   - filesystem
 permission_policy:
