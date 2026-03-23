@@ -30,6 +30,7 @@ public sealed class AnthropicBackend : IAgentBackend
         IReadOnlyList<ToolSchema> tools,
         IReadOnlyList<ChatMessage> history,
         Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher,
+        Action<string>? onProgress = null,
         CancellationToken cancellationToken = default)
     {
         var anthropicTools = tools.Select(ToAnthropicTool).ToList();
@@ -47,8 +48,11 @@ public sealed class AnthropicBackend : IAgentBackend
             });
         }
 
+        var iteration = 0;
         while (true)
         {
+            onProgress?.Invoke(iteration == 0 ? "Thinking…" : "Processing tool results…");
+
             var response = await _anthropic.Messages.Create(
                 new Anthropic.Models.Messages.MessageCreateParams
                 {
@@ -86,6 +90,8 @@ public sealed class AnthropicBackend : IAgentBackend
                 if (!block.TryPickToolUse(out var toolUse))
                     continue;
 
+                onProgress?.Invoke($"  ↳ {toolUse.Name}");
+
                 var args = new JsonElementArgs(toolUse.Input);
                 var call = new ToolCall(toolUse.Name, args);
                 var result = await toolDispatcher(call, cancellationToken);
@@ -104,6 +110,8 @@ public sealed class AnthropicBackend : IAgentBackend
                 Role = Anthropic.Models.Messages.Role.User,
                 Content = new Anthropic.Models.Messages.MessageParamContent(toolResults),
             });
+
+            iteration++;
         }
     }
 

@@ -27,12 +27,16 @@ public sealed class CopilotBackend : IAgentBackend
         IReadOnlyList<ToolSchema> tools,
         IReadOnlyList<ChatMessage> history,
         Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher,
+        Action<string>? onProgress = null,
         CancellationToken cancellationToken = default)
     {
         _client ??= new CopilotClient(new CopilotClientOptions());
 
         if (_client.State != ConnectionState.Connected)
+        {
+            onProgress?.Invoke("Connecting to Copilot…");
             await _client.StartAsync(cancellationToken);
+        }
 
         // Wrap each tool schema as an AIFunction so the SDK can advertise and invoke them.
         var aiFunctions = tools
@@ -62,6 +66,8 @@ public sealed class CopilotBackend : IAgentBackend
                     break;
                 }
             }
+
+            onProgress?.Invoke("Thinking…");
 
             var result = await session.SendAndWaitAsync(
                 new MessageOptions { Prompt = lastUserMessage },
