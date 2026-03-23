@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SharpClaw.Cli/SharpClaw.Cli.csproj" />
+  <Project Path="SharpClaw.Core/SharpClaw.Core.csproj" />
+</Solution>
