@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16
+    container_name: sharpclaw-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: sharpclaw
@@ -16,6 +17,7 @@ services:
 
   sharpclaw:
     build: .
+    container_name: sharpclaw-api
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,6 +31,7 @@ services:
 
   web:
     build: SharpClaw.Web
+    container_name: sharpclaw-ui
     ports:
       - "8080:80"
     depends_on:
