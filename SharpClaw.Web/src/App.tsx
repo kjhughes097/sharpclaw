@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AgentConfigView } from './AgentConfigView';
+import { McpConfigView } from './McpConfigView';
 import { Sidebar } from './Sidebar';
 import { ChatView } from './ChatView';
 import { LoginScreen } from './LoginScreen';
@@ -19,7 +20,7 @@ export function App() {
   const [loginError, setLoginError] = useState<string>();
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [currentView, setCurrentView] = useState<'chat' | 'agents'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'mcps'>('chat');
   const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, send } = useChat();
 
   // Apply theme to <html>
@@ -79,6 +80,11 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
+  const handleShowMcps = useCallback(() => {
+    setCurrentView('mcps');
+    setSidebarOpen(false);
+  }, []);
+
   // Loading check
   if (authed === null) return null;
 
@@ -95,6 +101,7 @@ export function App() {
         onSelect={handleSelectSession}
         onNewSession={handleNewSession}
         onShowAgents={handleShowAgents}
+        onShowMcps={handleShowMcps}
         theme={theme}
         onToggleTheme={toggleTheme}
         isOpen={sidebarOpen}
@@ -103,6 +110,8 @@ export function App() {
       />
       {currentView === 'agents' ? (
         <AgentConfigView onMenuClick={() => setSidebarOpen(true)} />
+      ) : currentView === 'mcps' ? (
+        <McpConfigView onMenuClick={() => setSidebarOpen(true)} />
       ) : active ? (
         <ChatView
           state={active}

@@ -37,6 +37,25 @@ export interface AgentUpsertRequest {
     isEnabled: boolean;
 }
 
+export interface McpDefinition {
+    slug: string;
+    name: string;
+    description: string;
+    command: string;
+    args: string[];
+    isEnabled: boolean;
+    linkedAgentCount: number;
+}
+
+export interface McpUpsertRequest {
+    slug: string;
+    name: string;
+    description: string;
+    command: string;
+    args: string[];
+    isEnabled: boolean;
+}
+
 export interface Session {
     sessionId: string;
     persona: string;

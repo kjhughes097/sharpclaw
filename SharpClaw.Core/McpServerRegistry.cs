@@ -1,13 +1,16 @@
+using System.Text.RegularExpressions;
 using ModelContextProtocol.Client;
 
 namespace SharpClaw.Core;
 
 /// <summary>
-/// Maps well-known MCP server names to their transport configurations.
-/// Add entries here for every server that agents can reference by name.
+/// Builds MCP client transports from the stored MCP registry.
 /// </summary>
 public static class McpServerRegistry
 {
+    private const string AllowedDirsPlaceholder = "${SHARPCLAW_ALLOWED_DIRS}";
+    private static readonly Regex EnvVarPattern = new(@"\$\{(?<name>[A-Z0-9_]+)\}", RegexOptions.Compiled);
+
     private static string[] AllowedDirs
     {
         get
@@ -25,22 +28,45 @@ public static class McpServerRegistry
     }
 
     /// <summary>
-    /// Returns an <see cref="IClientTransport"/> for a well-known server name.
+    /// Returns an <see cref="IClientTransport"/> for a stored MCP server definition.
     /// </summary>
-    public static IClientTransport Resolve(string serverName) => serverName switch
+    public static IClientTransport Resolve(McpServerRecord server)
     {
-        "filesystem" => new StdioClientTransport(new StdioClientTransportOptions
+        if (string.IsNullOrWhiteSpace(server.Command))
+            throw new ArgumentException($"MCP '{server.Slug}' has no command configured.");
+
+        return new StdioClientTransport(new StdioClientTransportOptions
         {
-            Command = "npx",
-            Arguments = ["-y", "@modelcontextprotocol/server-filesystem", .. AllowedDirs],
-            Name = "filesystem",
-        }),
-        "sqlite" => new StdioClientTransport(new StdioClientTransportOptions
+            Command = server.Command,
+            Arguments = ExpandArguments(server.Args),
+            Name = server.Slug,
+        });
+    }
+
+    private static List<string> ExpandArguments(IReadOnlyList<string> rawArgs)
+    {
+        var expanded = new List<string>();
+
+        foreach (var arg in rawArgs)
         {
-            Command = "npx",
-            Arguments = ["-y", "@anthropic/mcp-server-sqlite"],
-            Name = "sqlite",
-        }),
-        _ => throw new ArgumentException($"Unknown MCP server: '{serverName}'. Register it in McpServerRegistry."),
-    };
+            if (string.Equals(arg, AllowedDirsPlaceholder, StringComparison.Ordinal))
+            {
+                expanded.AddRange(AllowedDirs);
+                continue;
+            }
+
+            expanded.Add(ExpandEnvironmentVariables(arg));
+        }
+
+        return expanded;
+    }
+
+    private static string ExpandEnvironmentVariables(string value)
+    {
+        return EnvVarPattern.Replace(value, match =>
+        {
+            var name = match.Groups["name"].Value;
+            return Environment.GetEnvironmentVariable(name) ?? string.Empty;
+        });
+    }
 }

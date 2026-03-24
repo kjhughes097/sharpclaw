@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createAgent, deleteAgent, fetchAgents, setAgentEnabled, updateAgent } from './api';
-import type { AgentDefinition, AgentUpsertRequest } from './types';
+import { createAgent, deleteAgent, fetchAgents, fetchMcps, setAgentEnabled, updateAgent } from './api';
+import type { AgentDefinition, AgentUpsertRequest, McpDefinition } from './types';
 
 interface AgentConfigViewProps {
   onMenuClick: () => void;
@@ -69,6 +69,24 @@ function policiesEqual(left: Record<string, string>, right: Record<string, strin
   });
 }
 
+function normalizeStringList(values: string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const rawValue of values) {
+    const value = rawValue.trim();
+    if (!value) continue;
+
+    const key = value.toLowerCase();
+    if (seen.has(key)) continue;
+
+    seen.add(key);
+    normalized.push(value);
+  }
+
+  return normalized;
+}
+
 function blankAgent(): AgentUpsertRequest {
   return {
     file: '',
@@ -104,13 +122,6 @@ function toPermissionRows(policy: Record<string, string>): PermissionRow[] {
     : [{ pattern: '*', value: 'ask' }];
 }
 
-function normalizeList(input: string): string[] {
-  return input
-    .split(/[,\n]/)
-    .map(item => item.trim())
-    .filter(Boolean);
-}
-
 function normalizePermissions(rows: PermissionRow[]): Record<string, string> {
   return rows.reduce<Record<string, string>>((acc, row) => {
     const pattern = row.pattern.trim();
@@ -122,6 +133,7 @@ function normalizePermissions(rows: PermissionRow[]): Record<string, string> {
 
 export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
+  const [mcps, setMcps] = useState<McpDefinition[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [mode, setMode] = useState<'list' | 'edit'>('list');
   const [form, setForm] = useState<AgentUpsertRequest>(blankAgent);
@@ -139,8 +151,13 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     [agents, selectedFile],
   );
 
+  const mcpLookup = useMemo(
+    () => new Map(mcps.map(mcp => [mcp.slug, mcp] as const)),
+    [mcps],
+  );
+
   useEffect(() => {
-    void loadAgents();
+    void loadData();
   }, []);
 
   useEffect(() => {
@@ -149,15 +166,16 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     setPermissionRows(toPermissionRows(selectedAgent.permissionPolicy));
   }, [selectedAgent]);
 
-  async function loadAgents(preferredSelection?: string | null) {
+  async function loadData(preferredSelection?: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchAgents();
-      setAgents(result);
+      const [agentResult, mcpResult] = await Promise.all([fetchAgents(), fetchMcps()]);
+      setAgents(agentResult);
+      setMcps(mcpResult);
 
       const nextSelection = preferredSelection
-        ?? (selectedFile && result.some(agent => agent.file === selectedFile) ? selectedFile : result[0]?.file ?? null);
+        ?? (selectedFile && agentResult.some(agent => agent.file === selectedFile) ? selectedFile : agentResult[0]?.file ?? null);
 
       setSelectedFile(nextSelection);
 
@@ -236,6 +254,15 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     setPermissionRows(prev => prev.length === 1 ? prev : prev.filter((_, rowIndex) => rowIndex !== index));
   }
 
+  function toggleMcpSelection(slug: string) {
+    setForm(prev => ({
+      ...prev,
+      mcpServers: prev.mcpServers.includes(slug)
+        ? prev.mcpServers.filter(server => server !== slug)
+        : [...prev.mcpServers, slug],
+    }));
+  }
+
   async function handleSave(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
@@ -249,7 +276,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
       description: form.description.trim(),
       backend: form.backend.trim().toLowerCase(),
       model: form.model.trim(),
-      mcpServers: normalizeList(form.mcpServers.join('\n')),
+      mcpServers: normalizeStringList(form.mcpServers),
       permissionPolicy: normalizePermissions(permissionRows),
       systemPrompt: form.systemPrompt.trim(),
     };
@@ -260,7 +287,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
         : await createAgent(payload);
 
       setStatus(selectedAgent ? 'Agent updated.' : 'Agent created.');
-      await loadAgents(saved.file);
+      await loadData(saved.file);
       setMode('list');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -275,7 +302,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     try {
       await setAgentEnabled(agent.file, !agent.isEnabled);
       setStatus(`${agent.name} ${agent.isEnabled ? 'disabled' : 'enabled'}.`);
-      await loadAgents(agent.file);
+      await loadData(agent.file);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -296,7 +323,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
       setDeleteTarget(null);
       setDeleteConfirmation('');
       setPurgeLinkedSessions(false);
-      await loadAgents();
+      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -304,7 +331,6 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     }
   }
 
-  const mcpText = form.mcpServers.join('\n');
   const isEditing = selectedAgent !== null;
 
   return (
@@ -313,7 +339,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
         <button className="menu-btn" onClick={onMenuClick} aria-label="Open menu">☰</button>
         <div className="config-header-copy">
           <strong>Configure Agents</strong>
-          <span>Manage stored agent definitions and availability.</span>
+          <span>Manage stored agent definitions and the MCPs they can access.</span>
         </div>
       </div>
 
@@ -327,6 +353,9 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
             <button className="new-session-btn agent-add-btn" onClick={beginCreate}>+ Add Agent</button>
           </div>
 
+          {error && <div className="config-banner error">{error}</div>}
+          {status && <div className="config-banner success">{status}</div>}
+
           {loading ? (
             <div className="config-empty-state">Loading agents…</div>
           ) : agents.length === 0 ? (
@@ -334,10 +363,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
           ) : (
             <div className="agent-card-list">
               {agents.map(agent => (
-                <article
-                  key={agent.file}
-                  className="agent-card"
-                >
+                <article key={agent.file} className="agent-card">
                   <div className="agent-card-top">
                     <div>
                       <h3>{agent.name}</h3>
@@ -359,9 +385,14 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                   </div>
 
                   <div className="agent-chip-row">
-                    {agent.mcpServers.length > 0 ? agent.mcpServers.map(server => (
-                      <span key={server} className="agent-chip">{server}</span>
-                    )) : <span className="agent-chip muted">No MCP servers</span>}
+                    {agent.mcpServers.length > 0 ? agent.mcpServers.map(server => {
+                      const mcp = mcpLookup.get(server);
+                      return (
+                        <span key={server} className={`agent-chip ${mcp && !mcp.isEnabled ? 'disabled' : ''}`} title={server}>
+                          {mcp?.name ?? server}
+                        </span>
+                      );
+                    }) : <span className="agent-chip muted">No MCP servers</span>}
                   </div>
 
                   <div className="agent-chip-row permissions">
@@ -461,15 +492,46 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
               />
             </label>
 
-            <label>
-              <span>MCP Servers</span>
-              <textarea
-                value={mcpText}
-                onChange={event => setForm(prev => ({ ...prev, mcpServers: normalizeList(event.target.value) }))}
-                rows={4}
-                placeholder={'filesystem\npostgres'}
-              />
-            </label>
+            <div className="mcp-selection-panel">
+              <div className="agent-permissions-header">
+                <div>
+                  <h3>MCP Access</h3>
+                  <p>Select the stored MCP servers this agent can reach at runtime.</p>
+                </div>
+              </div>
+
+              {mcps.length === 0 ? (
+                <div className="config-empty-state compact">No MCPs are defined yet.</div>
+              ) : (
+                <div className="mcp-selection-grid">
+                  {mcps.map(mcp => {
+                    const selected = form.mcpServers.includes(mcp.slug);
+                    return (
+                      <button
+                        key={mcp.slug}
+                        type="button"
+                        className={`mcp-option ${selected ? 'selected' : ''} ${mcp.isEnabled ? '' : 'disabled'}`}
+                        onClick={() => toggleMcpSelection(mcp.slug)}
+                        aria-pressed={selected}
+                      >
+                        <div className="mcp-option-top">
+                          <strong>{mcp.name}</strong>
+                          <span className={`agent-status-pill ${mcp.isEnabled ? 'enabled' : 'disabled'}`}>
+                            {mcp.isEnabled ? 'Enabled' : 'Disabled'}
+                          </span>
+                        </div>
+                        <div className="mcp-option-slug">{mcp.slug}</div>
+                        <p className="mcp-option-description">{mcp.description}</p>
+                        <div className="mcp-option-meta">
+                          <span>{mcp.command}</span>
+                          <span>{mcp.args.length} arg{mcp.args.length === 1 ? '' : 's'}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div className="agent-permissions-panel">
               <div className="agent-permissions-header">

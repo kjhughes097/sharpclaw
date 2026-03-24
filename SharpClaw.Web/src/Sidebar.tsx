@@ -4,14 +4,15 @@ interface SidebarProps {
   onSelect: (idx: number) => void;
   onNewSession: () => void;
   onShowAgents: () => void;
+  onShowMcps: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
-  currentView: 'chat' | 'agents';
+  currentView: 'chat' | 'agents' | 'mcps';
 }
 
-export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, onShowAgents, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
+export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, onShowAgents, onShowMcps, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
   return (
     <aside className={`sidebar${isOpen ? ' open' : ''}`}>
       <div className="sidebar-header">
@@ -55,6 +56,12 @@ export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, onShowAge
           onClick={onShowAgents}
         >
           Agents
+        </button>
+        <button
+          className={`sidebar-nav-item ${currentView === 'mcps' ? 'active' : ''}`}
+          onClick={onShowMcps}
+        >
+          MCPs
         </button>
       </div>
     </aside>

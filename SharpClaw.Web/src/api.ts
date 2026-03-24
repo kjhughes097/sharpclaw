@@ -1,4 +1,4 @@
-import type { Persona, Session, AgentDefinition, AgentEvent, AgentUpsertRequest } from './types';
+import type { Persona, Session, AgentDefinition, AgentEvent, AgentUpsertRequest, McpDefinition, McpUpsertRequest } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -39,6 +39,12 @@ export async function fetchAgents(): Promise<AgentDefinition[]> {
     return res.json();
 }
 
+export async function fetchMcps(): Promise<McpDefinition[]> {
+    const res = await fetch(`${BASE}/mcps`, { headers: headers() });
+    if (!res.ok) throw new Error(`GET /mcps: ${res.status}`);
+    return res.json();
+}
+
 export async function createAgent(agent: AgentUpsertRequest): Promise<AgentDefinition> {
     const res = await fetch(`${BASE}/agents`, {
         method: 'POST',
@@ -75,6 +81,45 @@ export async function deleteAgent(file: string, purgeSessions = false): Promise<
         headers: headers(),
     });
     if (!res.ok) throw new Error(await readError(res, `DELETE /agents/${file}: ${res.status}`));
+    return res.json();
+}
+
+export async function createMcp(mcp: McpUpsertRequest): Promise<McpDefinition> {
+    const res = await fetch(`${BASE}/mcps`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(mcp),
+    });
+    if (!res.ok) throw new Error(await readError(res, `POST /mcps: ${res.status}`));
+    return res.json();
+}
+
+export async function updateMcp(slug: string, mcp: McpUpsertRequest): Promise<McpDefinition> {
+    const res = await fetch(`${BASE}/mcps/${encodeURIComponent(slug)}`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(mcp),
+    });
+    if (!res.ok) throw new Error(await readError(res, `PUT /mcps/${slug}: ${res.status}`));
+    return res.json();
+}
+
+export async function setMcpEnabled(slug: string, isEnabled: boolean): Promise<void> {
+    const res = await fetch(`${BASE}/mcps/${encodeURIComponent(slug)}/enabled`, {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify({ isEnabled }),
+    });
+    if (!res.ok) throw new Error(await readError(res, `PATCH /mcps/${slug}/enabled: ${res.status}`));
+}
+
+export async function deleteMcp(slug: string, detachAgents = false): Promise<{ slug: string; detachedAgents: number }> {
+    const suffix = detachAgents ? '?detachAgents=true' : '';
+    const res = await fetch(`${BASE}/mcps/${encodeURIComponent(slug)}${suffix}`, {
+        method: 'DELETE',
+        headers: headers(),
+    });
+    if (!res.ok) throw new Error(await readError(res, `DELETE /mcps/${slug}: ${res.status}`));
     return res.json();
 }
 

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace SharpClaw.Core;
 
@@ -38,6 +39,17 @@ public sealed class SessionStore : IDisposable
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS mcps (
+                id SERIAL PRIMARY KEY,
+                slug TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                command TEXT NOT NULL,
+                args JSONB NOT NULL DEFAULT '[]'::jsonb,
+                is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id TEXT NOT NULL,
                 agent_file TEXT NOT NULL,
@@ -57,10 +69,44 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT '';
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+            ALTER TABLE mcps ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+            ALTER TABLE mcps ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
             """;
         cmd.ExecuteNonQuery();
 
+        SeedMcps(conn);
         SeedAgents(conn);
+        EnsureCodyAgent(conn);
+    }
+
+    /// <summary>
+    /// Seeds the built-in MCP server definitions without overwriting user edits.
+    /// </summary>
+    private static void SeedMcps(NpgsqlConnection conn)
+    {
+        foreach (var seed in BuiltInMcps)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO mcps (slug, name, description, command, args, is_enabled)
+                VALUES (@slug, @name, @description, @command, @args, @is_enabled)
+                ON CONFLICT (slug) DO UPDATE
+                SET description = CASE
+                        WHEN mcps.description = '' THEN EXCLUDED.description
+                        ELSE mcps.description
+                    END,
+                    command = CASE
+                        WHEN mcps.command = '' THEN EXCLUDED.command
+                        ELSE mcps.command
+                    END,
+                    args = CASE
+                        WHEN mcps.args = '[]'::jsonb THEN EXCLUDED.args
+                        ELSE mcps.args
+                    END
+                """;
+            WriteMcpParameters(cmd, seed);
+            cmd.ExecuteNonQuery();
+        }
     }
 
     /// <summary>
@@ -98,7 +144,110 @@ public sealed class SessionStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Ensures there is at least one Cody agent and that any Cody agent has access to GitHub.
+    /// </summary>
+    private static void EnsureCodyAgent(NpgsqlConnection conn)
+    {
+        using var selectCmd = conn.CreateCommand();
+        selectCmd.CommandText = """
+            SELECT filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            FROM agents
+            WHERE LOWER(name) = LOWER(@name) OR filename = @filename
+            ORDER BY created_at
+            """;
+        selectCmd.Parameters.AddWithValue("name", CodyAgentSeed.Name);
+        selectCmd.Parameters.AddWithValue("filename", CodyAgentSeed.Filename);
+
+        var matches = new List<AgentRecord>();
+        using (var reader = selectCmd.ExecuteReader())
+        {
+            while (reader.Read())
+                matches.Add(ReadAgentRecord(reader));
+        }
+
+        if (matches.Count == 0)
+        {
+            using var insertCmd = conn.CreateCommand();
+            insertCmd.CommandText = """
+                INSERT INTO agents (filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled)
+                VALUES (@filename, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled)
+                ON CONFLICT (filename) DO NOTHING
+                """;
+            WriteAgentParameters(insertCmd, CodyAgentSeed);
+            insertCmd.ExecuteNonQuery();
+            return;
+        }
+
+        foreach (var agent in matches)
+        {
+            if (agent.McpServers.Contains("github", StringComparer.OrdinalIgnoreCase))
+                continue;
+
+            var updatedMcpServers = agent.McpServers.ToList();
+            updatedMcpServers.Add("github");
+
+            using var updateCmd = conn.CreateCommand();
+            updateCmd.CommandText = "UPDATE agents SET mcp_servers = @mcp_servers WHERE filename = @filename";
+            updateCmd.Parameters.AddWithValue("filename", agent.Filename);
+            updateCmd.Parameters.AddWithValue("mcp_servers", JsonSerializer.Serialize(updatedMcpServers, JsonOpts));
+            updateCmd.ExecuteNonQuery();
+        }
+    }
+
     // ── Built-in agent seed data ──────────────────────────────────────────────
+
+    private static readonly IReadOnlyList<McpServerRecord> BuiltInMcps =
+    [
+        new McpServerRecord(
+            Slug: "filesystem",
+            Name: "Filesystem",
+            Description: "Read and write files from allowed workspace directories.",
+            Command: "npx",
+            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${SHARPCLAW_ALLOWED_DIRS}"],
+            IsEnabled: true),
+
+        new McpServerRecord(
+            Slug: "sqlite",
+            Name: "SQLite",
+            Description: "Inspect and query SQLite databases.",
+            Command: "npx",
+            Args: ["-y", "@anthropic/mcp-server-sqlite"],
+            IsEnabled: true),
+
+        new McpServerRecord(
+            Slug: "github",
+            Name: "GitHub",
+            Description: "Interact with GitHub repositories, issues, and pull requests.",
+            Command: "npx",
+            Args: ["-y", "@modelcontextprotocol/server-github"],
+            IsEnabled: true),
+    ];
+
+    private static readonly AgentRecord CodyAgentSeed = new(
+        Filename: "cody.agent.md",
+        Name: "Cody",
+        Description: "Builds software with filesystem and GitHub context.",
+        Backend: "copilot",
+        Model: "gpt-5.4",
+        McpServers: ["filesystem", "github"],
+        PermissionPolicy: new Dictionary<string, string>
+        {
+            ["read_file"] = "auto_approve",
+            ["list_directory"] = "auto_approve",
+            ["list_allowed_directories"] = "auto_approve",
+            ["search_files"] = "auto_approve",
+            ["get_file_info"] = "auto_approve",
+            ["write_file"] = "ask",
+            ["create_directory"] = "ask",
+            ["*"] = "ask",
+        },
+        SystemPrompt: """
+            You are Cody, a software engineering agent with access to the local workspace
+            and GitHub tooling. Use the available MCP tools to inspect files, understand
+            repository state, and help deliver code changes safely.
+            """,
+        IsEnabled: true);
 
     private static readonly IReadOnlyList<AgentRecord> BuiltInAgents =
     [
@@ -110,7 +259,7 @@ public sealed class SessionStore : IDisposable
             Model: "claude-haiku-4-5-20251001",
             McpServers: [],
             PermissionPolicy: new Dictionary<string, string>(),
-            SystemPrompt: """"
+            SystemPrompt: """
                 You are a routing coordinator. Given a user message and a list of available specialist agents, determine which agent is the best fit for the request.
 
                 Reply with **only** a JSON object — no markdown fences, no extra text:
@@ -123,7 +272,7 @@ public sealed class SessionStore : IDisposable
                 - Rewrite the prompt to be clear and actionable for the chosen specialist.
                 - If no specialist is a good fit, return `{ "agent": null, "rewritten_prompt": null }`.
                 - Do NOT explain your choice. Output the JSON object only.
-                """",
+                """,
             IsEnabled: true),
 
         new AgentRecord(
@@ -274,6 +423,113 @@ public sealed class SessionStore : IDisposable
         return reader.Read() ? ReadAgentRecord(reader) : null;
     }
 
+    /// <summary>
+    /// Returns all MCP definitions stored in the database.
+    /// </summary>
+    public IReadOnlyList<McpServerRecord> ListMcps(bool includeDisabled = true)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT slug, name, description, command, args::text, is_enabled
+            FROM mcps
+            WHERE @include_disabled OR is_enabled = TRUE
+            ORDER BY name
+            """;
+        cmd.Parameters.AddWithValue("include_disabled", includeDisabled);
+
+        var mcps = new List<McpServerRecord>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            mcps.Add(ReadMcpRecord(reader));
+
+        return mcps;
+    }
+
+    /// <summary>
+    /// Resolves a list of MCP slugs to stored definitions, preserving the input order.
+    /// </summary>
+    public IReadOnlyList<McpServerRecord> ListMcpsBySlug(IEnumerable<string> slugs, bool includeDisabled = true)
+    {
+        var requested = slugs
+            .Where(slug => !string.IsNullOrWhiteSpace(slug))
+            .Select(slug => slug.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (requested.Count == 0)
+            return [];
+
+        var lookup = ListMcps(includeDisabled)
+            .ToDictionary(mcp => mcp.Slug, StringComparer.OrdinalIgnoreCase);
+
+        var resolved = new List<McpServerRecord>();
+        foreach (var slug in requested)
+        {
+            if (lookup.TryGetValue(slug, out var record))
+                resolved.Add(record);
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Returns a single MCP definition by slug, or null if not found.
+    /// </summary>
+    public McpServerRecord? GetMcp(string slug)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT slug, name, description, command, args::text, is_enabled
+            FROM mcps
+            WHERE slug = @slug
+            """;
+        cmd.Parameters.AddWithValue("slug", slug);
+
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? ReadMcpRecord(reader) : null;
+    }
+
+    public void CreateMcp(McpServerRecord mcp)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO mcps (slug, name, description, command, args, is_enabled)
+            VALUES (@slug, @name, @description, @command, @args, @is_enabled)
+            """;
+        WriteMcpParameters(cmd, mcp);
+        cmd.ExecuteNonQuery();
+    }
+
+    public bool UpdateMcp(string slug, McpServerRecord mcp)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE mcps
+            SET name = @name,
+                description = @description,
+                command = @command,
+                args = @args,
+                is_enabled = @is_enabled
+            WHERE slug = @slug
+            """;
+        WriteMcpParameters(cmd, mcp with { Slug = slug });
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
+    public bool SetMcpEnabled(string slug, bool isEnabled)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE mcps SET is_enabled = @is_enabled WHERE slug = @slug";
+        cmd.Parameters.AddWithValue("slug", slug);
+        cmd.Parameters.AddWithValue("is_enabled", isEnabled);
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
     public void CreateAgent(AgentRecord agent)
     {
         using var conn = _dataSource.OpenConnection();
@@ -339,6 +595,42 @@ public sealed class SessionStore : IDisposable
         return (int)(cmd.ExecuteScalar() ?? 0);
     }
 
+    public IReadOnlyDictionary<string, int> GetAgentCountsByMcp()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var agent in ListAgents())
+        {
+            foreach (var slug in agent.McpServers.Distinct(StringComparer.OrdinalIgnoreCase))
+                counts[slug] = counts.GetValueOrDefault(slug, 0) + 1;
+        }
+
+        return counts;
+    }
+
+    public int CountAgentsForMcp(string slug)
+    {
+        return GetAgentCountsByMcp().GetValueOrDefault(slug, 0);
+    }
+
+    public int DetachMcpFromAgents(string slug)
+    {
+        var detachedAgents = 0;
+        foreach (var agent in ListAgents())
+        {
+            if (!agent.McpServers.Contains(slug, StringComparer.OrdinalIgnoreCase))
+                continue;
+
+            var updatedServers = agent.McpServers
+                .Where(server => !string.Equals(server, slug, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            UpdateAgent(agent.Filename, agent with { McpServers = updatedServers });
+            detachedAgents++;
+        }
+
+        return detachedAgents;
+    }
+
     public IReadOnlyList<string> ListSessionIdsForAgent(string filename)
     {
         using var conn = _dataSource.OpenConnection();
@@ -390,6 +682,15 @@ public sealed class SessionStore : IDisposable
         return cmd.ExecuteNonQuery() > 0;
     }
 
+    public bool DeleteMcp(string slug)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM mcps WHERE slug = @slug";
+        cmd.Parameters.AddWithValue("slug", slug);
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
     private static AgentRecord ReadAgentRecord(NpgsqlDataReader reader)
     {
         var mcpServers = JsonSerializer.Deserialize<List<string>>(reader.GetString(5), JsonOpts) ?? [];
@@ -407,6 +708,18 @@ public sealed class SessionStore : IDisposable
             IsEnabled: reader.GetBoolean(8));
     }
 
+    private static McpServerRecord ReadMcpRecord(NpgsqlDataReader reader)
+    {
+        var args = JsonSerializer.Deserialize<List<string>>(reader.GetString(4), JsonOpts) ?? [];
+        return new McpServerRecord(
+            Slug: reader.GetString(0),
+            Name: reader.GetString(1),
+            Description: reader.GetString(2),
+            Command: reader.GetString(3),
+            Args: args,
+            IsEnabled: reader.GetBoolean(5));
+    }
+
     private static void WriteAgentParameters(NpgsqlCommand cmd, AgentRecord agent)
     {
         cmd.Parameters.AddWithValue("filename", agent.Filename);
@@ -418,6 +731,16 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("permission_policy", JsonSerializer.Serialize(agent.PermissionPolicy, JsonOpts));
         cmd.Parameters.AddWithValue("system_prompt", agent.SystemPrompt);
         cmd.Parameters.AddWithValue("is_enabled", agent.IsEnabled);
+    }
+
+    private static void WriteMcpParameters(NpgsqlCommand cmd, McpServerRecord mcp)
+    {
+        cmd.Parameters.AddWithValue("slug", mcp.Slug);
+        cmd.Parameters.AddWithValue("name", mcp.Name);
+        cmd.Parameters.AddWithValue("description", mcp.Description);
+        cmd.Parameters.AddWithValue("command", mcp.Command);
+        cmd.Parameters.Add("args", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(mcp.Args, JsonOpts);
+        cmd.Parameters.AddWithValue("is_enabled", mcp.IsEnabled);
     }
 
     /// <summary>

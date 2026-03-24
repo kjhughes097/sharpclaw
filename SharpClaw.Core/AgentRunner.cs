@@ -11,6 +11,7 @@ namespace SharpClaw.Core;
 public sealed class AgentRunner : IAsyncDisposable
 {
     private readonly AgentPersona _persona;
+    private readonly IReadOnlyList<McpServerRecord> _mcpServers;
     private readonly Func<AgentPersona, PermissionGate, IAgentBackend>? _backendFactory;
     private readonly List<McpClient> _mcpClients = [];
     private readonly List<ToolSchema> _toolSchemas = [];
@@ -20,9 +21,13 @@ public sealed class AgentRunner : IAsyncDisposable
     private IAgentBackend? _backend;
     private bool _initialized;
 
-    public AgentRunner(AgentPersona persona, Func<AgentPersona, PermissionGate, IAgentBackend>? backendFactory = null)
+    public AgentRunner(
+        AgentPersona persona,
+        IReadOnlyList<McpServerRecord>? mcpServers = null,
+        Func<AgentPersona, PermissionGate, IAgentBackend>? backendFactory = null)
     {
         _persona = persona;
+        _mcpServers = mcpServers ?? [];
         _backendFactory = backendFactory;
     }
 
@@ -42,9 +47,9 @@ public sealed class AgentRunner : IAsyncDisposable
     {
         if (_initialized) return;
 
-        foreach (var serverName in _persona.McpServers)
+        foreach (var server in _mcpServers)
         {
-            var transport = McpServerRegistry.Resolve(serverName);
+            var transport = McpServerRegistry.Resolve(server);
             var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
             _mcpClients.Add(client);
 

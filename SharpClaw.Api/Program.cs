@@ -125,6 +125,23 @@ object ToAgentDto(AgentRecord agent, int sessionCount) => new
     sessionCount,
 };
 
+object ToMcpDto(McpServerRecord mcp, int linkedAgentCount) => new
+{
+    slug = mcp.Slug,
+    name = mcp.Name,
+    description = mcp.Description,
+    command = mcp.Command,
+    args = mcp.Args,
+    isEnabled = mcp.IsEnabled,
+    linkedAgentCount,
+};
+
+List<string> NormalizeStringList(IEnumerable<string>? values) => (values ?? [])
+    .Where(value => !string.IsNullOrWhiteSpace(value))
+    .Select(value => value.Trim())
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToList();
+
 IResult? ValidateAgentRequest(AgentDefinitionRequest req, bool creating)
 {
     if (creating && string.IsNullOrWhiteSpace(req.File))
@@ -142,6 +159,25 @@ IResult? ValidateAgentRequest(AgentDefinitionRequest req, bool creating)
     if (backend is not ("anthropic" or "copilot"))
         return Results.BadRequest(new { error = "backend must be either 'anthropic' or 'copilot'." });
 
+    var unknownMcp = NormalizeStringList(req.McpServers)
+        .FirstOrDefault(slug => store.GetMcp(slug) is null);
+    if (unknownMcp is not null)
+        return Results.BadRequest(new { error = $"Unknown MCP '{unknownMcp}'." });
+
+    return null;
+}
+
+IResult? ValidateMcpRequest(McpDefinitionRequest req, bool creating)
+{
+    if (creating && string.IsNullOrWhiteSpace(req.Slug))
+        return Results.BadRequest(new { error = "slug is required." });
+    if (string.IsNullOrWhiteSpace(req.Name))
+        return Results.BadRequest(new { error = "name is required." });
+    if (string.IsNullOrWhiteSpace(req.Description))
+        return Results.BadRequest(new { error = "description is required." });
+    if (string.IsNullOrWhiteSpace(req.Command))
+        return Results.BadRequest(new { error = "command is required." });
+
     return null;
 }
 
@@ -151,12 +187,27 @@ AgentRecord ToAgentRecord(AgentDefinitionRequest req, string? filenameOverride =
     Description: req.Description!.Trim(),
     Backend: req.Backend!.Trim().ToLowerInvariant(),
     Model: req.Model?.Trim() ?? string.Empty,
-    McpServers: (req.McpServers ?? []).Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+    McpServers: NormalizeStringList(req.McpServers),
     PermissionPolicy: (req.PermissionPolicy ?? new Dictionary<string, string>())
         .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
         .ToDictionary(kvp => kvp.Key.Trim(), kvp => kvp.Value.Trim(), StringComparer.OrdinalIgnoreCase),
     SystemPrompt: req.SystemPrompt!.Trim(),
     IsEnabled: req.IsEnabled ?? true);
+
+McpServerRecord ToMcpRecord(McpDefinitionRequest req, string? slugOverride = null) => new(
+    Slug: slugOverride ?? req.Slug!.Trim(),
+    Name: req.Name!.Trim(),
+    Description: req.Description!.Trim(),
+    Command: req.Command!.Trim(),
+    Args: NormalizeStringList(req.Args),
+    IsEnabled: req.IsEnabled ?? true);
+
+AgentRunner CreateRunner(AgentRecord agentRecord)
+{
+    var persona = agentRecord.ToPersona();
+    var mcps = store.ListMcpsBySlug(agentRecord.McpServers, includeDisabled: false);
+    return new AgentRunner(persona, mcps, CreateBackend);
+}
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
@@ -177,6 +228,13 @@ app.MapGet("/api/agents", () =>
     var sessionCounts = store.GetSessionCountsByAgent();
     return Results.Ok(store.ListAgents().Select(agent =>
         ToAgentDto(agent, sessionCounts.GetValueOrDefault(agent.Filename, 0))).ToList());
+});
+
+app.MapGet("/api/mcps", () =>
+{
+    var agentCounts = store.GetAgentCountsByMcp();
+    return Results.Ok(store.ListMcps().Select(mcp =>
+        ToMcpDto(mcp, agentCounts.GetValueOrDefault(mcp.Slug, 0))).ToList());
 });
 
 app.MapPost("/api/agents", (AgentDefinitionRequest req) =>
@@ -218,6 +276,71 @@ app.MapPatch("/api/agents/{filename}/enabled", (string filename, AgentEnabledReq
     return store.SetAgentEnabled(filename, req.IsEnabled)
         ? Results.Ok(new { file = filename, isEnabled = req.IsEnabled })
         : Results.NotFound(new { error = $"Agent '{filename}' not found." });
+});
+
+app.MapPost("/api/mcps", (McpDefinitionRequest req) =>
+{
+    var validation = ValidateMcpRequest(req, creating: true);
+    if (validation is not null)
+        return validation;
+
+    var slug = req.Slug!.Trim();
+    if (store.GetMcp(slug) is not null)
+        return Results.Conflict(new { error = $"MCP '{slug}' already exists." });
+
+    var mcp = ToMcpRecord(req);
+    store.CreateMcp(mcp);
+
+    return Results.Created($"/api/mcps/{Uri.EscapeDataString(mcp.Slug)}", ToMcpDto(mcp, 0));
+});
+
+app.MapPut("/api/mcps/{slug}", (string slug, McpDefinitionRequest req) =>
+{
+    var validation = ValidateMcpRequest(req, creating: false);
+    if (validation is not null)
+        return validation;
+
+    if (!string.IsNullOrWhiteSpace(req.Slug) &&
+        !string.Equals(req.Slug.Trim(), slug, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "Renaming an existing MCP slug is not supported." });
+    }
+
+    var updated = ToMcpRecord(req, slug);
+    return store.UpdateMcp(slug, updated)
+        ? Results.Ok(ToMcpDto(updated, store.CountAgentsForMcp(slug)))
+        : Results.NotFound(new { error = $"MCP '{slug}' not found." });
+});
+
+app.MapPatch("/api/mcps/{slug}/enabled", (string slug, McpEnabledRequest req) =>
+{
+    return store.SetMcpEnabled(slug, req.IsEnabled)
+        ? Results.Ok(new { slug, isEnabled = req.IsEnabled })
+        : Results.NotFound(new { error = $"MCP '{slug}' not found." });
+});
+
+app.MapDelete("/api/mcps/{slug}", (string slug, bool? detachAgents) =>
+{
+    var mcp = store.GetMcp(slug);
+    if (mcp is null)
+        return Results.NotFound(new { error = $"MCP '{slug}' not found." });
+
+    var linkedAgentCount = store.CountAgentsForMcp(slug);
+    if (linkedAgentCount > 0 && detachAgents != true)
+    {
+        return Results.Conflict(new
+        {
+            error = $"MCP '{slug}' is linked to {linkedAgentCount} agent(s). Re-run delete with detachAgents=true to remove those references first.",
+            linkedAgentCount,
+            requiresAgentDetach = true,
+        });
+    }
+
+    var detachedAgents = linkedAgentCount > 0 ? store.DetachMcpFromAgents(slug) : 0;
+
+    return store.DeleteMcp(slug)
+        ? Results.Ok(new { slug, detachedAgents })
+        : Results.NotFound(new { error = $"MCP '{slug}' not found." });
 });
 
 app.MapDelete("/api/agents/{filename}", async (string filename, bool? purgeSessions) =>
@@ -269,16 +392,14 @@ app.MapPost("/api/sessions", async (CreateSessionRequest req, CancellationToken 
         return Results.Conflict(new { error = $"Persona '{req.Persona}' is disabled." });
 
     var sessionId = Guid.NewGuid().ToString("N")[..12];
-    var persona = agentRecord.ToPersona();
-
     store.CreateSession(sessionId, agentRecord.Filename);
 
     // Spin up an agent runner and cache it.
-    var runner = new AgentRunner(persona, CreateBackend);
+    var runner = CreateRunner(agentRecord);
     await runner.InitializeAsync(ct);
     runners[sessionId] = runner;
 
-    return Results.Ok(new { sessionId, persona = persona.Name });
+    return Results.Ok(new { sessionId, persona = agentRecord.Name });
 });
 
 // POST /api/sessions/{id}/messages — non-blocking: enqueue message, return msgId.
@@ -299,8 +420,7 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
         if (agentRecord is null)
             return Results.NotFound(new { error = $"Agent definition '{conversation.AgentFile}' not found." });
 
-        var persona = agentRecord.ToPersona();
-        runner = new AgentRunner(persona, CreateBackend);
+        runner = CreateRunner(agentRecord);
         await runner.InitializeAsync(ct);
         runners[id] = runner;
     }
@@ -350,8 +470,7 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                     var specialistRecord = store.GetAgent(decision.Agent);
                     if (specialistRecord is not null)
                     {
-                        var specialistPersona = specialistRecord.ToPersona();
-                        var specialistRunner = new AgentRunner(specialistPersona, CreateBackend);
+                        var specialistRunner = CreateRunner(specialistRecord);
                         await specialistRunner.InitializeAsync(CancellationToken.None);
 
                         // Replace the coordinator runner with the specialist for this session.
@@ -472,6 +591,7 @@ record CreateSessionRequest(string? Persona);
 record SendMessageRequest(string? Message);
 record PermissionDecision(bool Allow);
 record AgentEnabledRequest(bool IsEnabled);
+record McpEnabledRequest(bool IsEnabled);
 record AgentDefinitionRequest(
     string? File,
     string? Name,
@@ -481,4 +601,11 @@ record AgentDefinitionRequest(
     List<string>? McpServers,
     Dictionary<string, string>? PermissionPolicy,
     string? SystemPrompt,
+    bool? IsEnabled);
+record McpDefinitionRequest(
+    string? Slug,
+    string? Name,
+    string? Description,
+    string? Command,
+    List<string>? Args,
     bool? IsEnabled);

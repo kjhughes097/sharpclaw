@@ -62,13 +62,17 @@ The UI includes a `Configure > Agents` screen where users can:
 - Enable or disable agents
 - Delete agents with hard confirmation
 - Purge linked sessions when deleting an agent that is already in use
+- Manage a DB-backed MCP registry from the UI
+- Enable or disable MCPs globally
+- Detach MCPs from linked agents during deletion
 
 ### Tooling and MCP
 
-At the moment, the built-in MCP registry supports these server names:
+SharpClaw now stores MCP definitions in PostgreSQL and resolves them at runtime from the database. A fresh database is seeded with these MCPs:
 
 - `filesystem`
 - `sqlite`
+- `github`
 
 The filesystem MCP server is constrained to allowed directories resolved from:
 
@@ -91,6 +95,7 @@ The filesystem MCP server is constrained to allowed directories resolved from:
 The PostgreSQL store persists:
 
 - agent definitions
+- MCP definitions
 - chat sessions
 - message history
 
@@ -276,6 +281,36 @@ Example response:
 - `PATCH /api/agents/{filename}/enabled`
 - `DELETE /api/agents/{filename}`
 	- blocks if sessions exist unless `purgeSessions=true`
+
+### MCPs
+
+- `GET /api/mcps`
+	- returns all MCPs with linked agent counts
+- `POST /api/mcps`
+- `PUT /api/mcps/{slug}`
+- `PATCH /api/mcps/{slug}/enabled`
+- `DELETE /api/mcps/{slug}`
+	- blocks if agents reference it unless `detachAgents=true`
+
+#### `GET /api/mcps`
+
+Returns all stored MCP definitions, including disabled entries and linked agent counts.
+
+Example response:
+
+```json
+[
+	{
+		"slug": "github",
+		"name": "GitHub",
+		"description": "Interact with GitHub repositories, issues, and pull requests.",
+		"command": "npx",
+		"args": ["-y", "@modelcontextprotocol/server-github"],
+		"isEnabled": true,
+		"linkedAgentCount": 1
+	}
+]
+```
 
 #### `GET /api/personas`
 
@@ -497,4 +532,4 @@ See:
 
 - Copilot-backed agent model selection is stored but not fully enforced at runtime
 - SSE authentication is intentionally relaxed due to browser limitations around custom headers
-- The MCP registry currently contains only a small built-in server set and must be extended in code for additional well-known servers
+- MCP process arguments are stored as JSON arrays and must remain string-only because they are passed directly to stdio transports
