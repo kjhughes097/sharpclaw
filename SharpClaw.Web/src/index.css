@@ -162,7 +162,7 @@ html, body, #root {
   color: var(--text);
 }
 
-/* ── Persona modal ────────────────────────────────────────────────────────── */
+/* ── Overlays & modals ───────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -185,25 +185,6 @@ html, body, #root {
 .modal h2 {
   margin-bottom: 16px;
   font-size: 18px;
-}
-
-.persona-option {
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  margin-bottom: 8px;
-  transition: border-color 0.15s, background 0.15s;
-}
-.persona-option:hover {
-  border-color: var(--accent);
-  background: var(--bg-input);
-}
-.persona-option .name { font-weight: 600; }
-.persona-option .meta {
-  font-size: 12px;
-  color: var(--text-dim);
-  margin-top: 4px;
 }
 
 .modal-cancel {
@@ -294,13 +275,6 @@ html, body, #root {
   font-weight: 400;
 }
 
-.config-layout {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-}
-
 .agent-catalog,
 .agent-editor-panel {
   min-height: 0;
@@ -308,8 +282,12 @@ html, body, #root {
 }
 
 .agent-catalog {
-  border-right: 1px solid var(--border);
   background: var(--bg-sidebar);
+}
+
+.agent-catalog-full,
+.agent-editor-standalone {
+  flex: 1;
 }
 
 .agent-catalog-header,
@@ -348,8 +326,8 @@ html, body, #root {
 
 .agent-card-list {
   padding: 16px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
 }
 
@@ -358,12 +336,10 @@ html, body, #root {
   border-radius: var(--radius-lg);
   padding: 16px;
   background: var(--bg-input);
-  cursor: pointer;
   transition: border-color 0.15s;
 }
 
-.agent-card:hover,
-.agent-card.selected {
+.agent-card:hover {
   border-color: var(--accent);
 }
 
@@ -846,6 +822,28 @@ html, body, #root {
   gap: 10px;
 }
 
+.persona-select {
+  width: 180px;
+  flex: 0 0 180px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-input);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  outline: none;
+}
+
+.persona-select:focus {
+  border-color: var(--accent);
+}
+
+.persona-select:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .input-bar textarea {
   flex: 1;
   resize: none;
@@ -882,6 +880,12 @@ html, body, #root {
 
 .agent-editor-panel {
   padding-bottom: 24px;
+}
+
+.agent-editor-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .config-banner {
@@ -1067,21 +1071,19 @@ html, body, #root {
 .login-btn:hover { background: var(--accent-hover); }
 .login-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-@media (max-width: 1100px) {
-  .config-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .agent-catalog {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-}
-
 @media (max-width: 720px) {
   .agent-form-row.two-up,
   .permission-row,
   .agent-meta-grid {
     grid-template-columns: 1fr;
+  }
+
+  .input-bar {
+    flex-direction: column;
+  }
+
+  .persona-select {
+    width: 100%;
+    flex-basis: auto;
   }
 }

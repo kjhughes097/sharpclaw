@@ -123,6 +123,7 @@ function normalizePermissions(rows: PermissionRow[]): Record<string, string> {
 export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [mode, setMode] = useState<'list' | 'edit'>('list');
   const [form, setForm] = useState<AgentUpsertRequest>(blankAgent);
   const [permissionRows, setPermissionRows] = useState<PermissionRow[]>(toPermissionRows(blankAgent().permissionPolicy));
   const [loading, setLoading] = useState(true);
@@ -173,6 +174,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
 
   function beginCreate() {
     setSelectedFile(null);
+    setMode('edit');
     setForm(blankAgent());
     setPermissionRows(toPermissionRows(blankAgent().permissionPolicy));
     setDeleteTarget(null);
@@ -184,6 +186,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
 
   function beginEdit(agent: AgentDefinition) {
     setSelectedFile(agent.file);
+    setMode('edit');
     setForm(toForm(agent));
     setPermissionRows(toPermissionRows(agent.permissionPolicy));
     setDeleteTarget(null);
@@ -258,6 +261,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
 
       setStatus(selectedAgent ? 'Agent updated.' : 'Agent created.');
       await loadAgents(saved.file);
+      setMode('list');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -313,8 +317,8 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
         </div>
       </div>
 
-      <div className="config-layout">
-        <section className="agent-catalog">
+      {mode === 'list' ? (
+        <section className="agent-catalog agent-catalog-full">
           <div className="agent-catalog-header">
             <div>
               <h2>Agents</h2>
@@ -332,8 +336,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
               {agents.map(agent => (
                 <article
                   key={agent.file}
-                  className={`agent-card${selectedFile === agent.file ? ' selected' : ''}`}
-                  onClick={() => beginEdit(agent)}
+                  className="agent-card"
                 >
                   <div className="agent-card-top">
                     <div>
@@ -382,14 +385,17 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
             </div>
           )}
         </section>
-
-        <section className="agent-editor-panel">
+      ) : (
+        <section className="agent-editor-panel agent-editor-standalone">
           <div className="agent-editor-header">
             <div>
               <h2>{isEditing ? 'Edit Agent' : 'New Agent'}</h2>
               <p>{isEditing ? 'Update the stored definition for this agent.' : 'Create a new agent definition in the database.'}</p>
             </div>
-            {isEditing && <button className="secondary-btn" onClick={beginCreate}>New</button>}
+            <div className="agent-editor-actions">
+              {isEditing && <button className="secondary-btn" onClick={beginCreate}>New</button>}
+              <button className="secondary-btn" onClick={() => setMode('list')}>Back to Agents</button>
+            </div>
           </div>
 
           {error && <div className="config-banner error">{error}</div>}
@@ -519,10 +525,11 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
             <div className="agent-form-actions">
               <button type="submit" className="send-btn" disabled={saving}>{saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Create Agent'}</button>
               <button type="button" className="secondary-btn" onClick={() => selectedAgent ? beginEdit(selectedAgent) : beginCreate()} disabled={saving}>Reset</button>
+              <button type="button" className="secondary-btn" onClick={() => setMode('list')} disabled={saving}>Cancel</button>
             </div>
           </form>
         </section>
-      </div>
+      )}
 
       {deleteTarget && (
         <div className="modal-overlay" onClick={() => { setDeleteTarget(null); setDeleteConfirmation(''); }}>

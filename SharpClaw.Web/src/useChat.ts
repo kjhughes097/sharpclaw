@@ -2,8 +2,13 @@ import { useState, useCallback, useRef } from 'react';
 import type { Session, ChatMessage, StreamItem, AgentEvent, ToolResultEvent } from './types';
 import { createSession, sendMessage, streamEvents } from './api';
 
+const DEFAULT_PERSONA_FILE = 'coordinator.agent.md';
+const DEFAULT_PERSONA_NAME = 'Coordinator';
+
 export interface SessionState {
     session: Session;
+    personaFile: string;
+    isDraft: boolean;
     messages: ChatMessage[];
     /** Stream items for the currently-streaming assistant turn */
     streamItems: StreamItem[];
@@ -17,13 +22,18 @@ export function useChat() {
     const [activeIdx, setActiveIdx] = useState<number>(-1);
     const cleanupRef = useRef<(() => void) | null>(null);
     const itemCounter = useRef(0);
+    const draftCounter = useRef(0);
 
     const active = activeIdx >= 0 ? sessions[activeIdx] : null;
 
-    const startSession = useCallback(async (personaFile: string) => {
-        const session = await createSession(personaFile);
+    const startSession = useCallback((personaFile = DEFAULT_PERSONA_FILE, personaName = DEFAULT_PERSONA_NAME) => {
         const newState: SessionState = {
-            session,
+            session: {
+                sessionId: `draft-${++draftCounter.current}`,
+                persona: personaName,
+            },
+            personaFile,
+            isDraft: true,
             messages: [],
             streamItems: [],
             eventLogs: [],
@@ -36,6 +46,25 @@ export function useChat() {
         });
     }, []);
 
+    const setDraftPersona = useCallback((idx: number, personaFile: string, personaName: string) => {
+        setSessions(prev => {
+            const updated = [...prev];
+            const session = updated[idx];
+            if (!session || !session.isDraft || session.streaming || session.messages.length > 0)
+                return prev;
+
+            updated[idx] = {
+                ...session,
+                personaFile,
+                session: {
+                    ...session.session,
+                    persona: personaName,
+                },
+            };
+            return updated;
+        });
+    }, []);
+
     const selectSession = useCallback((idx: number) => {
         setActiveIdx(idx);
     }, []);
@@ -43,6 +72,7 @@ export function useChat() {
     const send = useCallback(async (text: string) => {
         if (!active || active.streaming) return;
         const idx = activeIdx;
+        let sessionId = active.session.sessionId;
 
         // Add user message
         const userMsg: ChatMessage = { role: 'user', content: text };
@@ -58,7 +88,25 @@ export function useChat() {
         });
 
         try {
-            const { sessionId, messageId } = await sendMessage(active.session.sessionId, text);
+            if (active.isDraft) {
+                const created = await createSession(active.personaFile);
+                sessionId = created.sessionId;
+
+                setSessions(prev => {
+                    const updated = [...prev];
+                    const current = updated[idx];
+                    if (!current) return prev;
+
+                    updated[idx] = {
+                        ...current,
+                        session: created,
+                        isDraft: false,
+                    };
+                    return updated;
+                });
+            }
+
+            const { messageId } = await sendMessage(sessionId, text);
 
             // Map tool_call IDs to their stream item IDs so we can pair results
             const toolCallMap = new Map<number, string>(); // index -> streamItem id
@@ -179,5 +227,5 @@ export function useChat() {
         }
     }, [active, activeIdx]);
 
-    return { sessions, active, activeIdx, startSession, selectSession, send };
+    return { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, send };
 }

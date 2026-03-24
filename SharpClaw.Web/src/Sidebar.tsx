@@ -1,12 +1,8 @@
-import { useState, useEffect } from 'react';
-import type { Persona } from './types';
-import { fetchPersonas } from './api';
-
 interface SidebarProps {
   sessions: { session: { sessionId: string; persona: string }; messages: { role: string }[] }[];
   activeIdx: number;
   onSelect: (idx: number) => void;
-  onNewSession: (personaFile: string) => void;
+  onNewSession: () => void;
   onShowAgents: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
@@ -16,14 +12,6 @@ interface SidebarProps {
 }
 
 export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, onShowAgents, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
-  const [showModal, setShowModal] = useState(false);
-  const [personas, setPersonas] = useState<Persona[]>([]);
-
-  useEffect(() => {
-    if (!showModal) return;
-    fetchPersonas().then(setPersonas).catch(console.error);
-  }, [showModal]);
-
   return (
     <aside className={`sidebar${isOpen ? ' open' : ''}`}>
       <div className="sidebar-header">
@@ -41,7 +29,7 @@ export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, onShowAge
           <button className="sidebar-close-btn" onClick={onClose} aria-label="Close sidebar">✕</button>
         </div>
       </div>
-      <button className="new-session-btn" onClick={() => setShowModal(true)}>
+      <button className="new-session-btn" onClick={onNewSession}>
         + New Chat
       </button>
       <div className="sidebar-section-label">Chats</div>
@@ -69,38 +57,6 @@ export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, onShowAge
           Agents
         </button>
       </div>
-
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <h2>Choose a Persona</h2>
-            {personas.map(p => (
-              <div
-                key={p.file}
-                className="persona-option"
-                onClick={() => {
-                  setShowModal(false);
-                  onNewSession(p.file);
-                }}
-              >
-                <div className="name">{p.name}</div>
-                <div className="meta">
-                  {p.backend} · {p.model || 'default model'} · {p.mcpServers.length} tool server{p.mcpServers.length !== 1 ? 's' : ''}
-                </div>
-                <div className="meta">{p.description}</div>
-              </div>
-            ))}
-            {personas.length === 0 && (
-              <div style={{ color: 'var(--text-dim)', padding: '12px 0' }}>
-                No agents found.
-              </div>
-            )}
-            <button className="modal-cancel" onClick={() => setShowModal(false)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
     </aside>
   );
 }

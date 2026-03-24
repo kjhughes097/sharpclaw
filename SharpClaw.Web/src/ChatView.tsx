@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { fetchPersonas } from './api';
 import type { SessionState } from './useChat';
+import type { Persona } from './types';
 import { PermissionCard } from './PermissionCard';
 import { EventLog } from './EventLog';
 
@@ -9,6 +11,7 @@ interface ChatViewProps {
   state: SessionState;
   onSend: (text: string) => void;
   onMenuClick: () => void;
+  onChangePersona: (personaFile: string, personaName: string) => void;
 }
 
 /** Derive a two-letter avatar from the persona name */
@@ -18,10 +21,15 @@ function avatarInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export function ChatView({ state, onSend, onMenuClick }: ChatViewProps) {
+export function ChatView({ state, onSend, onMenuClick, onChangePersona }: ChatViewProps) {
   const [input, setInput] = useState('');
+  const [personas, setPersonas] = useState<Persona[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    fetchPersonas().then(setPersonas).catch(console.error);
+  }, []);
 
   // Auto-scroll on new content
   useEffect(() => {
@@ -58,6 +66,7 @@ export function ChatView({ state, onSend, onMenuClick }: ChatViewProps) {
     .join('');
 
   const initials = avatarInitials(state.session.persona);
+  const personaLocked = !state.isDraft || state.messages.length > 0 || state.streaming;
 
   return (
     <div className="chat-area">
@@ -138,6 +147,23 @@ export function ChatView({ state, onSend, onMenuClick }: ChatViewProps) {
       </div>
 
       <div className="input-bar">
+        <select
+          className="persona-select"
+          value={state.personaFile}
+          onChange={event => {
+            const nextPersona = personas.find(persona => persona.file === event.target.value);
+            if (nextPersona) onChangePersona(nextPersona.file, nextPersona.name);
+          }}
+          disabled={personaLocked}
+          aria-label="Choose agent"
+          title={personaLocked ? 'Agent is fixed after the first message in a chat.' : 'Choose the agent for this new chat.'}
+        >
+          {personas.map(persona => (
+            <option key={persona.file} value={persona.file}>
+              {persona.name}
+            </option>
+          ))}
+        </select>
         <textarea
           ref={textareaRef}
           placeholder="Type a message…"

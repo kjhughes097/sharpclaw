@@ -20,7 +20,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'chat' | 'agents'>('chat');
-  const { sessions, active, activeIdx, startSession, selectSession, send } = useChat();
+  const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, send } = useChat();
 
   // Apply theme to <html>
   useEffect(() => {
@@ -63,11 +63,16 @@ export function App() {
     setSidebarOpen(false);
   }, [selectSession]);
 
-  const handleNewSession = useCallback(async (personaFile: string) => {
-    await startSession(personaFile);
+  const handleNewSession = useCallback(() => {
+    startSession();
     setCurrentView('chat');
     setSidebarOpen(false);
   }, [startSession]);
+
+  const handleChangeDraftPersona = useCallback((personaFile: string, personaName: string) => {
+    if (activeIdx < 0) return;
+    setDraftPersona(activeIdx, personaFile, personaName);
+  }, [activeIdx, setDraftPersona]);
 
   const handleShowAgents = useCallback(() => {
     setCurrentView('agents');
@@ -99,7 +104,12 @@ export function App() {
       {currentView === 'agents' ? (
         <AgentConfigView onMenuClick={() => setSidebarOpen(true)} />
       ) : active ? (
-        <ChatView state={active} onSend={send} onMenuClick={() => setSidebarOpen(true)} />
+        <ChatView
+          state={active}
+          onSend={send}
+          onMenuClick={() => setSidebarOpen(true)}
+          onChangePersona={handleChangeDraftPersona}
+        />
       ) : (
         <div className="chat-area">
           <div className="chat-header">

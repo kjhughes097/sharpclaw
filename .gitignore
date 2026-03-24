@@ -57,5 +57,6 @@ TestResult.xml
 # Web UI
 **/node_modules/
 **/dist/
+**/*.tsbuildinfo
 SharpClaw.Api/wwwroot/
 nunit-*.xml
