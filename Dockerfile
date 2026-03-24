@@ -22,11 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm && r
 
 COPY --from=build /app .
 
-# Default personas directory — mount your own at runtime.
-RUN mkdir -p /personas
-
 ENV ASPNETCORE_URLS=http://+:8080
-ENV PersonasDir=/personas
 EXPOSE 8080
 
 ENTRYPOINT ["dotnet", "SharpClaw.Api.dll"]

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Threading.Channels;
 using GitHub.Copilot.SDK;
 using Microsoft.Extensions.AI;
 using SharpClaw.Core;
@@ -16,11 +17,13 @@ namespace SharpClaw.Copilot;
 public sealed class CopilotBackend : IAgentBackend
 {
     private readonly PermissionGate? _permissionGate;
+    private readonly string? _workingDirectory;
     private CopilotClient? _client;
 
-    public CopilotBackend(PermissionGate? permissionGate = null)
+    public CopilotBackend(PermissionGate? permissionGate = null, string? workingDirectory = null)
     {
         _permissionGate = permissionGate;
+        _workingDirectory = workingDirectory;
     }
 
     public async Task<string> CompleteAsync(
@@ -31,7 +34,7 @@ public sealed class CopilotBackend : IAgentBackend
         Action<string>? onProgress = null,
         CancellationToken cancellationToken = default)
     {
-        _client ??= new CopilotClient(new CopilotClientOptions());
+        _client ??= CreateClient();
 
         if (_client.State != ConnectionState.Connected)
         {
@@ -53,6 +56,7 @@ public sealed class CopilotBackend : IAgentBackend
                 Content = systemPrompt,
             },
             Tools = aiFunctions,
+            WorkingDirectory = _workingDirectory,
         }, cancellationToken);
 
         await using (session)
@@ -117,6 +121,10 @@ public sealed class CopilotBackend : IAgentBackend
         };
     }
 
+    /// <summary>
+    /// Appends an instruction block listing the available MCP tools so the model
+    /// uses them instead of falling back to built-in tools like bash.
+    /// </summary>
     private static IReadOnlyDictionary<string, object?>? ParseArgs(string? argsJson)
     {
         if (string.IsNullOrEmpty(argsJson))
@@ -141,10 +149,145 @@ public sealed class CopilotBackend : IAgentBackend
         Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // Copilot SDK doesn't expose a streaming API — fall back to blocking call.
-        var result = await CompleteAsync(systemPrompt, tools, history, toolDispatcher,
-            cancellationToken: cancellationToken);
-        yield return new DoneEvent(result);
+        _client ??= CreateClient();
+
+        if (_client.State != ConnectionState.Connected)
+            await _client.StartAsync(cancellationToken);
+
+        var aiFunctions = tools
+            .Select(t => (AIFunction)new DispatchingAIFunction(t, toolDispatcher))
+            .ToList();
+
+        var session = await _client.CreateSessionAsync(new SessionConfig
+        {
+            OnPermissionRequest = CreatePermissionHandler(),
+            SystemMessage = new SystemMessageConfig
+            {
+                Mode = SystemMessageMode.Replace,
+                Content = systemPrompt,
+            },
+            Tools = aiFunctions,
+            WorkingDirectory = _workingDirectory,
+        }, cancellationToken);
+
+        await using (session)
+        {
+            var lastUserMessage = "";
+            for (var i = history.Count - 1; i >= 0; i--)
+            {
+                if (history[i].Role == ChatRole.User)
+                {
+                    lastUserMessage = history[i].Content;
+                    break;
+                }
+            }
+
+            var channel = Channel.CreateUnbounded<AgentEvent>();
+            // Track tool call IDs → tool names for pairing with complete events.
+            var toolNames = new Dictionary<string, string>();
+
+            // Subscribe to SDK events for intermediate streaming; the On()
+            // handler fires on a background thread even while SendAndWaitAsync
+            // blocks.  We intentionally do NOT complete the channel here —
+            // AssistantTurnEndEvent fires after every internal turn (including
+            // mid-tool-loop turns), so using it as a completion signal would
+            // close the channel before the final answer arrives.
+            using var subscription = session.On(evt =>
+            {
+                switch (evt)
+                {
+                    case AssistantIntentEvent intent when !string.IsNullOrEmpty(intent.Data?.Intent):
+                        channel.Writer.TryWrite(new StatusEvent(intent.Data!.Intent));
+                        break;
+
+                    case AssistantMessageDeltaEvent delta when !string.IsNullOrEmpty(delta.Data?.DeltaContent):
+                        channel.Writer.TryWrite(new TokenEvent(delta.Data!.DeltaContent));
+                        break;
+
+                    case ToolExecutionStartEvent toolStart:
+                        {
+                            var name = toolStart.Data?.ToolName ?? toolStart.Data?.McpToolName ?? "unknown";
+                            if (toolStart.Data?.ToolCallId is { } id)
+                                toolNames[id] = name;
+
+                            IReadOnlyDictionary<string, object?>? args = null;
+                            if (toolStart.Data?.Arguments is string argsJson)
+                                args = ParseArgs(argsJson);
+
+                            channel.Writer.TryWrite(new ToolCallEvent(name, args));
+                            break;
+                        }
+
+                    case ToolExecutionProgressEvent progress when !string.IsNullOrEmpty(progress.Data?.ProgressMessage):
+                        channel.Writer.TryWrite(new StatusEvent(progress.Data!.ProgressMessage));
+                        break;
+
+                    case ToolExecutionCompleteEvent toolComplete:
+                        {
+                            var toolName = "unknown";
+                            if (toolComplete.Data?.ToolCallId is { } id)
+                                toolNames.TryGetValue(id, out toolName!);
+
+                            string resultText;
+                            if (toolComplete.Data?.Success == true)
+                            {
+                                resultText = toolComplete.Data.Result?.Content ?? "";
+                            }
+                            else
+                            {
+                                var error = toolComplete.Data?.Error;
+                                var parts = new List<string>();
+                                if (!string.IsNullOrEmpty(error?.Code))
+                                    parts.Add($"[{error!.Code}]");
+                                if (!string.IsNullOrEmpty(error?.Message))
+                                    parts.Add(error!.Message);
+                                resultText = parts.Count > 0
+                                    ? string.Join(" ", parts)
+                                    : "Tool execution failed";
+                            }
+
+                            channel.Writer.TryWrite(new ToolResultEvent(
+                                toolName,
+                                resultText,
+                                !(toolComplete.Data?.Success ?? true)));
+                            break;
+                        }
+                }
+            });
+
+            // Run SendAndWaitAsync on a background task so the channel
+            // reader below can yield events to the caller in real-time.
+            // If we awaited it inline, the async iterator would block until
+            // the entire exchange finished, buffering all events invisibly.
+            var sendTask = Task.Run(async () =>
+            {
+                try
+                {
+                    var result = await session.SendAndWaitAsync(
+                        new MessageOptions { Prompt = lastUserMessage },
+                        timeout: TimeSpan.FromMinutes(10),
+                        cancellationToken: cancellationToken);
+
+                    var finalContent = result?.Data?.Content ?? "";
+                    channel.Writer.TryWrite(new DoneEvent(finalContent));
+                }
+                catch (Exception ex)
+                {
+                    channel.Writer.TryWrite(new DoneEvent($"Error: {ex.Message}"));
+                }
+                finally
+                {
+                    channel.Writer.TryComplete();
+                }
+            }, cancellationToken);
+
+            await foreach (var evt in channel.Reader.ReadAllAsync(cancellationToken))
+            {
+                yield return evt;
+            }
+
+            await sendTask;
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -153,6 +296,43 @@ public sealed class CopilotBackend : IAgentBackend
         {
             await _client.DisposeAsync();
             _client = null;
+        }
+    }
+
+    private static CopilotClient CreateClient()
+    {
+        var opts = new CopilotClientOptions();
+
+        // Try explicit env var first, then extract from gh CLI (handles keyring-backed auth).
+        var token = Environment.GetEnvironmentVariable("GITHUB_COPILOT_TOKEN");
+        if (string.IsNullOrEmpty(token))
+            token = TryGetGhToken();
+
+        if (!string.IsNullOrEmpty(token))
+            opts.GitHubToken = token;
+
+        return new CopilotClient(opts);
+    }
+
+    private static string? TryGetGhToken()
+    {
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo("gh", "auth token")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            };
+            using var proc = System.Diagnostics.Process.Start(psi);
+            if (proc is null) return null;
+            var output = proc.StandardOutput.ReadToEnd().Trim();
+            proc.WaitForExit(5000);
+            return proc.ExitCode == 0 && output.StartsWith("gho_") ? output : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 }
@@ -177,6 +357,7 @@ internal sealed class DispatchingAIFunction : AIFunction
 
     public override string Name => _schema.Name;
     public override string Description => _schema.Description ?? string.Empty;
+    public override JsonElement JsonSchema => _schema.InputSchema;
 
     protected override async ValueTask<object?> InvokeCoreAsync(
         AIFunctionArguments arguments,

@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SharpClaw.Core\SharpClaw.Core.csproj" />
+    <ProjectReference Include="..\SharpClaw.Copilot\SharpClaw.Copilot.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

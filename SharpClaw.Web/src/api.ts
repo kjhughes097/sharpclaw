@@ -65,7 +65,7 @@ export function streamEvents(
 ): () => void {
     const url = `${BASE}/sessions/${sessionId}/messages/${messageId}/stream`;
     const eventSource = new EventSource(url);
-    const eventTypes = ['token', 'tool_call', 'tool_result', 'permission_request', 'done'] as const;
+    const eventTypes = ['token', 'tool_call', 'tool_result', 'permission_request', 'status', 'done'] as const;
 
     for (const type of eventTypes) {
         eventSource.addEventListener(type, (e: MessageEvent) => {

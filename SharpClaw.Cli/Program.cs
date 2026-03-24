@@ -268,7 +268,8 @@ finally
 IAgentBackend CreateBackend(AgentPersona p, PermissionGate? permissionGate) => p.Backend switch
 {
     "anthropic" => CreateAnthropicBackend(),
-    "copilot" => new CopilotBackend(permissionGate),
+    "copilot" => new CopilotBackend(permissionGate,
+        Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE") ?? Environment.CurrentDirectory),
     _ => throw new InvalidOperationException(
         $"Unknown backend '{p.Backend}'. Supported: anthropic, copilot."),
 };

@@ -77,7 +77,7 @@ export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, theme, on
             ))}
             {personas.length === 0 && (
               <div style={{ color: 'var(--text-dim)', padding: '12px 0' }}>
-                No personas found. Add .agent.md files to the personas directory.
+                No agents found.
               </div>
             )}
             <button className="modal-cancel" onClick={() => setShowModal(false)}>

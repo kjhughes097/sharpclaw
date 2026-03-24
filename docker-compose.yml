@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: sharpclaw
       POSTGRES_PASSWORD: sharpclaw
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - /home/khughes/sharpclaw/data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sharpclaw -d sharpclaw"]
       interval: 5s
@@ -22,12 +22,13 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - ${SHARPCLAW_DATA_DIR:-.}:/data:ro
+      - ${SHARPCLAW_WORKSPACE:-./workspace}:/workspace
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
+      - GITHUB_COPILOT_TOKEN=${GITHUB_COPILOT_TOKEN}
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=sharpclaw;Username=sharpclaw;Password=sharpclaw
-      - MCP_ALLOWED_DIRS=/data
+      - SHARPCLAW_WORKSPACE=/workspace
 
   web:
     build: SharpClaw.Web
@@ -36,6 +37,3 @@ services:
       - "8080:80"
     depends_on:
       - sharpclaw
-
-volumes:
-  postgres-data:

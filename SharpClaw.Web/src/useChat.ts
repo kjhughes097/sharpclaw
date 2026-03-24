@@ -7,6 +7,8 @@ export interface SessionState {
     messages: ChatMessage[];
     /** Stream items for the currently-streaming assistant turn */
     streamItems: StreamItem[];
+    /** Completed event logs, one per assistant message (index matches assistant messages) */
+    eventLogs: StreamItem[][];
     streaming: boolean;
 }
 
@@ -24,6 +26,7 @@ export function useChat() {
             session,
             messages: [],
             streamItems: [],
+            eventLogs: [],
             streaming: false,
         };
         setSessions(prev => {
@@ -104,6 +107,8 @@ export function useChat() {
                                 ...state.messages,
                                 { role: 'assistant', content: assistantText },
                             ];
+                            // Preserve event log for this turn
+                            state.eventLogs = [...state.eventLogs, state.streamItems];
                             state.streamItems = [];
                             state.streaming = false;
                             updated[idx] = state;
@@ -141,6 +146,8 @@ export function useChat() {
                                     ...state.messages,
                                     { role: 'assistant', content: assistantText },
                                 ];
+                                // Preserve event log for this turn
+                                state.eventLogs = [...state.eventLogs, state.streamItems];
                             }
                             state.streamItems = [];
                             state.streaming = false;

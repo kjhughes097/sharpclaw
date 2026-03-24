@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { SessionState } from './useChat';
-import { ToolCallBlock } from './ToolCallBlock';
 import { PermissionCard } from './PermissionCard';
+import { EventLog } from './EventLog';
 
 interface ChatViewProps {
   state: SessionState;
@@ -75,51 +75,50 @@ export function ChatView({ state, onSend, onMenuClick }: ChatViewProps) {
           </div>
         )}
 
-        {state.messages.map((msg, i) => (
-          <div key={i} className={`message ${msg.role}`}>
-            <div className="avatar">
-              {msg.role === 'user' ? '👤' : initials}
+        {state.messages.map((msg, i) => {
+          // Count assistant messages up to this point to index into eventLogs
+          const assistantIdx = msg.role === 'assistant'
+            ? state.messages.slice(0, i + 1).filter(m => m.role === 'assistant').length - 1
+            : -1;
+          const eventLog = assistantIdx >= 0 ? state.eventLogs[assistantIdx] : undefined;
+
+          return (
+            <div key={i} className={`message ${msg.role}`}>
+              <div className="avatar">
+                {msg.role === 'user' ? '👤' : initials}
+              </div>
+              <div className="bubble">
+                {msg.role === 'assistant' && eventLog && eventLog.length > 0 && (
+                  <EventLog items={eventLog} live={false} />
+                )}
+                {msg.role === 'assistant' ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                ) : (
+                  msg.content
+                )}
+              </div>
             </div>
-            <div className="bubble">
-              {msg.role === 'assistant' ? (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-              ) : (
-                msg.content
-              )}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Streaming assistant turn */}
         {state.streaming && (
           <div className="message assistant">
             <div className="avatar">{initials}</div>
             <div className="bubble">
-              {/* Tool calls and permission requests inline */}
+              {/* Event log card — shows tool calls, status updates, etc. */}
+              <EventLog items={state.streamItems} live={true} />
+
+              {/* Permission requests rendered separately (needs interaction) */}
               {state.streamItems
-                .filter(i => i.event.type === 'tool_call' || i.event.type === 'permission_request')
-                .map(item => {
-                  if (item.event.type === 'tool_call') {
-                    return (
-                      <ToolCallBlock
-                        key={item.id}
-                        tool={(item.event as { tool: string }).tool}
-                        input={(item.event as { input: Record<string, unknown> | null }).input}
-                        result={item.result}
-                      />
-                    );
-                  }
-                  if (item.event.type === 'permission_request') {
-                    return (
-                      <PermissionCard
-                        key={item.id}
-                        sessionId={state.session.sessionId}
-                        event={item.event as { tool: string; input: Record<string, unknown> | null; requestId: string; type: 'permission_request' }}
-                      />
-                    );
-                  }
-                  return null;
-                })}
+                .filter(i => i.event.type === 'permission_request')
+                .map(item => (
+                  <PermissionCard
+                    key={item.id}
+                    sessionId={state.session.sessionId}
+                    event={item.event as { tool: string; input: Record<string, unknown> | null; requestId: string; type: 'permission_request' }}
+                  />
+                ))}
 
               {/* Streaming markdown text */}
               {streamingText && (

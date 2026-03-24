@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Anthropic;
 using Anthropic.Core;
 using Microsoft.Extensions.FileProviders;
+using SharpClaw.Copilot;
 using SharpClaw.Core;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -29,6 +30,20 @@ var runners = new ConcurrentDictionary<string, AgentRunner>();
 // ── In-flight message streams keyed by "sessionId/msgId" ─────────────────────
 
 var messageStreams = new ConcurrentDictionary<string, Channel<AgentEvent>>();
+
+// ── Backend factory (resolves "anthropic" and "copilot") ─────────────────────
+
+IAgentBackend CreateBackend(string backend, PermissionGate gate) => backend switch
+{
+    "anthropic" => new AnthropicBackend(new AnthropicClient(new ClientOptions
+    {
+        ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
+            ?? throw new InvalidOperationException("ANTHROPIC_API_KEY is not set."),
+    })),
+    "copilot" => new CopilotBackend(gate,
+        Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE") ?? Environment.CurrentDirectory),
+    _ => throw new InvalidOperationException($"Unknown backend '{backend}'."),
+};
 
 // ── API key middleware (only applies to /api/* routes) ────────────────────────
 
@@ -92,12 +107,12 @@ app.MapGet("/api/personas", () =>
 {
     var agents = store.ListAgents();
     var personas = agents.Select(a => new
-        {
-            file = a.Filename,
-            name = a.Name,
-            backend = a.Backend,
-            mcpServers = a.McpServers,
-        })
+    {
+        file = a.Filename,
+        name = a.Name,
+        backend = a.Backend,
+        mcpServers = a.McpServers,
+    })
         .ToList();
 
     return Results.Ok(personas);
@@ -119,7 +134,7 @@ app.MapPost("/api/sessions", async (CreateSessionRequest req, CancellationToken 
     store.CreateSession(sessionId, agentRecord.Filename);
 
     // Spin up an agent runner and cache it.
-    var runner = new AgentRunner(persona);
+    var runner = new AgentRunner(persona, CreateBackend);
     await runner.InitializeAsync(ct);
     runners[sessionId] = runner;
 
@@ -145,7 +160,7 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
             return Results.NotFound(new { error = $"Agent definition '{conversation.AgentFile}' not found." });
 
         var persona = agentRecord.ToPersona();
-        runner = new AgentRunner(persona);
+        runner = new AgentRunner(persona, CreateBackend);
         await runner.InitializeAsync(ct);
         runners[id] = runner;
     }
@@ -194,7 +209,7 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                     if (specialistRecord is not null)
                     {
                         var specialistPersona = specialistRecord.ToPersona();
-                        var specialistRunner = new AgentRunner(specialistPersona);
+                        var specialistRunner = new AgentRunner(specialistPersona, CreateBackend);
                         await specialistRunner.InitializeAsync(CancellationToken.None);
 
                         // Replace the coordinator runner with the specialist for this session.

@@ -8,9 +8,21 @@ namespace SharpClaw.Core;
 /// </summary>
 public static class McpServerRegistry
 {
-    private static string[] AllowedDirs =>
-        Environment.GetEnvironmentVariable("MCP_ALLOWED_DIRS")?.Split(':', StringSplitOptions.RemoveEmptyEntries)
-        ?? [Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)];
+    private static string[] AllowedDirs
+    {
+        get
+        {
+            var workspace = Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE");
+            if (!string.IsNullOrEmpty(workspace))
+                return [workspace];
+
+            var mcpDirs = Environment.GetEnvironmentVariable("MCP_ALLOWED_DIRS");
+            if (!string.IsNullOrEmpty(mcpDirs))
+                return mcpDirs.Split(':', StringSplitOptions.RemoveEmptyEntries);
+
+            return [Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)];
+        }
+    }
 
     /// <summary>
     /// Returns an <see cref="IClientTransport"/> for a well-known server name.

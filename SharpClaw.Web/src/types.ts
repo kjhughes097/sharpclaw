@@ -49,11 +49,17 @@ export interface DoneEvent {
     content: string;
 }
 
+export interface StatusEvent {
+    type: 'status';
+    message: string;
+}
+
 export type AgentEvent =
     | TokenEvent
     | ToolCallEvent
     | ToolResultEvent
     | PermissionRequestEvent
+    | StatusEvent
     | DoneEvent;
 
 /* ── Stream item: an AgentEvent plus metadata for the UI ──────────────────── */

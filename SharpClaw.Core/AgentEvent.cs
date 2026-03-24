@@ -11,6 +11,7 @@ namespace SharpClaw.Core;
 [JsonDerivedType(typeof(ToolCallEvent), "tool_call")]
 [JsonDerivedType(typeof(ToolResultEvent), "tool_result")]
 [JsonDerivedType(typeof(PermissionRequestEvent), "permission_request")]
+[JsonDerivedType(typeof(StatusEvent), "status")]
 [JsonDerivedType(typeof(DoneEvent), "done")]
 public abstract record AgentEvent
 {
@@ -49,6 +50,13 @@ public sealed record PermissionRequestEvent(
 {
     [JsonPropertyName("type")]
     public override string Type => "permission_request";
+}
+
+public sealed record StatusEvent(
+    [property: JsonPropertyName("message")] string Message) : AgentEvent
+{
+    [JsonPropertyName("type")]
+    public override string Type => "status";
 }
 
 public sealed record DoneEvent(
