@@ -4,6 +4,9 @@ using NpgsqlTypes;
 
 namespace SharpClaw.Core;
 
+public sealed record StoredSession(string SessionId, string AgentSlug, DateTimeOffset CreatedAt, DateTimeOffset LastActivityAt);
+public sealed record StoredEventLogItem(AgentEvent Event, ToolResultEvent? Result);
+
 /// <summary>
 /// Persists conversation history and agent definitions in a PostgreSQL database.
 /// On first use, the built-in agent definitions are seeded automatically.
@@ -11,6 +14,16 @@ namespace SharpClaw.Core;
 public sealed class SessionStore : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOpts = new();
+    private const string AdeAgentId = "ade.agent.md";
+    private const string LegacyCoordinatorId = "coordinator.agent.md";
+    private static readonly string[] LegacySeededAgentIds =
+    [
+        "cody.agent.md",
+        "developer.agent.md",
+        "file-browser.agent.md",
+        "homelab.agent.md",
+        "home-assistant.agent.md",
+    ];
 
     private readonly NpgsqlDataSource _dataSource;
 
@@ -27,7 +40,7 @@ public sealed class SessionStore : IDisposable
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS agents (
                 id SERIAL PRIMARY KEY,
-                filename TEXT NOT NULL UNIQUE,
+                slug TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
                 description TEXT NOT NULL DEFAULT '',
                 backend TEXT NOT NULL DEFAULT 'anthropic',
@@ -52,7 +65,7 @@ public sealed class SessionStore : IDisposable
 
             CREATE TABLE IF NOT EXISTS sessions (
                 session_id TEXT NOT NULL,
-                agent_file TEXT NOT NULL,
+                agent_slug TEXT NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 PRIMARY KEY (session_id)
             );
@@ -66,6 +79,51 @@ public sealed class SessionStore : IDisposable
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
             );
 
+            CREATE TABLE IF NOT EXISTS session_event_logs (
+                id SERIAL PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                assistant_index INT NOT NULL,
+                items JSONB NOT NULL DEFAULT '[]'::jsonb,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (session_id, assistant_index),
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id)
+            );
+
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'agents'
+                      AND column_name = 'filename'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'agents'
+                      AND column_name = 'slug'
+                ) THEN
+                    ALTER TABLE agents RENAME COLUMN filename TO slug;
+                END IF;
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'sessions'
+                      AND column_name = 'agent_file'
+                ) AND NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = current_schema()
+                      AND table_name = 'sessions'
+                      AND column_name = 'agent_slug'
+                ) THEN
+                    ALTER TABLE sessions RENAME COLUMN agent_file TO agent_slug;
+                END IF;
+            END $$;
+
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT '';
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
@@ -75,8 +133,8 @@ public sealed class SessionStore : IDisposable
         cmd.ExecuteNonQuery();
 
         SeedMcps(conn);
+        MigrateBuiltInAgents(conn);
         SeedAgents(conn);
-        EnsureCodyAgent(conn);
         MigratePermissionPolicies(conn);
     }
 
@@ -120,9 +178,9 @@ public sealed class SessionStore : IDisposable
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
-                INSERT INTO agents (filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled)
-                VALUES (@filename, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled)
-                ON CONFLICT (filename) DO UPDATE
+                INSERT INTO agents (slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled)
+                VALUES (@slug, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled)
+                ON CONFLICT (slug) DO UPDATE
                 SET description = CASE
                         WHEN agents.description = '' THEN EXCLUDED.description
                         ELSE agents.description
@@ -132,7 +190,7 @@ public sealed class SessionStore : IDisposable
                         ELSE agents.model
                     END
                 """;
-            cmd.Parameters.AddWithValue("filename", seed.Filename);
+            cmd.Parameters.AddWithValue("slug", seed.Slug);
             cmd.Parameters.AddWithValue("name", seed.Name);
             cmd.Parameters.AddWithValue("description", seed.Description);
             cmd.Parameters.AddWithValue("backend", seed.Backend);
@@ -145,55 +203,106 @@ public sealed class SessionStore : IDisposable
         }
     }
 
-    /// <summary>
-    /// Ensures there is at least one Cody agent and that any Cody agent has access to GitHub.
-    /// </summary>
-    private static void EnsureCodyAgent(NpgsqlConnection conn)
+    private static void MigrateBuiltInAgents(NpgsqlConnection conn)
     {
-        using var selectCmd = conn.CreateCommand();
-        selectCmd.CommandText = """
-            SELECT filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
-            FROM agents
-            WHERE LOWER(name) = LOWER(@name) OR filename = @filename
-            ORDER BY created_at
-            """;
-        selectCmd.Parameters.AddWithValue("name", CodyAgentSeed.Name);
-        selectCmd.Parameters.AddWithValue("filename", CodyAgentSeed.Filename);
+        var adeSeed = BuiltInAgents.Single();
 
-        var matches = new List<AgentRecord>();
-        using (var reader = selectCmd.ExecuteReader())
+        if (GetAgent(conn, LegacyCoordinatorId) is not null)
         {
-            while (reader.Read())
-                matches.Add(ReadAgentRecord(reader));
-        }
+            using var tx = conn.BeginTransaction();
 
-        if (matches.Count == 0)
-        {
-            using var insertCmd = conn.CreateCommand();
-            insertCmd.CommandText = """
-                INSERT INTO agents (filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled)
-                VALUES (@filename, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled)
-                ON CONFLICT (filename) DO NOTHING
+            using var updateSessions = conn.CreateCommand();
+            updateSessions.Transaction = tx;
+            updateSessions.CommandText = "UPDATE sessions SET agent_slug = @new_slug WHERE agent_slug = @old_slug";
+            updateSessions.Parameters.AddWithValue("new_slug", adeSeed.Slug);
+            updateSessions.Parameters.AddWithValue("old_slug", LegacyCoordinatorId);
+            updateSessions.ExecuteNonQuery();
+
+            using var renameAgent = conn.CreateCommand();
+            renameAgent.Transaction = tx;
+            renameAgent.CommandText = """
+                UPDATE agents
+                SET slug = @new_slug,
+                    name = @name,
+                    description = @description,
+                    system_prompt = @system_prompt
+                WHERE slug = @old_slug
+                  AND NOT EXISTS (SELECT 1 FROM agents WHERE slug = @new_slug)
                 """;
-            WriteAgentParameters(insertCmd, CodyAgentSeed);
-            insertCmd.ExecuteNonQuery();
-            return;
+            renameAgent.Parameters.AddWithValue("new_slug", adeSeed.Slug);
+            renameAgent.Parameters.AddWithValue("name", adeSeed.Name);
+            renameAgent.Parameters.AddWithValue("description", adeSeed.Description);
+            renameAgent.Parameters.AddWithValue("system_prompt", adeSeed.SystemPrompt);
+            renameAgent.Parameters.AddWithValue("old_slug", LegacyCoordinatorId);
+            renameAgent.ExecuteNonQuery();
+
+            using var deleteOldCoordinator = conn.CreateCommand();
+            deleteOldCoordinator.Transaction = tx;
+            deleteOldCoordinator.CommandText = "DELETE FROM agents WHERE slug = @old_slug AND EXISTS (SELECT 1 FROM agents WHERE slug = @new_slug)";
+            deleteOldCoordinator.Parameters.AddWithValue("old_slug", LegacyCoordinatorId);
+            deleteOldCoordinator.Parameters.AddWithValue("new_slug", adeSeed.Slug);
+            deleteOldCoordinator.ExecuteNonQuery();
+
+            tx.Commit();
         }
 
-        foreach (var agent in matches)
+        using (var updateAde = conn.CreateCommand())
         {
-            if (agent.McpServers.Contains("github", StringComparer.OrdinalIgnoreCase))
-                continue;
-
-            var updatedMcpServers = agent.McpServers.ToList();
-            updatedMcpServers.Add("github");
-
-            using var updateCmd = conn.CreateCommand();
-            updateCmd.CommandText = "UPDATE agents SET mcp_servers = @mcp_servers WHERE filename = @filename";
-            updateCmd.Parameters.AddWithValue("filename", agent.Filename);
-            updateCmd.Parameters.AddWithValue("mcp_servers", JsonSerializer.Serialize(updatedMcpServers, JsonOpts));
-            updateCmd.ExecuteNonQuery();
+            updateAde.CommandText = "UPDATE agents SET name = @name, description = @description, system_prompt = @system_prompt WHERE slug = @slug";
+            updateAde.Parameters.AddWithValue("slug", adeSeed.Slug);
+            updateAde.Parameters.AddWithValue("name", adeSeed.Name);
+            updateAde.Parameters.AddWithValue("description", adeSeed.Description);
+            updateAde.Parameters.AddWithValue("system_prompt", adeSeed.SystemPrompt);
+            updateAde.ExecuteNonQuery();
         }
+
+        foreach (var legacyAgentId in LegacySeededAgentIds)
+            DeleteAgentAndSessions(conn, legacyAgentId);
+    }
+
+    private static AgentRecord? GetAgent(NpgsqlConnection conn, string slug)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            FROM agents
+            WHERE slug = @slug
+            """;
+        cmd.Parameters.AddWithValue("slug", slug);
+
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? ReadAgentRecord(reader) : null;
+    }
+
+    private static void DeleteAgentAndSessions(NpgsqlConnection conn, string slug)
+    {
+        using var tx = conn.BeginTransaction();
+
+        using var deleteEventLogs = conn.CreateCommand();
+        deleteEventLogs.Transaction = tx;
+        deleteEventLogs.CommandText = "DELETE FROM session_event_logs WHERE session_id IN (SELECT session_id FROM sessions WHERE agent_slug = @slug)";
+        deleteEventLogs.Parameters.AddWithValue("slug", slug);
+        deleteEventLogs.ExecuteNonQuery();
+
+        using var deleteMessages = conn.CreateCommand();
+        deleteMessages.Transaction = tx;
+        deleteMessages.CommandText = "DELETE FROM messages WHERE session_id IN (SELECT session_id FROM sessions WHERE agent_slug = @slug)";
+        deleteMessages.Parameters.AddWithValue("slug", slug);
+        deleteMessages.ExecuteNonQuery();
+
+        using var deleteSessions = conn.CreateCommand();
+        deleteSessions.Transaction = tx;
+        deleteSessions.CommandText = "DELETE FROM sessions WHERE agent_slug = @slug";
+        deleteSessions.Parameters.AddWithValue("slug", slug);
+        deleteSessions.ExecuteNonQuery();
+
+        using var deleteAgent = conn.CreateCommand();
+        deleteAgent.Transaction = tx;
+        deleteAgent.CommandText = "DELETE FROM agents WHERE slug = @slug";
+        deleteAgent.Parameters.AddWithValue("slug", slug);
+        deleteAgent.ExecuteNonQuery();
+
+        tx.Commit();
     }
 
     /// <summary>
@@ -203,7 +312,7 @@ public sealed class SessionStore : IDisposable
     {
         using var selectCmd = conn.CreateCommand();
         selectCmd.CommandText = """
-            SELECT filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
             FROM agents
             ORDER BY created_at
             """;
@@ -222,8 +331,8 @@ public sealed class SessionStore : IDisposable
                 continue;
 
             using var updateCmd = conn.CreateCommand();
-            updateCmd.CommandText = "UPDATE agents SET permission_policy = @permission_policy WHERE filename = @filename";
-            updateCmd.Parameters.AddWithValue("filename", agent.Filename);
+            updateCmd.CommandText = "UPDATE agents SET permission_policy = @permission_policy WHERE slug = @slug";
+            updateCmd.Parameters.AddWithValue("slug", agent.Slug);
             updateCmd.Parameters.AddWithValue("permission_policy", JsonSerializer.Serialize(migratedPolicy, JsonOpts));
             updateCmd.ExecuteNonQuery();
         }
@@ -314,154 +423,31 @@ public sealed class SessionStore : IDisposable
             IsEnabled: true),
     ];
 
-    private static readonly AgentRecord CodyAgentSeed = new(
-        Filename: "cody.agent.md",
-        Name: "Cody",
-        Description: "Builds software with filesystem and GitHub context.",
-        Backend: "copilot",
-        Model: "gpt-5.4",
-        McpServers: ["filesystem", "github"],
-        PermissionPolicy: new Dictionary<string, string>
-        {
-            ["filesystem.read_*"] = "auto_approve",
-            ["filesystem.list_*"] = "auto_approve",
-            ["filesystem.search_*"] = "auto_approve",
-            ["filesystem.get_*"] = "auto_approve",
-            ["filesystem.write_*"] = "ask",
-            ["filesystem.create_*"] = "ask",
-            ["github.*"] = "ask",
-            ["*"] = "ask",
-        },
-        SystemPrompt: """
-            You are Cody, a software engineering agent with access to the local workspace
-            and GitHub tooling. Use the available MCP tools to inspect files, understand
-            repository state, and help deliver code changes safely.
-            """,
-        IsEnabled: true);
-
     private static readonly IReadOnlyList<AgentRecord> BuiltInAgents =
     [
         new AgentRecord(
-            Filename: "coordinator.agent.md",
-            Name: "Coordinator",
-            Description: "Routes a user request to the best specialist agent.",
+            Slug: AdeAgentId,
+            Name: "Ade",
+            Description: "A general assistant who helps directly, and hands work to a more suitable specialist when one is a better fit.",
             Backend: "anthropic",
             Model: "claude-haiku-4-5-20251001",
             McpServers: [],
             PermissionPolicy: new Dictionary<string, string>(),
             SystemPrompt: """
-                You are a routing coordinator. Given a user message and a list of available specialist agents, determine which agent is the best fit for the request.
+                You are Ade, a general assistant and aide. Help the user directly whenever you can.
+
+                If another specialist agent is clearly a better fit for the task, hand the work off to that agent by returning a routing decision. If no specialist is a better fit, keep the task yourself.
 
                 Reply with **only** a JSON object — no markdown fences, no extra text:
                 ```
-                { "agent": "<filename>.agent.md", "rewritten_prompt": "<clarified version of the user request>" }
+                { "agent": "<agent-id>", "rewritten_prompt": "<clarified version of the user request>" }
                 ```
 
                 Rules:
-                - Pick the single most relevant specialist agent.
+                - If a specialist agent is a substantially better fit, pick the single most relevant specialist agent.
                 - Rewrite the prompt to be clear and actionable for the chosen specialist.
-                - If no specialist is a good fit, return `{ "agent": null, "rewritten_prompt": null }`.
+                - If you can handle the task well yourself, return `{ "agent": null, "rewritten_prompt": null }`.
                 - Do NOT explain your choice. Output the JSON object only.
-                """,
-            IsEnabled: true),
-
-        new AgentRecord(
-            Filename: "developer.agent.md",
-            Name: "Developer",
-            Description: "Handles software engineering, code review, and delivery tasks.",
-            Backend: "anthropic",
-            Model: "claude-haiku-4-5-20251001",
-            McpServers: ["filesystem"],
-            PermissionPolicy: new Dictionary<string, string>
-            {
-                ["filesystem.read_*"] = "auto_approve",
-                ["filesystem.list_*"] = "auto_approve",
-                ["filesystem.search_*"] = "auto_approve",
-                ["filesystem.get_*"] = "auto_approve",
-                ["filesystem.write_*"] = "ask",
-                ["filesystem.create_*"] = "ask",
-                ["*"] = "ask",
-            },
-            SystemPrompt: """
-                You are a software development assistant. You help with code reviews, writing
-                and explaining code, Infrastructure-as-Code (Bicep, Terraform), CI/CD pipelines,
-                and general software engineering tasks.
-
-                When reviewing files, read them from the filesystem and provide specific,
-                actionable feedback. When generating code, follow best practices for the
-                relevant language or framework.
-                """,
-            IsEnabled: true),
-
-        new AgentRecord(
-            Filename: "file-browser.agent.md",
-            Name: "FileBrowser",
-            Description: "Searches, lists, and reads files from the local workspace.",
-            Backend: "copilot",
-            Model: "gpt-5.4",
-            McpServers: ["filesystem"],
-            PermissionPolicy: new Dictionary<string, string>
-            {
-                ["filesystem.read_*"] = "auto_approve",
-                ["filesystem.list_*"] = "auto_approve",
-                ["filesystem.search_*"] = "auto_approve",
-                ["filesystem.get_*"] = "auto_approve",
-                ["*"] = "ask",
-            },
-            SystemPrompt: """
-                You are a helpful file browser assistant. You can list, read, and search files
-                on the local filesystem. Answer questions about file contents concisely.
-                """,
-            IsEnabled: true),
-
-        new AgentRecord(
-            Filename: "homelab.agent.md",
-            Name: "Homelab",
-            Description: "Supports homelab infrastructure and container operations.",
-            Backend: "anthropic",
-            Model: "claude-haiku-4-5-20251001",
-            McpServers: ["filesystem"],
-            PermissionPolicy: new Dictionary<string, string>
-            {
-                ["filesystem.read_*"] = "auto_approve",
-                ["filesystem.list_*"] = "auto_approve",
-                ["filesystem.search_*"] = "auto_approve",
-                ["filesystem.get_*"] = "auto_approve",
-                ["filesystem.write_*"] = "ask",
-                ["filesystem.create_*"] = "ask",
-                ["*"] = "ask",
-            },
-            SystemPrompt: """
-                You are a home lab infrastructure agent. You help manage Docker containers,
-                docker-compose files, networking configs, and home automation stacks
-                (e.g. Home Assistant, Zigbee2MQTT, Mosquitto, Grafana).
-
-                When asked to perform actions on containers or services, look for the relevant
-                docker-compose.yml or configuration files on the filesystem and provide the
-                appropriate shell commands or file edits. Always confirm destructive actions
-                before proceeding.
-                """,
-            IsEnabled: true),
-
-        new AgentRecord(
-            Filename: "home-assistant.agent.md",
-            Name: "HomeAssistant",
-            Description: "Manages Home Assistant and automation configuration files.",
-            Backend: "anthropic",
-            Model: "claude-haiku-4-5-20251001",
-            McpServers: ["filesystem"],
-            PermissionPolicy: new Dictionary<string, string>
-            {
-                ["filesystem.read_*"] = "auto_approve",
-                ["filesystem.list_*"] = "auto_approve",
-                ["filesystem.write_*"] = "ask",
-                ["filesystem.create_*"] = "ask",
-                ["*"] = "ask",
-            },
-            SystemPrompt: """
-                You are a home lab automation agent with access to the local filesystem.
-                When asked about files, use the available tools to retrieve real information.
-                Help the user manage their home automation configuration files.
                 """,
             IsEnabled: true),
     ];
@@ -476,7 +462,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
             FROM agents
             WHERE @include_disabled OR is_enabled = TRUE
             ORDER BY name
@@ -492,18 +478,18 @@ public sealed class SessionStore : IDisposable
     }
 
     /// <summary>
-    /// Returns a single agent by its filename (e.g. "developer.agent.md"), or null if not found.
+    /// Returns a single agent by its slug (e.g. "developer.agent.md"), or null if not found.
     /// </summary>
-    public AgentRecord? GetAgent(string filename)
+    public AgentRecord? GetAgent(string slug)
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
             FROM agents
-            WHERE filename = @filename
+            WHERE slug = @slug
             """;
-        cmd.Parameters.AddWithValue("filename", filename);
+        cmd.Parameters.AddWithValue("slug", slug);
 
         using var reader = cmd.ExecuteReader();
         return reader.Read() ? ReadAgentRecord(reader) : null;
@@ -621,14 +607,14 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO agents (filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled)
-            VALUES (@filename, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled)
+            INSERT INTO agents (slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled)
+            VALUES (@slug, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled)
             """;
         WriteAgentParameters(cmd, agent);
         cmd.ExecuteNonQuery();
     }
 
-    public bool UpdateAgent(string filename, AgentRecord agent)
+    public bool UpdateAgent(string slug, AgentRecord agent)
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
@@ -642,18 +628,18 @@ public sealed class SessionStore : IDisposable
                 permission_policy = @permission_policy,
                 system_prompt = @system_prompt,
                 is_enabled = @is_enabled
-            WHERE filename = @filename
+            WHERE slug = @slug
             """;
-        WriteAgentParameters(cmd, agent with { Filename = filename });
+        WriteAgentParameters(cmd, agent with { Slug = slug });
         return cmd.ExecuteNonQuery() > 0;
     }
 
-    public bool SetAgentEnabled(string filename, bool isEnabled)
+    public bool SetAgentEnabled(string slug, bool isEnabled)
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "UPDATE agents SET is_enabled = @is_enabled WHERE filename = @filename";
-        cmd.Parameters.AddWithValue("filename", filename);
+        cmd.CommandText = "UPDATE agents SET is_enabled = @is_enabled WHERE slug = @slug";
+        cmd.Parameters.AddWithValue("slug", slug);
         cmd.Parameters.AddWithValue("is_enabled", isEnabled);
         return cmd.ExecuteNonQuery() > 0;
     }
@@ -662,7 +648,7 @@ public sealed class SessionStore : IDisposable
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT agent_file, COUNT(*)::INT FROM sessions GROUP BY agent_file";
+        cmd.CommandText = "SELECT agent_slug, COUNT(*)::INT FROM sessions GROUP BY agent_slug";
 
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         using var reader = cmd.ExecuteReader();
@@ -672,12 +658,12 @@ public sealed class SessionStore : IDisposable
         return counts;
     }
 
-    public int CountSessionsForAgent(string filename)
+    public int CountSessionsForAgent(string slug)
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT COUNT(*)::INT FROM sessions WHERE agent_file = @filename";
-        cmd.Parameters.AddWithValue("filename", filename);
+        cmd.CommandText = "SELECT COUNT(*)::INT FROM sessions WHERE agent_slug = @slug";
+        cmd.Parameters.AddWithValue("slug", slug);
         return (int)(cmd.ExecuteScalar() ?? 0);
     }
 
@@ -710,19 +696,19 @@ public sealed class SessionStore : IDisposable
                 .Where(server => !string.Equals(server, slug, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            UpdateAgent(agent.Filename, agent with { McpServers = updatedServers });
+            UpdateAgent(agent.Slug, agent with { McpServers = updatedServers });
             detachedAgents++;
         }
 
         return detachedAgents;
     }
 
-    public IReadOnlyList<string> ListSessionIdsForAgent(string filename)
+    public IReadOnlyList<string> ListSessionIdsForAgent(string slug)
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT session_id FROM sessions WHERE agent_file = @filename ORDER BY created_at";
-        cmd.Parameters.AddWithValue("filename", filename);
+        cmd.CommandText = "SELECT session_id FROM sessions WHERE agent_slug = @slug ORDER BY created_at";
+        cmd.Parameters.AddWithValue("slug", slug);
 
         var sessionIds = new List<string>();
         using var reader = cmd.ExecuteReader();
@@ -732,39 +718,74 @@ public sealed class SessionStore : IDisposable
         return sessionIds;
     }
 
-    public int PurgeSessionsForAgent(string filename)
+    public IReadOnlyList<StoredSession> ListSessions()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT s.session_id,
+                   s.agent_slug,
+                   s.created_at,
+                   COALESCE(MAX(m.created_at), s.created_at) AS last_activity_at
+            FROM sessions s
+            LEFT JOIN messages m ON m.session_id = s.session_id
+            GROUP BY s.session_id, s.agent_slug, s.created_at
+            ORDER BY last_activity_at DESC, s.created_at DESC
+            """;
+
+        var sessions = new List<StoredSession>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            sessions.Add(new StoredSession(
+                SessionId: reader.GetString(0),
+                AgentSlug: reader.GetString(1),
+                CreatedAt: reader.GetFieldValue<DateTimeOffset>(2),
+                LastActivityAt: reader.GetFieldValue<DateTimeOffset>(3)));
+        }
+
+        return sessions;
+    }
+
+    public int PurgeSessionsForAgent(string slug)
     {
         using var conn = _dataSource.OpenConnection();
         using var tx = conn.BeginTransaction();
 
         using var countCmd = conn.CreateCommand();
         countCmd.Transaction = tx;
-        countCmd.CommandText = "SELECT COUNT(*)::INT FROM sessions WHERE agent_file = @filename";
-        countCmd.Parameters.AddWithValue("filename", filename);
+        countCmd.CommandText = "SELECT COUNT(*)::INT FROM sessions WHERE agent_slug = @slug";
+        countCmd.Parameters.AddWithValue("slug", slug);
         var count = (int)(countCmd.ExecuteScalar() ?? 0);
 
         using var msgCmd = conn.CreateCommand();
         msgCmd.Transaction = tx;
-        msgCmd.CommandText = "DELETE FROM messages WHERE session_id IN (SELECT session_id FROM sessions WHERE agent_file = @filename)";
-        msgCmd.Parameters.AddWithValue("filename", filename);
+        msgCmd.CommandText = "DELETE FROM messages WHERE session_id IN (SELECT session_id FROM sessions WHERE agent_slug = @slug)";
+        msgCmd.Parameters.AddWithValue("slug", slug);
         msgCmd.ExecuteNonQuery();
+
+        using var eventLogCmd = conn.CreateCommand();
+        eventLogCmd.Transaction = tx;
+        eventLogCmd.CommandText = "DELETE FROM session_event_logs WHERE session_id IN (SELECT session_id FROM sessions WHERE agent_slug = @slug)";
+        eventLogCmd.Parameters.AddWithValue("slug", slug);
+        eventLogCmd.ExecuteNonQuery();
 
         using var sessionCmd = conn.CreateCommand();
         sessionCmd.Transaction = tx;
-        sessionCmd.CommandText = "DELETE FROM sessions WHERE agent_file = @filename";
-        sessionCmd.Parameters.AddWithValue("filename", filename);
+        sessionCmd.CommandText = "DELETE FROM sessions WHERE agent_slug = @slug";
+        sessionCmd.Parameters.AddWithValue("slug", slug);
         sessionCmd.ExecuteNonQuery();
 
         tx.Commit();
         return count;
     }
 
-    public bool DeleteAgent(string filename)
+    public bool DeleteAgent(string slug)
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM agents WHERE filename = @filename";
-        cmd.Parameters.AddWithValue("filename", filename);
+        cmd.CommandText = "DELETE FROM agents WHERE slug = @slug";
+        cmd.Parameters.AddWithValue("slug", slug);
         return cmd.ExecuteNonQuery() > 0;
     }
 
@@ -783,7 +804,7 @@ public sealed class SessionStore : IDisposable
         var permPolicy = JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(6), JsonOpts)
             ?? new Dictionary<string, string>();
         return new AgentRecord(
-            Filename: reader.GetString(0),
+            Slug: reader.GetString(0),
             Name: reader.GetString(1),
             Description: reader.GetString(2),
             Backend: reader.GetString(3),
@@ -808,7 +829,7 @@ public sealed class SessionStore : IDisposable
 
     private static void WriteAgentParameters(NpgsqlCommand cmd, AgentRecord agent)
     {
-        cmd.Parameters.AddWithValue("filename", agent.Filename);
+        cmd.Parameters.AddWithValue("slug", agent.Slug);
         cmd.Parameters.AddWithValue("name", agent.Name);
         cmd.Parameters.AddWithValue("description", agent.Description);
         cmd.Parameters.AddWithValue("backend", agent.Backend);
@@ -836,14 +857,14 @@ public sealed class SessionStore : IDisposable
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT agent_file FROM sessions WHERE session_id = @sid";
+        cmd.CommandText = "SELECT agent_slug FROM sessions WHERE session_id = @sid";
         cmd.Parameters.AddWithValue("sid", sessionId);
 
-        var agentFile = cmd.ExecuteScalar() as string;
-        if (agentFile is null)
+        var agentSlug = cmd.ExecuteScalar() as string;
+        if (agentSlug is null)
             return null;
 
-        var history = new ConversationHistory(sessionId, agentFile);
+        var history = new ConversationHistory(sessionId, agentSlug);
 
         using var msgCmd = conn.CreateCommand();
         msgCmd.CommandText = "SELECT role, content FROM messages WHERE session_id = @sid ORDER BY id";
@@ -863,13 +884,13 @@ public sealed class SessionStore : IDisposable
     /// <summary>
     /// Creates a new session record. Call before appending messages.
     /// </summary>
-    public void CreateSession(string sessionId, string agentFile)
+    public void CreateSession(string sessionId, string agentSlug)
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "INSERT INTO sessions (session_id, agent_file) VALUES (@sid, @af)";
+        cmd.CommandText = "INSERT INTO sessions (session_id, agent_slug) VALUES (@sid, @af)";
         cmd.Parameters.AddWithValue("sid", sessionId);
-        cmd.Parameters.AddWithValue("af", agentFile);
+        cmd.Parameters.AddWithValue("af", agentSlug);
         cmd.ExecuteNonQuery();
     }
 
@@ -885,6 +906,40 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("role", message.Role.ToString());
         cmd.Parameters.AddWithValue("content", message.Content);
         cmd.ExecuteNonQuery();
+    }
+
+    public void SaveEventLog(string sessionId, int assistantIndex, IReadOnlyList<StoredEventLogItem> items)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO session_event_logs (session_id, assistant_index, items)
+            VALUES (@sid, @assistant_index, @items)
+            ON CONFLICT (session_id, assistant_index) DO UPDATE
+            SET items = EXCLUDED.items
+            """;
+        cmd.Parameters.AddWithValue("sid", sessionId);
+        cmd.Parameters.AddWithValue("assistant_index", assistantIndex);
+        cmd.Parameters.Add("items", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(items, JsonOpts);
+        cmd.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<IReadOnlyList<StoredEventLogItem>> LoadEventLogs(string sessionId)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT items FROM session_event_logs WHERE session_id = @sid ORDER BY assistant_index";
+        cmd.Parameters.AddWithValue("sid", sessionId);
+
+        var logs = new List<IReadOnlyList<StoredEventLogItem>>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            var items = JsonSerializer.Deserialize<List<StoredEventLogItem>>(reader.GetString(0), JsonOpts) ?? [];
+            logs.Add(items);
+        }
+
+        return logs;
     }
 
     public void Dispose() => _dataSource.Dispose();

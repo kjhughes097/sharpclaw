@@ -124,7 +124,6 @@ function normalizeStringList(values: string[]): string[] {
 
 function blankAgent(): AgentUpsertRequest {
   return {
-    file: '',
     name: '',
     description: '',
     backend: 'anthropic',
@@ -138,7 +137,6 @@ function blankAgent(): AgentUpsertRequest {
 
 function toForm(agent: AgentDefinition): AgentUpsertRequest {
   return {
-    file: agent.file,
     name: agent.name,
     description: agent.description,
     backend: agent.backend,
@@ -274,10 +272,14 @@ function buildPermissionGroups(rows: PermissionRow[], mcps: string[]): Permissio
   return groups.filter(group => group.indices.length > 0 || group.key !== 'custom' || rows.length === 0);
 }
 
+function isAdeAgent(agent: Pick<AgentDefinition, 'id' | 'name'>): boolean {
+  return agent.id === 'ade.agent.md' || agent.name.trim().toLowerCase() === 'ade';
+}
+
 export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [mcps, setMcps] = useState<McpDefinition[]>([]);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [mode, setMode] = useState<'list' | 'edit'>('list');
   const [form, setForm] = useState<AgentUpsertRequest>(blankAgent);
   const [permissionRows, setPermissionRows] = useState<PermissionRow[]>(toPermissionRows(blankAgent().permissionPolicy));
@@ -290,8 +292,8 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   const [purgeLinkedSessions, setPurgeLinkedSessions] = useState(false);
 
   const selectedAgent = useMemo(
-    () => agents.find(agent => agent.file === selectedFile) ?? null,
-    [agents, selectedFile],
+    () => agents.find(agent => agent.id === selectedAgentId) ?? null,
+    [agents, selectedAgentId],
   );
 
   const permissionGroups = useMemo(
@@ -328,9 +330,9 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
       setMcps(mcpResult);
 
       const nextSelection = preferredSelection
-        ?? (selectedFile && agentResult.some(agent => agent.file === selectedFile) ? selectedFile : agentResult[0]?.file ?? null);
+        ?? (selectedAgentId && agentResult.some(agent => agent.id === selectedAgentId) ? selectedAgentId : agentResult[0]?.id ?? null);
 
-      setSelectedFile(nextSelection);
+      setSelectedAgentId(nextSelection);
 
       if (!nextSelection) {
         setForm(blankAgent());
@@ -344,7 +346,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   }
 
   function beginCreate() {
-    setSelectedFile(null);
+    setSelectedAgentId(null);
     setMode('edit');
     setForm(blankAgent());
     setPermissionRows(toPermissionRows(blankAgent().permissionPolicy));
@@ -356,7 +358,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   }
 
   function beginEdit(agent: AgentDefinition) {
-    setSelectedFile(agent.file);
+    setSelectedAgentId(agent.id);
     setMode('edit');
     setForm(toForm(agent));
     setPermissionRows(toPermissionRows(agent.permissionPolicy));
@@ -442,7 +444,6 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
 
     const payload: AgentUpsertRequest = {
       ...form,
-      file: form.file.trim(),
       name: form.name.trim(),
       description: form.description.trim(),
       backend: form.backend.trim().toLowerCase(),
@@ -454,11 +455,11 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
 
     try {
       const saved = selectedAgent
-        ? await updateAgent(selectedAgent.file, payload)
+        ? await updateAgent(selectedAgent.id, payload)
         : await createAgent(payload);
 
       setStatus(selectedAgent ? 'Agent updated.' : 'Agent created.');
-      await loadData(saved.file);
+      await loadData(saved.id);
       setMode('list');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -471,9 +472,9 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     setError(null);
     setStatus(null);
     try {
-      await setAgentEnabled(agent.file, !agent.isEnabled);
+      await setAgentEnabled(agent.id, !agent.isEnabled);
       setStatus(`${agent.name} ${agent.isEnabled ? 'disabled' : 'enabled'}.`);
-      await loadData(agent.file);
+      await loadData(agent.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -487,7 +488,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     setStatus(null);
 
     try {
-      const result = await deleteAgent(deleteTarget.file, purgeLinkedSessions);
+      const result = await deleteAgent(deleteTarget.id, purgeLinkedSessions);
       setStatus(result.deletedSessions > 0
         ? `Deleted ${deleteTarget.name} and purged ${result.deletedSessions} linked session(s).`
         : `Deleted ${deleteTarget.name}.`);
@@ -534,11 +535,10 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
           ) : (
             <div className="agent-card-list">
               {agents.map(agent => (
-                <article key={agent.file} className="agent-card">
+                <article key={agent.id} className="agent-card">
                   <div className="agent-card-top">
                     <div>
                       <h3>{agent.name}</h3>
-                      <div className="agent-card-file">{agent.file}</div>
                     </div>
                     <span className={`agent-status-pill ${agent.isEnabled ? 'enabled' : 'disabled'}`}>
                       {agent.isEnabled ? 'Enabled' : 'Disabled'}
@@ -546,6 +546,12 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                   </div>
 
                   <p className="agent-card-description">{agent.description}</p>
+
+                  {isAdeAgent(agent) && (
+                    <p className="agent-card-note">
+                      Ade is the default general assistant. If you add specialist agents later, he can hand the task off when one is a clearly better fit.
+                    </p>
+                  )}
 
                   <div className="agent-meta-grid">
                     <span>{agent.backend}</span>
@@ -604,16 +610,6 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
           {status && <div className="config-banner success">{status}</div>}
 
           <form className="agent-form" onSubmit={handleSave}>
-            <label>
-              <span>File</span>
-              <input
-                value={form.file}
-                disabled={isEditing}
-                onChange={event => setForm(prev => ({ ...prev, file: event.target.value }))}
-                placeholder="developer.agent.md"
-              />
-            </label>
-
             <div className="agent-form-row two-up">
               <label>
                 <span>Name</span>
@@ -806,7 +802,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
           <div className="modal delete-modal" onClick={event => event.stopPropagation()}>
             <h2>Delete Agent</h2>
             <p>
-              Type <strong>{deleteTarget.file}</strong> to permanently delete this definition.
+              Type <strong>{deleteTarget.name}</strong> to permanently delete this definition.
             </p>
             {deleteTarget.sessionCount > 0 && (
               <div className="delete-warning-block">
@@ -828,14 +824,14 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
               className="delete-confirm-input"
               value={deleteConfirmation}
               onChange={event => setDeleteConfirmation(event.target.value)}
-              placeholder={deleteTarget.file}
+              placeholder={deleteTarget.name}
             />
             <div className="delete-modal-actions">
               <button className="modal-cancel" onClick={() => { setDeleteTarget(null); setDeleteConfirmation(''); }}>Cancel</button>
               <button
                 className="danger-btn"
                 onClick={() => void handleDelete()}
-                disabled={deleteConfirmation !== deleteTarget.file || saving || (deleteTarget.sessionCount > 0 && !purgeLinkedSessions)}
+                disabled={deleteConfirmation !== deleteTarget.name || saving || (deleteTarget.sessionCount > 0 && !purgeLinkedSessions)}
               >
                 Delete Permanently
               </button>

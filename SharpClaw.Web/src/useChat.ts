@@ -1,13 +1,15 @@
-import { useState, useCallback, useRef } from 'react';
-import type { Session, ChatMessage, StreamItem, AgentEvent, ToolResultEvent } from './types';
-import { createSession, sendMessage, streamEvents } from './api';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import type { Session, ChatMessage, PersistedStreamItem, StreamItem, AgentEvent, ToolResultEvent } from './types';
+import { createSession, fetchSessions, sendMessage, streamEvents } from './api';
 
-const DEFAULT_PERSONA_FILE = 'coordinator.agent.md';
-const DEFAULT_PERSONA_NAME = 'Coordinator';
+const DEFAULT_AGENT_ID = 'ade.agent.md';
+const DEFAULT_PERSONA_NAME = 'Ade';
 
 export interface SessionState {
     session: Session;
-    personaFile: string;
+    agentId: string;
+    createdAt: string;
+    lastActivityAt: string;
     isDraft: boolean;
     messages: ChatMessage[];
     /** Stream items for the currently-streaming assistant turn */
@@ -17,7 +19,25 @@ export interface SessionState {
     streaming: boolean;
 }
 
-export function useChat() {
+function restoreEventLog(items: PersistedStreamItem[], counter: React.MutableRefObject<number>): StreamItem[] {
+    return items.map(item => ({
+        id: `evt-${++counter.current}`,
+        event: item.event,
+        result: item.result,
+    }));
+}
+
+function restoreEventLogs(messages: ChatMessage[], eventLogs: PersistedStreamItem[][], counter: React.MutableRefObject<number>): StreamItem[][] {
+    const restored = eventLogs.map(items => restoreEventLog(items, counter));
+    const assistantCount = messages.filter(message => message.role === 'assistant').length;
+
+    while (restored.length < assistantCount)
+        restored.unshift([]);
+
+    return restored;
+}
+
+export function useChat(enabled: boolean) {
     const [sessions, setSessions] = useState<SessionState[]>([]);
     const [activeIdx, setActiveIdx] = useState<number>(-1);
     const cleanupRef = useRef<(() => void) | null>(null);
@@ -26,13 +46,63 @@ export function useChat() {
 
     const active = activeIdx >= 0 ? sessions[activeIdx] : null;
 
-    const startSession = useCallback((personaFile = DEFAULT_PERSONA_FILE, personaName = DEFAULT_PERSONA_NAME) => {
+    function moveSessionToTop(items: SessionState[], sessionKey: string, update: (session: SessionState) => SessionState): SessionState[] {
+        const index = items.findIndex(session => session.session.sessionId === sessionKey);
+        if (index < 0)
+            return items;
+
+        const updated = update(items[index]);
+        return [updated, ...items.filter((_, itemIndex) => itemIndex !== index)];
+    }
+
+    useEffect(() => {
+        if (!enabled)
+            return;
+
+        let cancelled = false;
+
+        fetchSessions()
+            .then(persistedSessions => {
+                if (cancelled)
+                    return;
+
+                const restored = persistedSessions.map(session => ({
+                    session: {
+                        sessionId: session.sessionId,
+                        persona: session.persona,
+                    },
+                    agentId: session.agentId,
+                    createdAt: session.createdAt,
+                    lastActivityAt: session.lastActivityAt,
+                    isDraft: false,
+                    messages: session.messages,
+                    streamItems: [],
+                    eventLogs: restoreEventLogs(session.messages, session.eventLogs, itemCounter),
+                    streaming: false,
+                } satisfies SessionState));
+
+                setSessions(restored);
+                setActiveIdx(restored.length > 0 ? 0 : -1);
+            })
+            .catch(err => {
+                console.error('failed to load sessions:', err);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [enabled]);
+
+    const startSession = useCallback((agentId = DEFAULT_AGENT_ID, personaName = DEFAULT_PERSONA_NAME) => {
+        const createdAt = new Date().toISOString();
         const newState: SessionState = {
             session: {
                 sessionId: `draft-${++draftCounter.current}`,
                 persona: personaName,
             },
-            personaFile,
+            agentId,
+            createdAt,
+            lastActivityAt: createdAt,
             isDraft: true,
             messages: [],
             streamItems: [],
@@ -40,13 +110,13 @@ export function useChat() {
             streaming: false,
         };
         setSessions(prev => {
-            const next = [...prev, newState];
-            setActiveIdx(next.length - 1);
+            const next = [newState, ...prev];
+            setActiveIdx(0);
             return next;
         });
     }, []);
 
-    const setDraftPersona = useCallback((idx: number, personaFile: string, personaName: string) => {
+    const setDraftPersona = useCallback((idx: number, agentId: string, personaName: string) => {
         setSessions(prev => {
             const updated = [...prev];
             const session = updated[idx];
@@ -55,7 +125,7 @@ export function useChat() {
 
             updated[idx] = {
                 ...session,
-                personaFile,
+                agentId,
                 session: {
                     ...session.session,
                     persona: personaName,
@@ -71,39 +141,41 @@ export function useChat() {
 
     const send = useCallback(async (text: string) => {
         if (!active || active.streaming) return;
-        const idx = activeIdx;
+        let currentSessionKey = active.session.sessionId;
         let sessionId = active.session.sessionId;
 
         // Add user message
         const userMsg: ChatMessage = { role: 'user', content: text };
+        const activityAt = new Date().toISOString();
         setSessions(prev => {
-            const updated = [...prev];
-            updated[idx] = {
-                ...updated[idx],
-                messages: [...updated[idx].messages, userMsg],
+            return moveSessionToTop(prev, currentSessionKey, session => ({
+                ...session,
+                messages: [...session.messages, userMsg],
                 streamItems: [],
                 streaming: true,
-            };
-            return updated;
+                lastActivityAt: activityAt,
+            }));
         });
+        setActiveIdx(0);
 
         try {
             if (active.isDraft) {
-                const created = await createSession(active.personaFile);
+                const created = await createSession(active.agentId);
                 sessionId = created.sessionId;
 
                 setSessions(prev => {
-                    const updated = [...prev];
-                    const current = updated[idx];
-                    if (!current) return prev;
-
-                    updated[idx] = {
-                        ...current,
+                    const createdAt = new Date().toISOString();
+                    return moveSessionToTop(prev, currentSessionKey, session => ({
+                        ...session,
                         session: created,
+                        createdAt,
+                        lastActivityAt: createdAt,
                         isDraft: false,
-                    };
-                    return updated;
+                    }));
                 });
+
+                currentSessionKey = sessionId;
+                setActiveIdx(0);
             }
 
             const { messageId } = await sendMessage(sessionId, text);
@@ -121,8 +193,12 @@ export function useChat() {
                     if (event.type === 'tool_result') {
                         // Pair with the matching tool_call
                         setSessions(prev => {
+                            const index = prev.findIndex(session => session.session.sessionId === currentSessionKey);
+                            if (index < 0)
+                                return prev;
+
                             const updated = [...prev];
-                            const state = { ...updated[idx] };
+                            const state = { ...updated[index] };
                             const items = [...state.streamItems];
                             // Find the last tool_call for the same tool that doesn't have a result yet
                             const pairIdx = items.findLastIndex(
@@ -136,41 +212,48 @@ export function useChat() {
                                 items.push({ id, event });
                             }
                             state.streamItems = items;
-                            updated[idx] = state;
+                            updated[index] = state;
                             return updated;
                         });
                         return;
                     }
 
                     if (event.type === 'done') {
+                        const lastActivityAt = new Date().toISOString();
                         setSessions(prev => {
-                            const updated = [...prev];
-                            const state = { ...updated[idx] };
-                            // Collapse all stream tokens into a final assistant message
-                            const assistantText = state.streamItems
-                                .filter(i => i.event.type === 'token')
-                                .map(i => (i.event as { text: string }).text)
-                                .join('') || event.content;
-                            state.messages = [
-                                ...state.messages,
-                                { role: 'assistant', content: assistantText },
-                            ];
-                            // Preserve event log for this turn
-                            state.eventLogs = [...state.eventLogs, state.streamItems];
-                            state.streamItems = [];
-                            state.streaming = false;
-                            updated[idx] = state;
-                            return updated;
+                            return moveSessionToTop(prev, currentSessionKey, state => {
+                                const assistantText = state.streamItems
+                                    .filter(i => i.event.type === 'token')
+                                    .map(i => (i.event as { text: string }).text)
+                                    .join('') || event.content;
+
+                                return {
+                                    ...state,
+                                    messages: [
+                                        ...state.messages,
+                                        { role: 'assistant', content: assistantText },
+                                    ],
+                                    eventLogs: [...state.eventLogs, state.streamItems],
+                                    streamItems: [],
+                                    streaming: false,
+                                    lastActivityAt,
+                                };
+                            });
                         });
+                        setActiveIdx(0);
                         return;
                     }
 
                     // token, tool_call, permission_request
                     setSessions(prev => {
+                        const index = prev.findIndex(session => session.session.sessionId === currentSessionKey);
+                        if (index < 0)
+                            return prev;
+
                         const updated = [...prev];
-                        const state = { ...updated[idx] };
+                        const state = { ...updated[index] };
                         state.streamItems = [...state.streamItems, { id, event }];
-                        updated[idx] = state;
+                        updated[index] = state;
                         return updated;
                     });
 
@@ -180,37 +263,44 @@ export function useChat() {
                 },
                 () => {
                     // SSE closed — ensure streaming is off
+                    const lastActivityAt = new Date().toISOString();
                     setSessions(prev => {
-                        const updated = [...prev];
-                        if (updated[idx]?.streaming) {
-                            const state = { ...updated[idx] };
-                            // Collapse any remaining tokens
+                        return moveSessionToTop(prev, currentSessionKey, state => {
+                            if (!state.streaming)
+                                return state;
+
                             const assistantText = state.streamItems
                                 .filter(i => i.event.type === 'token')
                                 .map(i => (i.event as { text: string }).text)
                                 .join('');
-                            if (assistantText) {
-                                state.messages = [
-                                    ...state.messages,
-                                    { role: 'assistant', content: assistantText },
-                                ];
-                                // Preserve event log for this turn
-                                state.eventLogs = [...state.eventLogs, state.streamItems];
-                            }
-                            state.streamItems = [];
-                            state.streaming = false;
-                            updated[idx] = state;
-                        }
-                        return updated;
+
+                            return {
+                                ...state,
+                                messages: assistantText
+                                    ? [...state.messages, { role: 'assistant', content: assistantText }]
+                                    : state.messages,
+                                eventLogs: assistantText
+                                    ? [...state.eventLogs, state.streamItems]
+                                    : state.eventLogs,
+                                streamItems: [],
+                                streaming: false,
+                                lastActivityAt,
+                            };
+                        });
                     });
+                    setActiveIdx(0);
                 },
                 (err) => {
                     console.error('SSE error:', err);
                     setSessions(prev => {
+                        const index = prev.findIndex(session => session.session.sessionId === currentSessionKey);
+                        if (index < 0)
+                            return prev;
+
                         const updated = [...prev];
-                        const state = { ...updated[idx] };
+                        const state = { ...updated[index] };
                         state.streaming = false;
-                        updated[idx] = state;
+                        updated[index] = state;
                         return updated;
                     });
                 },
@@ -220,12 +310,16 @@ export function useChat() {
         } catch (err) {
             console.error('send error:', err);
             setSessions(prev => {
+                const index = prev.findIndex(session => session.session.sessionId === currentSessionKey);
+                if (index < 0)
+                    return prev;
+
                 const updated = [...prev];
-                updated[idx] = { ...updated[idx], streaming: false };
+                updated[index] = { ...updated[index], streaming: false };
                 return updated;
             });
         }
-    }, [active, activeIdx]);
+    }, [active]);
 
     return { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, send };
 }

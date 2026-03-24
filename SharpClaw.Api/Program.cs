@@ -97,10 +97,39 @@ if (Directory.Exists(wwwroot))
 // ── JSON serializer options ──────────────────────────────────────────────────
 
 var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+const string AdeAgentId = "ade.agent.md";
+
+string CreateAgentId(string name)
+{
+    var slugChars = new List<char>();
+    var previousWasDash = false;
+
+    foreach (var ch in name.Trim().ToLowerInvariant())
+    {
+        if (char.IsLetterOrDigit(ch))
+        {
+            slugChars.Add(ch);
+            previousWasDash = false;
+            continue;
+        }
+
+        if (previousWasDash)
+            continue;
+
+        slugChars.Add('-');
+        previousWasDash = true;
+    }
+
+    var slug = new string(slugChars.ToArray()).Trim('-');
+    if (string.IsNullOrWhiteSpace(slug))
+        slug = "agent";
+
+    return $"{slug}.agent.md";
+}
 
 object ToPersonaDto(AgentRecord agent) => new
 {
-    file = agent.Filename,
+    id = agent.Slug,
     name = agent.Name,
     description = agent.Description,
     backend = agent.Backend,
@@ -113,7 +142,7 @@ object ToPersonaDto(AgentRecord agent) => new
 
 object ToAgentDto(AgentRecord agent, int sessionCount) => new
 {
-    file = agent.Filename,
+    id = agent.Slug,
     name = agent.Name,
     description = agent.Description,
     backend = agent.Backend,
@@ -144,8 +173,6 @@ List<string> NormalizeStringList(IEnumerable<string>? values) => (values ?? [])
 
 IResult? ValidateAgentRequest(AgentDefinitionRequest req, bool creating)
 {
-    if (creating && string.IsNullOrWhiteSpace(req.File))
-        return Results.BadRequest(new { error = "file is required." });
     if (string.IsNullOrWhiteSpace(req.Name))
         return Results.BadRequest(new { error = "name is required." });
     if (string.IsNullOrWhiteSpace(req.Description))
@@ -181,8 +208,8 @@ IResult? ValidateMcpRequest(McpDefinitionRequest req, bool creating)
     return null;
 }
 
-AgentRecord ToAgentRecord(AgentDefinitionRequest req, string? filenameOverride = null) => new(
-    Filename: filenameOverride ?? req.File!.Trim(),
+AgentRecord ToAgentRecord(AgentDefinitionRequest req, string? slugOverride = null) => new(
+    Slug: slugOverride ?? CreateAgentId(req.Name!.Trim()),
     Name: req.Name!.Trim(),
     Description: req.Description!.Trim(),
     Backend: req.Backend!.Trim().ToLowerInvariant(),
@@ -227,7 +254,7 @@ app.MapGet("/api/agents", () =>
 {
     var sessionCounts = store.GetSessionCountsByAgent();
     return Results.Ok(store.ListAgents().Select(agent =>
-        ToAgentDto(agent, sessionCounts.GetValueOrDefault(agent.Filename, 0))).ToList());
+        ToAgentDto(agent, sessionCounts.GetValueOrDefault(agent.Slug, 0))).ToList());
 });
 
 app.MapGet("/api/mcps", () =>
@@ -243,39 +270,33 @@ app.MapPost("/api/agents", (AgentDefinitionRequest req) =>
     if (validation is not null)
         return validation;
 
-    var filename = req.File!.Trim();
-    if (store.GetAgent(filename) is not null)
-        return Results.Conflict(new { error = $"Agent '{filename}' already exists." });
+    var agentId = CreateAgentId(req.Name!.Trim());
+    if (store.GetAgent(agentId) is not null)
+        return Results.Conflict(new { error = $"Agent '{req.Name!.Trim()}' already exists." });
 
-    var agent = ToAgentRecord(req);
+    var agent = ToAgentRecord(req, agentId);
     store.CreateAgent(agent);
 
-    return Results.Created($"/api/agents/{Uri.EscapeDataString(agent.Filename)}", ToAgentDto(agent, 0));
+    return Results.Created($"/api/agents/{Uri.EscapeDataString(agent.Slug)}", ToAgentDto(agent, 0));
 });
 
-app.MapPut("/api/agents/{filename}", (string filename, AgentDefinitionRequest req) =>
+app.MapPut("/api/agents/{slug}", (string slug, AgentDefinitionRequest req) =>
 {
     var validation = ValidateAgentRequest(req, creating: false);
     if (validation is not null)
         return validation;
 
-    if (!string.IsNullOrWhiteSpace(req.File) &&
-        !string.Equals(req.File.Trim(), filename, StringComparison.OrdinalIgnoreCase))
-    {
-        return Results.BadRequest(new { error = "Renaming an existing agent file is not supported." });
-    }
-
-    var updated = ToAgentRecord(req, filename);
-    return store.UpdateAgent(filename, updated)
-        ? Results.Ok(ToAgentDto(updated, store.CountSessionsForAgent(filename)))
-        : Results.NotFound(new { error = $"Agent '{filename}' not found." });
+    var updated = ToAgentRecord(req, slug);
+    return store.UpdateAgent(slug, updated)
+        ? Results.Ok(ToAgentDto(updated, store.CountSessionsForAgent(slug)))
+        : Results.NotFound(new { error = $"Agent '{slug}' not found." });
 });
 
-app.MapPatch("/api/agents/{filename}/enabled", (string filename, AgentEnabledRequest req) =>
+app.MapPatch("/api/agents/{slug}/enabled", (string slug, AgentEnabledRequest req) =>
 {
-    return store.SetAgentEnabled(filename, req.IsEnabled)
-        ? Results.Ok(new { file = filename, isEnabled = req.IsEnabled })
-        : Results.NotFound(new { error = $"Agent '{filename}' not found." });
+    return store.SetAgentEnabled(slug, req.IsEnabled)
+        ? Results.Ok(new { id = slug, isEnabled = req.IsEnabled })
+        : Results.NotFound(new { error = $"Agent '{slug}' not found." });
 });
 
 app.MapPost("/api/mcps", (McpDefinitionRequest req) =>
@@ -343,18 +364,18 @@ app.MapDelete("/api/mcps/{slug}", (string slug, bool? detachAgents) =>
         : Results.NotFound(new { error = $"MCP '{slug}' not found." });
 });
 
-app.MapDelete("/api/agents/{filename}", async (string filename, bool? purgeSessions) =>
+app.MapDelete("/api/agents/{slug}", async (string slug, bool? purgeSessions) =>
 {
-    var agent = store.GetAgent(filename);
+    var agent = store.GetAgent(slug);
     if (agent is null)
-        return Results.NotFound(new { error = $"Agent '{filename}' not found." });
+        return Results.NotFound(new { error = $"Agent '{slug}' not found." });
 
-    var linkedSessionCount = store.CountSessionsForAgent(filename);
+    var linkedSessionCount = store.CountSessionsForAgent(slug);
     if (linkedSessionCount > 0 && purgeSessions != true)
     {
         return Results.Conflict(new
         {
-            error = $"Agent '{filename}' has {linkedSessionCount} linked session(s). Re-run delete with purgeSessions=true to delete those sessions first.",
+            error = $"Agent '{slug}' has {linkedSessionCount} linked session(s). Re-run delete with purgeSessions=true to delete those sessions first.",
             linkedSessionCount,
             requiresSessionPurge = true,
         });
@@ -362,8 +383,8 @@ app.MapDelete("/api/agents/{filename}", async (string filename, bool? purgeSessi
 
     if (linkedSessionCount > 0)
     {
-        var sessionIds = store.ListSessionIdsForAgent(filename);
-        store.PurgeSessionsForAgent(filename);
+        var sessionIds = store.ListSessionIdsForAgent(slug);
+        store.PurgeSessionsForAgent(slug);
         foreach (var sessionId in sessionIds)
         {
             if (runners.TryRemove(sessionId, out var runner))
@@ -374,32 +395,72 @@ app.MapDelete("/api/agents/{filename}", async (string filename, bool? purgeSessi
         }
     }
 
-    return store.DeleteAgent(filename)
-        ? Results.Ok(new { file = filename, deletedSessions = linkedSessionCount })
-        : Results.NotFound(new { error = $"Agent '{filename}' not found." });
+    return store.DeleteAgent(slug)
+        ? Results.Ok(new { id = slug, deletedSessions = linkedSessionCount })
+        : Results.NotFound(new { error = $"Agent '{slug}' not found." });
+});
+
+// GET /api/sessions — list persisted sessions for sidebar restoration.
+app.MapGet("/api/sessions", () =>
+{
+    var agentsBySlug = store.ListAgents()
+        .ToDictionary(agent => agent.Slug, StringComparer.OrdinalIgnoreCase);
+
+    var sessions = store.ListSessions()
+        .Select(session =>
+        {
+            var conversation = store.Load(session.SessionId);
+            var eventLogs = store.LoadEventLogs(session.SessionId);
+            var hasAgent = agentsBySlug.TryGetValue(session.AgentSlug, out var agentRecord);
+            var personaName = hasAgent ? agentRecord!.Name : session.AgentSlug;
+
+            return new
+            {
+                sessionId = session.SessionId,
+                persona = personaName,
+                agentId = session.AgentSlug,
+                createdAt = session.CreatedAt,
+                lastActivityAt = session.LastActivityAt,
+                messages = conversation?.Messages.Select(message => new
+                {
+                    role = message.Role == ChatRole.User ? "user" : "assistant",
+                    content = message.Content,
+                }).ToList() ?? [],
+                eventLogs = eventLogs.Select(log => log.Select(item => new
+                {
+                    Event = item.Event,
+                    result = item.Result,
+                }).ToList()).ToList(),
+            };
+        })
+        .ToList();
+
+    return Results.Ok(sessions);
 });
 
 // POST /api/sessions — create a session, return its ID.
 app.MapPost("/api/sessions", async (CreateSessionRequest req, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(req.Persona))
-        return Results.BadRequest(new { error = "persona is required." });
+    if (string.IsNullOrWhiteSpace(req.AgentId))
+        return Results.BadRequest(new { error = "agentId is required." });
 
-    var agentRecord = store.GetAgent(req.Persona);
+    var agentId = req.AgentId.Trim();
+
+    var agentRecord = store.GetAgent(agentId);
     if (agentRecord is null)
-        return Results.NotFound(new { error = $"Persona '{req.Persona}' not found." });
+        return Results.NotFound(new { error = $"Agent '{agentId}' not found." });
     if (!agentRecord.IsEnabled)
-        return Results.Conflict(new { error = $"Persona '{req.Persona}' is disabled." });
+        return Results.Conflict(new { error = $"Agent '{agentId}' is disabled." });
 
     var sessionId = Guid.NewGuid().ToString("N")[..12];
-    store.CreateSession(sessionId, agentRecord.Filename);
+    store.CreateSession(sessionId, agentRecord.Slug);
 
     // Spin up an agent runner and cache it.
     var runner = CreateRunner(agentRecord);
     await runner.InitializeAsync(ct);
     runners[sessionId] = runner;
 
-    return Results.Ok(new { sessionId, persona = agentRecord.Name });
+    return Results.Ok(new { sessionId, persona = agentRecord.Name, agentId = agentRecord.Slug });
 });
 
 // POST /api/sessions/{id}/messages — non-blocking: enqueue message, return msgId.
@@ -416,9 +477,9 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
     // Get or create runner.
     if (!runners.TryGetValue(id, out var runner))
     {
-        var agentRecord = store.GetAgent(conversation.AgentFile);
+        var agentRecord = store.GetAgent(conversation.AgentSlug);
         if (agentRecord is null)
-            return Results.NotFound(new { error = $"Agent definition '{conversation.AgentFile}' not found." });
+            return Results.NotFound(new { error = $"Agent definition '{conversation.AgentSlug}' not found." });
 
         runner = CreateRunner(agentRecord);
         await runner.InitializeAsync(ct);
@@ -441,18 +502,54 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
     {
         try
         {
+            var assistantIndex = conversation.Messages.Count(message => message.Role == ChatRole.Assistant);
+            var persistedEventLog = new List<StoredEventLogItem>();
+
+            void RecordEvent(AgentEvent evt)
+            {
+                switch (evt)
+                {
+                    case ToolCallEvent toolCall:
+                        persistedEventLog.Add(new StoredEventLogItem(toolCall, null));
+                        break;
+                    case ToolResultEvent toolResult:
+                    {
+                        for (var i = persistedEventLog.Count - 1; i >= 0; i--)
+                        {
+                            var item = persistedEventLog[i];
+                            if (item.Event is ToolCallEvent pendingCall &&
+                                pendingCall.Tool == toolResult.Tool &&
+                                item.Result is null)
+                            {
+                                persistedEventLog[i] = item with { Result = toolResult };
+                                return;
+                            }
+                        }
+
+                        persistedEventLog.Add(new StoredEventLogItem(toolResult, toolResult));
+                        break;
+                    }
+                    case StatusEvent status:
+                        persistedEventLog.Add(new StoredEventLogItem(status, null));
+                        break;
+                    case PermissionRequestEvent permissionRequest:
+                        persistedEventLog.Add(new StoredEventLogItem(permissionRequest, null));
+                        break;
+                }
+            }
+
             // ── Coordinator routing ──────────────────────────────────────
             // If this session uses the coordinator persona, route to a specialist first.
-            if (runner.Persona.Name.Equals("Coordinator", StringComparison.OrdinalIgnoreCase))
+            if (conversation.AgentSlug.Equals(AdeAgentId, StringComparison.OrdinalIgnoreCase))
             {
                 var availableAgents = new Dictionary<string, string>();
                 foreach (var agentRec in store.ListAgents())
                 {
-                    if (agentRec.Filename.Equals("coordinator.agent.md", StringComparison.OrdinalIgnoreCase))
+                    if (agentRec.Slug.Equals(AdeAgentId, StringComparison.OrdinalIgnoreCase))
                         continue;
                     if (!agentRec.IsEnabled)
                         continue;
-                    availableAgents[agentRec.Filename] = agentRec.Name + " — " + agentRec.Description;
+                    availableAgents[agentRec.Slug] = agentRec.Name + " — " + agentRec.Description;
                 }
 
                 var coordinator = new CoordinatorAgent(
@@ -490,9 +587,14 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
             var fullText = new System.Text.StringBuilder();
             await foreach (var evt in runner.StreamAsync(
                 conversation.Messages,
-                eventSink: e => channel.Writer.TryWrite(e),
+                eventSink: e =>
+                {
+                    RecordEvent(e);
+                    channel.Writer.TryWrite(e);
+                },
                 ct: CancellationToken.None))
             {
+                RecordEvent(evt);
                 channel.Writer.TryWrite(evt);
                 if (evt is DoneEvent done)
                     fullText.Append(done.Content);
@@ -504,6 +606,7 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                 var assistantMsg = new ChatMessage(ChatRole.Assistant, fullText.ToString());
                 conversation.AddAssistant(fullText.ToString());
                 store.Append(id, assistantMsg);
+                store.SaveEventLog(id, assistantIndex, persistedEventLog);
             }
         }
         catch (Exception ex)
@@ -587,13 +690,12 @@ app.Run();
 
 // ── Request DTOs ─────────────────────────────────────────────────────────────
 
-record CreateSessionRequest(string? Persona);
+record CreateSessionRequest(string? AgentId);
 record SendMessageRequest(string? Message);
 record PermissionDecision(bool Allow);
 record AgentEnabledRequest(bool IsEnabled);
 record McpEnabledRequest(bool IsEnabled);
 record AgentDefinitionRequest(
-    string? File,
     string? Name,
     string? Description,
     string? Backend,

@@ -27,10 +27,10 @@ public sealed class CoordinatorAgent
     /// </summary>
     /// <param name="userPrompt">The raw user message to classify.</param>
     /// <param name="availableAgents">
-    /// Map of agent filename → short description (loaded from each agent's Name field).
+    /// Map of agent slug → short description (loaded from each agent's Name field).
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A <see cref="RoutingDecision"/> with the chosen agent file and rewritten prompt,
+    /// <returns>A <see cref="RoutingDecision"/> with the chosen agent slug and rewritten prompt,
     /// or nulls if no match was found.</returns>
     public async Task<RoutingDecision> RouteAsync(
         string userPrompt,

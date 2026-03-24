@@ -10,12 +10,12 @@ public sealed class ConversationHistory
     private readonly List<ChatMessage> _messages = [];
 
     public string SessionId { get; }
-    public string AgentFile { get; }
+    public string AgentSlug { get; }
 
-    public ConversationHistory(string sessionId, string agentFile)
+    public ConversationHistory(string sessionId, string agentSlug)
     {
         SessionId = sessionId;
-        AgentFile = agentFile;
+        AgentSlug = agentSlug;
     }
 
     public IReadOnlyList<ChatMessage> Messages => _messages;

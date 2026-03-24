@@ -11,7 +11,7 @@ interface ChatViewProps {
   state: SessionState;
   onSend: (text: string) => void;
   onMenuClick: () => void;
-  onChangePersona: (personaFile: string, personaName: string) => void;
+  onChangePersona: (agentId: string, personaName: string) => void;
 }
 
 /** Derive a two-letter avatar from the persona name */
@@ -149,17 +149,17 @@ export function ChatView({ state, onSend, onMenuClick, onChangePersona }: ChatVi
       <div className="input-bar">
         <select
           className="persona-select"
-          value={state.personaFile}
+          value={state.agentId}
           onChange={event => {
-            const nextPersona = personas.find(persona => persona.file === event.target.value);
-            if (nextPersona) onChangePersona(nextPersona.file, nextPersona.name);
+            const nextPersona = personas.find(persona => persona.id === event.target.value);
+            if (nextPersona) onChangePersona(nextPersona.id, nextPersona.name);
           }}
           disabled={personaLocked}
           aria-label="Choose agent"
           title={personaLocked ? 'Agent is fixed after the first message in a chat.' : 'Choose the agent for this new chat.'}
         >
           {personas.map(persona => (
-            <option key={persona.file} value={persona.file}>
+            <option key={persona.id} value={persona.id}>
               {persona.name}
             </option>
           ))}

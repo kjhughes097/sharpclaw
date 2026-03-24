@@ -21,7 +21,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'mcps'>('chat');
-  const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, send } = useChat();
+  const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, send } = useChat(authed === true);
 
   // Apply theme to <html>
   useEffect(() => {
@@ -70,9 +70,9 @@ export function App() {
     setSidebarOpen(false);
   }, [startSession]);
 
-  const handleChangeDraftPersona = useCallback((personaFile: string, personaName: string) => {
+  const handleChangeDraftPersona = useCallback((agentId: string, personaName: string) => {
     if (activeIdx < 0) return;
-    setDraftPersona(activeIdx, personaFile, personaName);
+    setDraftPersona(activeIdx, agentId, personaName);
   }, [activeIdx, setDraftPersona]);
 
   const handleShowAgents = useCallback(() => {

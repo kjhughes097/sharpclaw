@@ -1,7 +1,7 @@
 /* ── Types shared across the web UI ─────────────────────────────────────────── */
 
 export interface Persona {
-    file: string;
+    id: string;
     name: string;
     description: string;
     backend: string;
@@ -13,7 +13,7 @@ export interface Persona {
 }
 
 export interface AgentDefinition {
-    file: string;
+    id: string;
     name: string;
     description: string;
     backend: string;
@@ -26,7 +26,6 @@ export interface AgentDefinition {
 }
 
 export interface AgentUpsertRequest {
-    file: string;
     name: string;
     description: string;
     backend: string;
@@ -59,6 +58,16 @@ export interface McpUpsertRequest {
 export interface Session {
     sessionId: string;
     persona: string;
+}
+
+export interface PersistedSession {
+    sessionId: string;
+    persona: string;
+    agentId: string;
+    createdAt: string;
+    lastActivityAt: string;
+    messages: ChatMessage[];
+    eventLogs: PersistedStreamItem[][];
 }
 
 export interface ChatMessage {
@@ -120,4 +129,9 @@ export interface StreamItem {
     result?: ToolResultEvent;
     /** For permission_request events, whether user has responded */
     resolved?: boolean;
+}
+
+export interface PersistedStreamItem {
+    event: AgentEvent;
+    result?: ToolResultEvent;
 }

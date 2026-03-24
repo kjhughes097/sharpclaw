@@ -5,7 +5,7 @@ namespace SharpClaw.Core;
 /// property held in its own column rather than as raw markdown content.
 /// </summary>
 public sealed record AgentRecord(
-    string Filename,
+    string Slug,
     string Name,
     string Description,
     string Backend,

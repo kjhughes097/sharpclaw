@@ -1,4 +1,4 @@
-import type { Persona, Session, AgentDefinition, AgentEvent, AgentUpsertRequest, McpDefinition, McpUpsertRequest } from './types';
+import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, McpDefinition, McpUpsertRequest } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -55,32 +55,32 @@ export async function createAgent(agent: AgentUpsertRequest): Promise<AgentDefin
     return res.json();
 }
 
-export async function updateAgent(file: string, agent: AgentUpsertRequest): Promise<AgentDefinition> {
-    const res = await fetch(`${BASE}/agents/${encodeURIComponent(file)}`, {
+export async function updateAgent(id: string, agent: AgentUpsertRequest): Promise<AgentDefinition> {
+    const res = await fetch(`${BASE}/agents/${encodeURIComponent(id)}`, {
         method: 'PUT',
         headers: headers(),
         body: JSON.stringify(agent),
     });
-    if (!res.ok) throw new Error(await readError(res, `PUT /agents/${file}: ${res.status}`));
+    if (!res.ok) throw new Error(await readError(res, `PUT /agents/${id}: ${res.status}`));
     return res.json();
 }
 
-export async function setAgentEnabled(file: string, isEnabled: boolean): Promise<void> {
-    const res = await fetch(`${BASE}/agents/${encodeURIComponent(file)}/enabled`, {
+export async function setAgentEnabled(id: string, isEnabled: boolean): Promise<void> {
+    const res = await fetch(`${BASE}/agents/${encodeURIComponent(id)}/enabled`, {
         method: 'PATCH',
         headers: headers(),
         body: JSON.stringify({ isEnabled }),
     });
-    if (!res.ok) throw new Error(await readError(res, `PATCH /agents/${file}/enabled: ${res.status}`));
+    if (!res.ok) throw new Error(await readError(res, `PATCH /agents/${id}/enabled: ${res.status}`));
 }
 
-export async function deleteAgent(file: string, purgeSessions = false): Promise<{ file: string; deletedSessions: number }> {
+export async function deleteAgent(id: string, purgeSessions = false): Promise<{ id: string; deletedSessions: number }> {
     const suffix = purgeSessions ? '?purgeSessions=true' : '';
-    const res = await fetch(`${BASE}/agents/${encodeURIComponent(file)}${suffix}`, {
+    const res = await fetch(`${BASE}/agents/${encodeURIComponent(id)}${suffix}`, {
         method: 'DELETE',
         headers: headers(),
     });
-    if (!res.ok) throw new Error(await readError(res, `DELETE /agents/${file}: ${res.status}`));
+    if (!res.ok) throw new Error(await readError(res, `DELETE /agents/${id}: ${res.status}`));
     return res.json();
 }
 
@@ -123,13 +123,19 @@ export async function deleteMcp(slug: string, detachAgents = false): Promise<{ s
     return res.json();
 }
 
-export async function createSession(personaFile: string): Promise<Session> {
+export async function createSession(agentId: string): Promise<Session> {
     const res = await fetch(`${BASE}/sessions`, {
         method: 'POST',
         headers: headers(),
-        body: JSON.stringify({ persona: personaFile }),
+        body: JSON.stringify({ agentId }),
     });
     if (!res.ok) throw new Error(`POST /sessions: ${res.status}`);
+    return res.json();
+}
+
+export async function fetchSessions(): Promise<PersistedSession[]> {
+    const res = await fetch(`${BASE}/sessions`, { headers: headers() });
+    if (!res.ok) throw new Error(`GET /sessions: ${res.status}`);
     return res.json();
 }
 
