@@ -7,10 +7,13 @@ namespace SharpClaw.Core;
 public sealed record AgentRecord(
     string Filename,
     string Name,
+    string Description,
     string Backend,
+    string Model,
     IReadOnlyList<string> McpServers,
     IReadOnlyDictionary<string, string> PermissionPolicy,
-    string SystemPrompt)
+    string SystemPrompt,
+    bool IsEnabled)
 {
     /// <summary>
     /// Converts this database record to an <see cref="AgentPersona"/> ready for
@@ -26,6 +29,6 @@ public sealed record AgentRecord(
                 policy[pattern] = perm;
         }
 
-        return new AgentPersona(Name, SystemPrompt, McpServers, policy, Backend);
+        return new AgentPersona(Name, Description, SystemPrompt, McpServers, policy, Backend, Model, IsEnabled);
     }
 }

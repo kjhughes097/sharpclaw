@@ -5,7 +5,10 @@ namespace SharpClaw.Core;
 /// </summary>
 public sealed record AgentPersona(
     string Name,
+    string Description,
     string SystemPrompt,
     IReadOnlyList<string> McpServers,
     IReadOnlyDictionary<string, ToolPermission> PermissionPolicy,
-    string Backend);
+    string Backend,
+    string Model,
+    bool IsEnabled);

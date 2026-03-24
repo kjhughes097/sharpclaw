@@ -1,4 +1,4 @@
-import type { Persona, Session, AgentEvent } from './types';
+import type { Persona, Session, AgentDefinition, AgentEvent, AgentUpsertRequest } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -30,6 +30,51 @@ export async function checkAuth(): Promise<boolean> {
 export async function fetchPersonas(): Promise<Persona[]> {
     const res = await fetch(`${BASE}/personas`, { headers: headers() });
     if (!res.ok) throw new Error(`GET /personas: ${res.status}`);
+    return res.json();
+}
+
+export async function fetchAgents(): Promise<AgentDefinition[]> {
+    const res = await fetch(`${BASE}/agents`, { headers: headers() });
+    if (!res.ok) throw new Error(`GET /agents: ${res.status}`);
+    return res.json();
+}
+
+export async function createAgent(agent: AgentUpsertRequest): Promise<AgentDefinition> {
+    const res = await fetch(`${BASE}/agents`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(agent),
+    });
+    if (!res.ok) throw new Error(await readError(res, `POST /agents: ${res.status}`));
+    return res.json();
+}
+
+export async function updateAgent(file: string, agent: AgentUpsertRequest): Promise<AgentDefinition> {
+    const res = await fetch(`${BASE}/agents/${encodeURIComponent(file)}`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(agent),
+    });
+    if (!res.ok) throw new Error(await readError(res, `PUT /agents/${file}: ${res.status}`));
+    return res.json();
+}
+
+export async function setAgentEnabled(file: string, isEnabled: boolean): Promise<void> {
+    const res = await fetch(`${BASE}/agents/${encodeURIComponent(file)}/enabled`, {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify({ isEnabled }),
+    });
+    if (!res.ok) throw new Error(await readError(res, `PATCH /agents/${file}/enabled: ${res.status}`));
+}
+
+export async function deleteAgent(file: string, purgeSessions = false): Promise<{ file: string; deletedSessions: number }> {
+    const suffix = purgeSessions ? '?purgeSessions=true' : '';
+    const res = await fetch(`${BASE}/agents/${encodeURIComponent(file)}${suffix}`, {
+        method: 'DELETE',
+        headers: headers(),
+    });
+    if (!res.ok) throw new Error(await readError(res, `DELETE /agents/${file}: ${res.status}`));
     return res.json();
 }
 
@@ -101,4 +146,13 @@ export async function resolvePermission(
         body: JSON.stringify({ allow }),
     });
     if (!res.ok) throw new Error(`POST permissions: ${res.status}`);
+}
+
+async function readError(res: Response, fallback: string): Promise<string> {
+    try {
+        const body = await res.json() as { error?: string };
+        return body.error ?? fallback;
+    } catch {
+        return fallback;
+    }
 }

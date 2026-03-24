@@ -33,16 +33,16 @@ var messageStreams = new ConcurrentDictionary<string, Channel<AgentEvent>>();
 
 // ── Backend factory (resolves "anthropic" and "copilot") ─────────────────────
 
-IAgentBackend CreateBackend(string backend, PermissionGate gate) => backend switch
+IAgentBackend CreateBackend(AgentPersona persona, PermissionGate gate) => persona.Backend switch
 {
     "anthropic" => new AnthropicBackend(new AnthropicClient(new ClientOptions
     {
         ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
             ?? throw new InvalidOperationException("ANTHROPIC_API_KEY is not set."),
-    })),
+    }), string.IsNullOrWhiteSpace(persona.Model) ? "claude-haiku-4-5-20251001" : persona.Model),
     "copilot" => new CopilotBackend(gate,
         Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE") ?? Environment.CurrentDirectory),
-    _ => throw new InvalidOperationException($"Unknown backend '{backend}'."),
+    _ => throw new InvalidOperationException($"Unknown backend '{persona.Backend}'."),
 };
 
 // ── API key middleware (only applies to /api/* routes) ────────────────────────
@@ -98,6 +98,66 @@ if (Directory.Exists(wwwroot))
 
 var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
+object ToPersonaDto(AgentRecord agent) => new
+{
+    file = agent.Filename,
+    name = agent.Name,
+    description = agent.Description,
+    backend = agent.Backend,
+    model = agent.Model,
+    mcpServers = agent.McpServers,
+    permissionPolicy = agent.PermissionPolicy,
+    systemPrompt = agent.SystemPrompt,
+    isEnabled = agent.IsEnabled,
+};
+
+object ToAgentDto(AgentRecord agent, int sessionCount) => new
+{
+    file = agent.Filename,
+    name = agent.Name,
+    description = agent.Description,
+    backend = agent.Backend,
+    model = agent.Model,
+    mcpServers = agent.McpServers,
+    permissionPolicy = agent.PermissionPolicy,
+    systemPrompt = agent.SystemPrompt,
+    isEnabled = agent.IsEnabled,
+    sessionCount,
+};
+
+IResult? ValidateAgentRequest(AgentDefinitionRequest req, bool creating)
+{
+    if (creating && string.IsNullOrWhiteSpace(req.File))
+        return Results.BadRequest(new { error = "file is required." });
+    if (string.IsNullOrWhiteSpace(req.Name))
+        return Results.BadRequest(new { error = "name is required." });
+    if (string.IsNullOrWhiteSpace(req.Description))
+        return Results.BadRequest(new { error = "description is required." });
+    if (string.IsNullOrWhiteSpace(req.Backend))
+        return Results.BadRequest(new { error = "backend is required." });
+    if (string.IsNullOrWhiteSpace(req.SystemPrompt))
+        return Results.BadRequest(new { error = "systemPrompt is required." });
+
+    var backend = req.Backend.Trim().ToLowerInvariant();
+    if (backend is not ("anthropic" or "copilot"))
+        return Results.BadRequest(new { error = "backend must be either 'anthropic' or 'copilot'." });
+
+    return null;
+}
+
+AgentRecord ToAgentRecord(AgentDefinitionRequest req, string? filenameOverride = null) => new(
+    Filename: filenameOverride ?? req.File!.Trim(),
+    Name: req.Name!.Trim(),
+    Description: req.Description!.Trim(),
+    Backend: req.Backend!.Trim().ToLowerInvariant(),
+    Model: req.Model?.Trim() ?? string.Empty,
+    McpServers: (req.McpServers ?? []).Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+    PermissionPolicy: (req.PermissionPolicy ?? new Dictionary<string, string>())
+        .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
+        .ToDictionary(kvp => kvp.Key.Trim(), kvp => kvp.Value.Trim(), StringComparer.OrdinalIgnoreCase),
+    SystemPrompt: req.SystemPrompt!.Trim(),
+    IsEnabled: req.IsEnabled ?? true);
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "SharpClaw" }));
@@ -105,17 +165,95 @@ app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "Sharp
 // GET /api/personas — list available agent definitions from the database.
 app.MapGet("/api/personas", () =>
 {
-    var agents = store.ListAgents();
-    var personas = agents.Select(a => new
-    {
-        file = a.Filename,
-        name = a.Name,
-        backend = a.Backend,
-        mcpServers = a.McpServers,
-    })
+    var personas = store.ListAgents(includeDisabled: false)
+        .Select(ToPersonaDto)
         .ToList();
 
     return Results.Ok(personas);
+});
+
+app.MapGet("/api/agents", () =>
+{
+    var sessionCounts = store.GetSessionCountsByAgent();
+    return Results.Ok(store.ListAgents().Select(agent =>
+        ToAgentDto(agent, sessionCounts.GetValueOrDefault(agent.Filename, 0))).ToList());
+});
+
+app.MapPost("/api/agents", (AgentDefinitionRequest req) =>
+{
+    var validation = ValidateAgentRequest(req, creating: true);
+    if (validation is not null)
+        return validation;
+
+    var filename = req.File!.Trim();
+    if (store.GetAgent(filename) is not null)
+        return Results.Conflict(new { error = $"Agent '{filename}' already exists." });
+
+    var agent = ToAgentRecord(req);
+    store.CreateAgent(agent);
+
+    return Results.Created($"/api/agents/{Uri.EscapeDataString(agent.Filename)}", ToAgentDto(agent, 0));
+});
+
+app.MapPut("/api/agents/{filename}", (string filename, AgentDefinitionRequest req) =>
+{
+    var validation = ValidateAgentRequest(req, creating: false);
+    if (validation is not null)
+        return validation;
+
+    if (!string.IsNullOrWhiteSpace(req.File) &&
+        !string.Equals(req.File.Trim(), filename, StringComparison.OrdinalIgnoreCase))
+    {
+        return Results.BadRequest(new { error = "Renaming an existing agent file is not supported." });
+    }
+
+    var updated = ToAgentRecord(req, filename);
+    return store.UpdateAgent(filename, updated)
+        ? Results.Ok(ToAgentDto(updated, store.CountSessionsForAgent(filename)))
+        : Results.NotFound(new { error = $"Agent '{filename}' not found." });
+});
+
+app.MapPatch("/api/agents/{filename}/enabled", (string filename, AgentEnabledRequest req) =>
+{
+    return store.SetAgentEnabled(filename, req.IsEnabled)
+        ? Results.Ok(new { file = filename, isEnabled = req.IsEnabled })
+        : Results.NotFound(new { error = $"Agent '{filename}' not found." });
+});
+
+app.MapDelete("/api/agents/{filename}", async (string filename, bool? purgeSessions) =>
+{
+    var agent = store.GetAgent(filename);
+    if (agent is null)
+        return Results.NotFound(new { error = $"Agent '{filename}' not found." });
+
+    var linkedSessionCount = store.CountSessionsForAgent(filename);
+    if (linkedSessionCount > 0 && purgeSessions != true)
+    {
+        return Results.Conflict(new
+        {
+            error = $"Agent '{filename}' has {linkedSessionCount} linked session(s). Re-run delete with purgeSessions=true to delete those sessions first.",
+            linkedSessionCount,
+            requiresSessionPurge = true,
+        });
+    }
+
+    if (linkedSessionCount > 0)
+    {
+        var sessionIds = store.ListSessionIdsForAgent(filename);
+        store.PurgeSessionsForAgent(filename);
+        foreach (var sessionId in sessionIds)
+        {
+            if (runners.TryRemove(sessionId, out var runner))
+                await runner.DisposeAsync();
+
+            foreach (var streamKey in messageStreams.Keys.Where(key => key.StartsWith($"{sessionId}/", StringComparison.Ordinal)).ToList())
+                messageStreams.TryRemove(streamKey, out _);
+        }
+    }
+
+    return store.DeleteAgent(filename)
+        ? Results.Ok(new { file = filename, deletedSessions = linkedSessionCount })
+        : Results.NotFound(new { error = $"Agent '{filename}' not found." });
 });
 
 // POST /api/sessions — create a session, return its ID.
@@ -127,6 +265,8 @@ app.MapPost("/api/sessions", async (CreateSessionRequest req, CancellationToken 
     var agentRecord = store.GetAgent(req.Persona);
     if (agentRecord is null)
         return Results.NotFound(new { error = $"Persona '{req.Persona}' not found." });
+    if (!agentRecord.IsEnabled)
+        return Results.Conflict(new { error = $"Persona '{req.Persona}' is disabled." });
 
     var sessionId = Guid.NewGuid().ToString("N")[..12];
     var persona = agentRecord.ToPersona();
@@ -190,7 +330,9 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                 {
                     if (agentRec.Filename.Equals("coordinator.agent.md", StringComparison.OrdinalIgnoreCase))
                         continue;
-                    availableAgents[agentRec.Filename] = agentRec.Name + " — " + agentRec.SystemPrompt.Split('\n')[0];
+                    if (!agentRec.IsEnabled)
+                        continue;
+                    availableAgents[agentRec.Filename] = agentRec.Name + " — " + agentRec.Description;
                 }
 
                 var coordinator = new CoordinatorAgent(
@@ -329,3 +471,14 @@ app.Run();
 record CreateSessionRequest(string? Persona);
 record SendMessageRequest(string? Message);
 record PermissionDecision(bool Allow);
+record AgentEnabledRequest(bool IsEnabled);
+record AgentDefinitionRequest(
+    string? File,
+    string? Name,
+    string? Description,
+    string? Backend,
+    string? Model,
+    List<string>? McpServers,
+    Dictionary<string, string>? PermissionPolicy,
+    string? SystemPrompt,
+    bool? IsEnabled);

@@ -55,6 +55,7 @@ CodeCoverage/
 TestResult.xml
 
 # Web UI
-node_modules/
+**/node_modules/
+**/dist/
 SharpClaw.Api/wwwroot/
 nunit-*.xml

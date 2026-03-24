@@ -3,8 +3,38 @@
 export interface Persona {
     file: string;
     name: string;
+    description: string;
     backend: string;
+    model: string;
     mcpServers: string[];
+    permissionPolicy: Record<string, string>;
+    systemPrompt: string;
+    isEnabled: boolean;
+}
+
+export interface AgentDefinition {
+    file: string;
+    name: string;
+    description: string;
+    backend: string;
+    model: string;
+    mcpServers: string[];
+    permissionPolicy: Record<string, string>;
+    systemPrompt: string;
+    isEnabled: boolean;
+    sessionCount: number;
+}
+
+export interface AgentUpsertRequest {
+    file: string;
+    name: string;
+    description: string;
+    backend: string;
+    model: string;
+    mcpServers: string[];
+    permissionPolicy: Record<string, string>;
+    systemPrompt: string;
+    isEnabled: boolean;
 }
 
 export interface Session {

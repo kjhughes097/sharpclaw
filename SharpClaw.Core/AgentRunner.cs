@@ -11,7 +11,7 @@ namespace SharpClaw.Core;
 public sealed class AgentRunner : IAsyncDisposable
 {
     private readonly AgentPersona _persona;
-    private readonly Func<string, PermissionGate, IAgentBackend>? _backendFactory;
+    private readonly Func<AgentPersona, PermissionGate, IAgentBackend>? _backendFactory;
     private readonly List<McpClient> _mcpClients = [];
     private readonly List<ToolSchema> _toolSchemas = [];
     private readonly Dictionary<string, McpClient> _toolClientMap = [];
@@ -20,7 +20,7 @@ public sealed class AgentRunner : IAsyncDisposable
     private IAgentBackend? _backend;
     private bool _initialized;
 
-    public AgentRunner(AgentPersona persona, Func<string, PermissionGate, IAgentBackend>? backendFactory = null)
+    public AgentRunner(AgentPersona persona, Func<AgentPersona, PermissionGate, IAgentBackend>? backendFactory = null)
     {
         _persona = persona;
         _backendFactory = backendFactory;
@@ -151,24 +151,24 @@ public sealed class AgentRunner : IAsyncDisposable
     private IAgentBackend CreateBackend(AgentPersona persona, PermissionGate permissionGate)
     {
         if (_backendFactory is not null)
-            return _backendFactory(persona.Backend, permissionGate);
+            return _backendFactory(persona, permissionGate);
 
         return persona.Backend switch
         {
-            "anthropic" => CreateAnthropicBackend(),
+            "anthropic" => CreateAnthropicBackend(persona.Model),
             _ => throw new InvalidOperationException(
                 $"Unknown backend '{persona.Backend}'. Register a backendFactory to support it."),
         };
     }
 
-    private static AnthropicBackend CreateAnthropicBackend()
+    private static AnthropicBackend CreateAnthropicBackend(string model)
     {
         var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("ANTHROPIC_API_KEY environment variable is not set.");
 
         var anthropic = new AnthropicClient(new Anthropic.Core.ClientOptions { ApiKey = apiKey });
-        return new AnthropicBackend(anthropic);
+        return new AnthropicBackend(anthropic, string.IsNullOrWhiteSpace(model) ? "claude-haiku-4-5-20251001" : model);
     }
 
     public async ValueTask DisposeAsync()

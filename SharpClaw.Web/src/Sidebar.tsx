@@ -7,19 +7,22 @@ interface SidebarProps {
   activeIdx: number;
   onSelect: (idx: number) => void;
   onNewSession: (personaFile: string) => void;
+  onShowAgents: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
+  currentView: 'chat' | 'agents';
 }
 
-export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, theme, onToggleTheme, isOpen, onClose }: SidebarProps) {
+export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, onShowAgents, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
   const [showModal, setShowModal] = useState(false);
   const [personas, setPersonas] = useState<Persona[]>([]);
 
   useEffect(() => {
+    if (!showModal) return;
     fetchPersonas().then(setPersonas).catch(console.error);
-  }, []);
+  }, [showModal]);
 
   return (
     <aside className={`sidebar${isOpen ? ' open' : ''}`}>
@@ -41,11 +44,12 @@ export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, theme, on
       <button className="new-session-btn" onClick={() => setShowModal(true)}>
         + New Chat
       </button>
+      <div className="sidebar-section-label">Chats</div>
       <div className="session-list">
         {sessions.map((s, i) => (
           <div
             key={s.session.sessionId}
-            className={`session-item ${i === activeIdx ? 'active' : ''}`}
+            className={`session-item ${currentView === 'chat' && i === activeIdx ? 'active' : ''}`}
             onClick={() => onSelect(i)}
           >
             <span>{s.session.persona}</span>
@@ -54,6 +58,16 @@ export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, theme, on
             </span>
           </div>
         ))}
+      </div>
+
+      <div className="sidebar-section-label">Configure</div>
+      <div className="sidebar-nav-list">
+        <button
+          className={`sidebar-nav-item ${currentView === 'agents' ? 'active' : ''}`}
+          onClick={onShowAgents}
+        >
+          Agents
+        </button>
       </div>
 
       {showModal && (
@@ -71,8 +85,9 @@ export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, theme, on
               >
                 <div className="name">{p.name}</div>
                 <div className="meta">
-                  {p.backend} · {p.mcpServers.length} tool server{p.mcpServers.length !== 1 ? 's' : ''}
+                  {p.backend} · {p.model || 'default model'} · {p.mcpServers.length} tool server{p.mcpServers.length !== 1 ? 's' : ''}
                 </div>
+                <div className="meta">{p.description}</div>
               </div>
             ))}
             {personas.length === 0 && (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { AgentConfigView } from './AgentConfigView';
 import { Sidebar } from './Sidebar';
 import { ChatView } from './ChatView';
 import { LoginScreen } from './LoginScreen';
@@ -18,6 +19,7 @@ export function App() {
   const [loginError, setLoginError] = useState<string>();
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentView, setCurrentView] = useState<'chat' | 'agents'>('chat');
   const { sessions, active, activeIdx, startSession, selectSession, send } = useChat();
 
   // Apply theme to <html>
@@ -56,9 +58,21 @@ export function App() {
   }, []);
 
   const handleSelectSession = useCallback((idx: number) => {
+    setCurrentView('chat');
     selectSession(idx);
     setSidebarOpen(false);
   }, [selectSession]);
+
+  const handleNewSession = useCallback(async (personaFile: string) => {
+    await startSession(personaFile);
+    setCurrentView('chat');
+    setSidebarOpen(false);
+  }, [startSession]);
+
+  const handleShowAgents = useCallback(() => {
+    setCurrentView('agents');
+    setSidebarOpen(false);
+  }, []);
 
   // Loading check
   if (authed === null) return null;
@@ -74,13 +88,17 @@ export function App() {
         sessions={sessions}
         activeIdx={activeIdx}
         onSelect={handleSelectSession}
-        onNewSession={startSession}
+        onNewSession={handleNewSession}
+        onShowAgents={handleShowAgents}
         theme={theme}
         onToggleTheme={toggleTheme}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
+        currentView={currentView}
       />
-      {active ? (
+      {currentView === 'agents' ? (
+        <AgentConfigView onMenuClick={() => setSidebarOpen(true)} />
+      ) : active ? (
         <ChatView state={active} onSend={send} onMenuClick={() => setSidebarOpen(true)} />
       ) : (
         <div className="chat-area">
