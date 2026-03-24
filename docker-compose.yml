@@ -6,10 +6,12 @@ services:
     volumes:
       - ./agents:/personas:ro
       - sharpclaw-data:/root/.local/share/sharpclaw
+      - ${SHARPCLAW_DATA_DIR:-.}:/data:ro
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
       - PersonasDir=/personas
+      - MCP_ALLOWED_DIRS=/data
 
 volumes:
   sharpclaw-data:

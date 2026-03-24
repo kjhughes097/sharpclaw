@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Threading.Channels;
+using Anthropic;
+using Anthropic.Core;
+using Microsoft.Extensions.FileProviders;
 using SharpClaw.Core;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -30,12 +33,20 @@ var runners = new ConcurrentDictionary<string, AgentRunner>();
 
 var messageStreams = new ConcurrentDictionary<string, Channel<AgentEvent>>();
 
-// ── API key middleware ────────────────────────────────────────────────────────
+// ── API key middleware (only applies to /api/* routes) ────────────────────────
 
 app.Use(async (context, next) =>
 {
-    // Skip auth for health check.
-    if (context.Request.Path.Equals("/", StringComparison.Ordinal))
+    if (!context.Request.Path.StartsWithSegments("/api"))
+    {
+        await next();
+        return;
+    }
+
+    // SSE stream uses EventSource which can't set custom headers — skip auth.
+    // Security: requires knowing a valid sessionId + messageId (short-lived).
+    if (context.Request.Path.Value?.EndsWith("/stream") == true &&
+        context.Request.Method == "GET")
     {
         await next();
         return;
@@ -58,16 +69,29 @@ app.Use(async (context, next) =>
     await next();
 });
 
+// ── Static files (SPA) ──────────────────────────────────────────────────────
+
+// Look in content root first (dev), then publish dir (production).
+var wwwroot = Path.Combine(builder.Environment.ContentRootPath, "wwwroot");
+if (!Directory.Exists(wwwroot))
+    wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
+if (Directory.Exists(wwwroot))
+{
+    var fileProvider = new PhysicalFileProvider(wwwroot);
+    app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+}
+
 // ── JSON serializer options ──────────────────────────────────────────────────
 
 var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
-app.MapGet("/", () => Results.Ok(new { status = "ok", service = "SharpClaw" }));
+app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "SharpClaw" }));
 
-// GET /personas — list available agent files.
-app.MapGet("/personas", () =>
+// GET /api/personas — list available agent files.
+app.MapGet("/api/personas", () =>
 {
     if (!Directory.Exists(personasDir))
         return Results.Ok(Array.Empty<object>());
@@ -89,8 +113,8 @@ app.MapGet("/personas", () =>
     return Results.Ok(personas);
 });
 
-// POST /sessions — create a session, return its ID.
-app.MapPost("/sessions", async (CreateSessionRequest req, CancellationToken ct) =>
+// POST /api/sessions — create a session, return its ID.
+app.MapPost("/api/sessions", async (CreateSessionRequest req, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.Persona))
         return Results.BadRequest(new { error = "persona is required." });
@@ -112,8 +136,8 @@ app.MapPost("/sessions", async (CreateSessionRequest req, CancellationToken ct) 
     return Results.Ok(new { sessionId, persona = persona.Name });
 });
 
-// POST /sessions/{id}/messages — non-blocking: enqueue message, return msgId.
-app.MapPost("/sessions/{id}/messages", async (string id, SendMessageRequest req, CancellationToken ct) =>
+// POST /api/sessions/{id}/messages — non-blocking: enqueue message, return msgId.
+app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest req, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(req.Message))
         return Results.BadRequest(new { error = "message is required." });
@@ -148,6 +172,53 @@ app.MapPost("/sessions/{id}/messages", async (string id, SendMessageRequest req,
     {
         try
         {
+            // ── Coordinator routing ──────────────────────────────────────
+            // If this session uses the coordinator persona, route to a specialist first.
+            if (runner.Persona.Name.Equals("Coordinator", StringComparison.OrdinalIgnoreCase))
+            {
+                var availableAgents = new Dictionary<string, string>();
+                foreach (var file in Directory.GetFiles(personasDir, "*.agent.md"))
+                {
+                    var filename = Path.GetFileName(file);
+                    if (filename.Equals("coordinator.agent.md", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    var agent = AgentPersonaLoader.Load(file);
+                    availableAgents[filename] = agent.Name + " — " + agent.SystemPrompt.Split('\n')[0];
+                }
+
+                var coordinator = new CoordinatorAgent(
+                    new AnthropicBackend(new Anthropic.AnthropicClient(
+                        new Anthropic.Core.ClientOptions
+                        {
+                            ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!
+                        })),
+                    runner.Persona);
+
+                var decision = await coordinator.RouteAsync(req.Message, availableAgents);
+
+                if (decision.Agent is not null)
+                {
+                    var specialistFile = Path.Combine(personasDir, decision.Agent);
+                    if (File.Exists(specialistFile))
+                    {
+                        var specialistPersona = AgentPersonaLoader.Load(specialistFile);
+                        var specialistRunner = new AgentRunner(specialistPersona);
+                        await specialistRunner.InitializeAsync(CancellationToken.None);
+
+                        // Replace the coordinator runner with the specialist for this session.
+                        await runner.DisposeAsync();
+                        runner = specialistRunner;
+                        runners[id] = runner;
+
+                        // Use the rewritten prompt if available.
+                        if (decision.RewrittenPrompt is not null)
+                        {
+                            conversation.ReplaceLastUser(decision.RewrittenPrompt);
+                        }
+                    }
+                }
+            }
+
             var fullText = new System.Text.StringBuilder();
             await foreach (var evt in runner.StreamAsync(
                 conversation.Messages,
@@ -180,8 +251,8 @@ app.MapPost("/sessions/{id}/messages", async (string id, SendMessageRequest req,
     return Results.Ok(new { sessionId = id, messageId = msgId });
 });
 
-// GET /sessions/{id}/messages/{msgId}/stream — SSE stream of AgentEvents.
-app.MapGet("/sessions/{id}/messages/{msgId}/stream", async (string id, string msgId, HttpContext httpContext) =>
+// GET /api/sessions/{id}/messages/{msgId}/stream — SSE stream of AgentEvents.
+app.MapGet("/api/sessions/{id}/messages/{msgId}/stream", async (string id, string msgId, HttpContext httpContext) =>
 {
     var streamKey = $"{id}/{msgId}";
     if (!messageStreams.TryGetValue(streamKey, out var channel))
@@ -212,8 +283,8 @@ app.MapGet("/sessions/{id}/messages/{msgId}/stream", async (string id, string ms
     }
 });
 
-// POST /sessions/{id}/permissions/{requestId} — resolve a pending permission request.
-app.MapPost("/sessions/{id}/permissions/{requestId}", (string id, string requestId, PermissionDecision decision) =>
+// POST /api/sessions/{id}/permissions/{requestId} — resolve a pending permission request.
+app.MapPost("/api/sessions/{id}/permissions/{requestId}", (string id, string requestId, PermissionDecision decision) =>
 {
     if (!runners.TryGetValue(id, out var runner))
         return Results.NotFound(new { error = $"Session '{id}' not found." });
@@ -227,6 +298,21 @@ app.MapPost("/sessions/{id}/permissions/{requestId}", (string id, string request
         return Results.NotFound(new { error = $"No pending permission request '{requestId}'." });
 
     return Results.Ok(new { requestId, allowed = decision.Allow });
+});
+
+// ── SPA fallback: serve index.html for non-API, non-file routes ──────────────
+app.MapFallback(async context =>
+{
+    var indexPath = Path.Combine(wwwroot, "index.html");
+    if (File.Exists(indexPath))
+    {
+        context.Response.ContentType = "text/html";
+        await context.Response.SendFileAsync(indexPath);
+    }
+    else
+    {
+        context.Response.StatusCode = 404;
+    }
 });
 
 app.Run();

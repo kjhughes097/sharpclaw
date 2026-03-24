@@ -13,6 +13,15 @@ RUN dotnet restore SharpClaw.Api/SharpClaw.Api.csproj
 COPY . .
 RUN dotnet publish SharpClaw.Api/SharpClaw.Api.csproj -c Release -o /app --no-restore
 
+# ── Build the web UI ─────────────────────────────────────────────────────────
+FROM node:20-slim AS webui
+WORKDIR /web
+COPY SharpClaw.Web/package.json SharpClaw.Web/package-lock.json* ./
+RUN npm ci
+COPY SharpClaw.Web/ .
+ENV VITE_OUT_DIR=/webout
+RUN npm run build
+
 # ── Runtime image ─────────────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
@@ -21,6 +30,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app .
+COPY --from=webui /webout ./wwwroot/
 
 # Default personas directory — mount your own at runtime.
 RUN mkdir -p /personas

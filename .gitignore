@@ -53,4 +53,8 @@ CodeCoverage/
 # NUnit
 *.VisualState.xml
 TestResult.xml
+
+# Web UI
+node_modules/
+SharpClaw.Api/wwwroot/
 nunit-*.xml

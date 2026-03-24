@@ -30,6 +30,18 @@ public sealed class ConversationHistory
     public void AddRange(IEnumerable<ChatMessage> messages) =>
         _messages.AddRange(messages);
 
+    public void ReplaceLastUser(string content)
+    {
+        for (var i = _messages.Count - 1; i >= 0; i--)
+        {
+            if (_messages[i].Role == ChatRole.User)
+            {
+                _messages[i] = new ChatMessage(ChatRole.User, content);
+                return;
+            }
+        }
+    }
+
     /// <summary>
     /// Replaces the in-memory messages with a truncated set.
     /// </summary>
