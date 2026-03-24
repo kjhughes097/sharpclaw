@@ -8,6 +8,7 @@ import { PermissionCard } from './PermissionCard';
 interface ChatViewProps {
   state: SessionState;
   onSend: (text: string) => void;
+  onMenuClick: () => void;
 }
 
 /** Derive a two-letter avatar from the persona name */
@@ -17,7 +18,7 @@ function avatarInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export function ChatView({ state, onSend }: ChatViewProps) {
+export function ChatView({ state, onSend, onMenuClick }: ChatViewProps) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -61,6 +62,7 @@ export function ChatView({ state, onSend }: ChatViewProps) {
   return (
     <div className="chat-area">
       <div className="chat-header">
+        <button className="menu-btn" onClick={onMenuClick} aria-label="Open menu">☰</button>
         <div className="avatar">{initials}</div>
         <span>{state.session.persona}</span>
       </div>
