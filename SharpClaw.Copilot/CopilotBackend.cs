@@ -52,9 +52,10 @@ public sealed class CopilotBackend : IAgentBackend
             OnPermissionRequest = CreatePermissionHandler(),
             SystemMessage = new SystemMessageConfig
             {
-                Mode = SystemMessageMode.Replace,
+                Mode = SystemMessageMode.Append,
                 Content = systemPrompt,
             },
+            AvailableTools = new List<string>(),
             Tools = aiFunctions,
             WorkingDirectory = _workingDirectory,
         }, cancellationToken);
@@ -97,7 +98,7 @@ public sealed class CopilotBackend : IAgentBackend
             {
                 Kind = allowed
                     ? PermissionRequestResultKind.Approved
-                    : PermissionRequestResultKind.DeniedByRules,
+                        : PermissionRequestResultKind.DeniedCouldNotRequestFromUser,
             });
         };
     }
@@ -161,11 +162,13 @@ public sealed class CopilotBackend : IAgentBackend
         var session = await _client.CreateSessionAsync(new SessionConfig
         {
             OnPermissionRequest = CreatePermissionHandler(),
+            Streaming = true,
             SystemMessage = new SystemMessageConfig
             {
-                Mode = SystemMessageMode.Replace,
+                Mode = SystemMessageMode.Append,
                 Content = systemPrompt,
             },
+            AvailableTools = new List<string>(),
             Tools = aiFunctions,
             WorkingDirectory = _workingDirectory,
         }, cancellationToken);
@@ -299,12 +302,18 @@ public sealed class CopilotBackend : IAgentBackend
         }
     }
 
-    private static CopilotClient CreateClient()
+    private CopilotClient CreateClient()
     {
         var opts = new CopilotClientOptions();
 
-        // Try explicit env var first, then extract from gh CLI (handles keyring-backed auth).
-        var token = Environment.GetEnvironmentVariable("GITHUB_COPILOT_TOKEN");
+        if (!string.IsNullOrEmpty(_workingDirectory))
+            opts.Cwd = _workingDirectory;
+
+        // Match the SDK docs first, then fall back to the project-specific variable,
+        // then extract from gh CLI (handles keyring-backed auth).
+        var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+        if (string.IsNullOrEmpty(token))
+            token = Environment.GetEnvironmentVariable("GITHUB_COPILOT_TOKEN");
         if (string.IsNullOrEmpty(token))
             token = TryGetGhToken();
 
@@ -338,7 +347,6 @@ public sealed class CopilotBackend : IAgentBackend
 }
 
 /// <summary>
-/// An <see cref="AIFunction"/> that delegates execution to an external tool dispatcher.
 /// The Copilot SDK calls <see cref="InvokeCoreAsync"/> when the model requests a tool call;
 /// we forward it through the SharpClaw permission gate / MCP routing layer.
 /// </summary>
