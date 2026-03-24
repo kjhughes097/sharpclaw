@@ -513,7 +513,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
             </div>
 
             <label>
-              <span>System Prompt</span>
+              <span>Soul</span>
               <textarea
                 value={form.systemPrompt}
                 onChange={event => setForm(prev => ({ ...prev, systemPrompt: event.target.value }))}
