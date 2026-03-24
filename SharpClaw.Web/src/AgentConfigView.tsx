@@ -663,6 +663,16 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
               />
             </label>
 
+            <label>
+              <span>Soul</span>
+              <textarea
+                value={form.systemPrompt}
+                onChange={event => setForm(prev => ({ ...prev, systemPrompt: event.target.value }))}
+                rows={12}
+                placeholder="You are a software development assistant..."
+              />
+            </label>
+
             <div className="mcp-selection-panel">
               <div className="agent-permissions-header">
                 <div>
@@ -781,16 +791,6 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                 ))}
               </div>
             </div>
-
-            <label>
-              <span>Soul</span>
-              <textarea
-                value={form.systemPrompt}
-                onChange={event => setForm(prev => ({ ...prev, systemPrompt: event.target.value }))}
-                rows={12}
-                placeholder="You are a software development assistant..."
-              />
-            </label>
 
             <div className="agent-form-actions">
               <button type="submit" className="send-btn" disabled={saving}>{saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Create Agent'}</button>
