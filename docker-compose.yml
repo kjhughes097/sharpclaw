@@ -16,8 +16,6 @@ services:
 
   sharpclaw:
     build: .
-    ports:
-      - "8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,6 +26,13 @@ services:
       - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=sharpclaw;Username=sharpclaw;Password=sharpclaw
       - MCP_ALLOWED_DIRS=/data
+
+  web:
+    build: SharpClaw.Web
+    ports:
+      - "8080:80"
+    depends_on:
+      - sharpclaw
 
 volumes:
   postgres-data:
