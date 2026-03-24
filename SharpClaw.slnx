@@ -3,4 +3,5 @@
   <Project Path="SharpClaw.Cli/SharpClaw.Cli.csproj" />
   <Project Path="SharpClaw.Copilot/SharpClaw.Copilot.csproj" />
   <Project Path="SharpClaw.Core/SharpClaw.Core.csproj" />
+  <Project Path="SharpClaw.RebuildHook/SharpClaw.RebuildHook.csproj" />
 </Solution>
