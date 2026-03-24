@@ -5,7 +5,7 @@ using SharpClaw.Core;
 
 // ── Parse CLI arguments ──────────────────────────────────────────────────────
 
-string? explicitAgentFile = null;
+string? explicitAgentFilename = null;
 string? sessionId = null;
 string? userPrompt = null;
 
@@ -23,10 +23,10 @@ for (var i = 0; i < args.Length; i++)
 }
 
 if (positional.Count >= 1 &&
-    positional[0].EndsWith(".agent.md", StringComparison.OrdinalIgnoreCase) &&
-    File.Exists(positional[0]))
+    positional[0].EndsWith(".agent.md", StringComparison.OrdinalIgnoreCase))
 {
-    explicitAgentFile = positional[0];
+    // Accept either a bare filename ("developer.agent.md") or a full path.
+    explicitAgentFilename = Path.GetFileName(positional[0]);
     if (positional.Count >= 2)
         userPrompt = positional[1];
 }
@@ -37,27 +37,19 @@ else if (positional.Count >= 1)
 
 if (userPrompt is null && sessionId is null)
 {
-    Console.Error.WriteLine("Usage: SharpClaw.Cli [path-to-agent.md] [--session <id>] <user-prompt>");
+    Console.Error.WriteLine("Usage: SharpClaw.Cli [agent-filename.agent.md] [--session <id>] <user-prompt>");
     Console.Error.WriteLine("  --session <id>  Resume or start a named conversation.");
     Console.Error.WriteLine("  Omit the agent file to let the coordinator route automatically.");
     Console.Error.WriteLine("  Omit the prompt to enter interactive (REPL) mode.");
     return 1;
 }
 
-// ── Resolve the agents directory ─────────────────────────────────────────────
+// ── Session store (PostgreSQL) ───────────────────────────────────────────────
 
-var agentsDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "agents");
-agentsDir = Path.GetFullPath(agentsDir);
-if (!Directory.Exists(agentsDir))
-    agentsDir = Path.GetFullPath("agents");
+var connectionString = Environment.GetEnvironmentVariable("SHARPCLAW_DB_CONNECTION")
+    ?? "Host=localhost;Database=sharpclaw;Username=sharpclaw;Password=sharpclaw";
 
-// ── Session store ────────────────────────────────────────────────────────────
-
-var dbPath = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "sharpclaw", "sessions.db");
-Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-using var store = new SessionStore(dbPath);
+using var store = new SessionStore(connectionString);
 
 // ── Resume an existing session? ──────────────────────────────────────────────
 
@@ -69,13 +61,13 @@ if (sessionId is not null)
     if (conversation is not null)
     {
         Console.WriteLine($"Resumed session '{sessionId}' ({conversation.Count} messages)");
-        explicitAgentFile = conversation.AgentFile;
+        explicitAgentFilename = conversation.AgentFile;
     }
 }
 
 // ── Coordinator routing (when no explicit agent is specified) ─────────────────
 
-if (explicitAgentFile is null)
+if (explicitAgentFilename is null)
 {
     // Need a prompt to route — in REPL mode with no session, ask for one.
     var routingPrompt = userPrompt;
@@ -88,28 +80,26 @@ if (explicitAgentFile is null)
         userPrompt = routingPrompt;
     }
 
-    var coordinatorFile = Path.Combine(agentsDir, "coordinator.agent.md");
-    if (!File.Exists(coordinatorFile))
+    var coordinatorRecord = store.GetAgent("coordinator.agent.md");
+    if (coordinatorRecord is null)
     {
-        Console.Error.WriteLine($"Error: Coordinator agent not found at {coordinatorFile}");
+        Console.Error.WriteLine("Error: Coordinator agent not found in database.");
         return 1;
     }
 
     var availableAgents = new Dictionary<string, string>();
-    foreach (var file in Directory.GetFiles(agentsDir, "*.agent.md"))
+    foreach (var agentRec in store.ListAgents())
     {
-        var filename = Path.GetFileName(file);
-        if (filename.Equals("coordinator.agent.md", StringComparison.OrdinalIgnoreCase))
+        if (agentRec.Filename.Equals("coordinator.agent.md", StringComparison.OrdinalIgnoreCase))
             continue;
-        var specialist = AgentPersonaLoader.Load(file);
-        availableAgents[filename] = specialist.Name + " — " + specialist.SystemPrompt.Split('\n')[0];
+        availableAgents[agentRec.Filename] = agentRec.Name + " — " + agentRec.SystemPrompt.Split('\n')[0];
     }
 
     Console.WriteLine($"Coordinator sees {availableAgents.Count} specialist(s):");
     foreach (var (file, desc) in availableAgents)
         Console.WriteLine($"  • {file}: {desc}");
 
-    var coordinatorPersona = AgentPersonaLoader.Load(coordinatorFile);
+    var coordinatorPersona = coordinatorRecord.ToPersona();
     await using var coordinatorBackend = CreateBackend(coordinatorPersona, permissionGate: null);
     var coordinator = new CoordinatorAgent(coordinatorBackend, coordinatorPersona);
 
@@ -127,19 +117,26 @@ if (explicitAgentFile is null)
     Console.WriteLine($"→ Routed to: {decision.Agent}");
     Console.WriteLine($"→ Rewritten: {decision.RewrittenPrompt}\n");
 
-    explicitAgentFile = Path.Combine(agentsDir, decision.Agent);
+    explicitAgentFilename = decision.Agent;
     userPrompt = decision.RewrittenPrompt ?? userPrompt;
 
-    if (!File.Exists(explicitAgentFile))
+    if (store.GetAgent(explicitAgentFilename) is null)
     {
-        Console.Error.WriteLine($"Error: Routed agent file not found: {explicitAgentFile}");
+        Console.Error.WriteLine($"Error: Routed agent '{explicitAgentFilename}' not found in database.");
         return 1;
     }
 }
 
 // ── Load the specialist persona ──────────────────────────────────────────────
 
-var persona = AgentPersonaLoader.Load(explicitAgentFile);
+var agentRecord = store.GetAgent(explicitAgentFilename);
+if (agentRecord is null)
+{
+    Console.Error.WriteLine($"Error: Agent '{explicitAgentFilename}' not found in database.");
+    return 1;
+}
+
+var persona = agentRecord.ToPersona();
 Console.WriteLine($"Loaded agent: {persona.Name} (backend: {persona.Backend})");
 Console.WriteLine($"MCP servers:  {string.Join(", ", persona.McpServers)}");
 
@@ -149,8 +146,8 @@ sessionId ??= Guid.NewGuid().ToString("N")[..8];
 
 if (conversation is null)
 {
-    conversation = new ConversationHistory(sessionId, explicitAgentFile);
-    store.CreateSession(sessionId, explicitAgentFile);
+    conversation = new ConversationHistory(sessionId, agentRecord.Filename);
+    store.CreateSession(sessionId, agentRecord.Filename);
     Console.WriteLine($"Session: {sessionId} (new)");
 }
 

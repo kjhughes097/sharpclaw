@@ -11,19 +11,16 @@ var app = builder.Build();
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
-var personasDir = app.Configuration["PersonasDir"]
-    ?? Path.Combine(AppContext.BaseDirectory, "personas");
-
 var expectedApiKey = app.Configuration["ApiKey"]
     ?? Environment.GetEnvironmentVariable("SHARPCLAW_API_KEY");
 
-// ── Session store (SQLite) ───────────────────────────────────────────────────
+// ── Session store (PostgreSQL) ───────────────────────────────────────────────
 
-var dbPath = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "sharpclaw", "sessions.db");
-Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-var store = new SessionStore(dbPath);
+var connectionString = app.Configuration.GetConnectionString("DefaultConnection")
+    ?? Environment.GetEnvironmentVariable("SHARPCLAW_DB_CONNECTION")
+    ?? "Host=localhost;Database=sharpclaw;Username=sharpclaw;Password=sharpclaw";
+
+var store = new SessionStore(connectionString);
 
 // ── Live agent runners keyed by session ID ───────────────────────────────────
 
@@ -90,23 +87,16 @@ var jsonOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPoli
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "SharpClaw" }));
 
-// GET /api/personas — list available agent files.
+// GET /api/personas — list available agent definitions from the database.
 app.MapGet("/api/personas", () =>
 {
-    if (!Directory.Exists(personasDir))
-        return Results.Ok(Array.Empty<object>());
-
-    var personas = Directory.GetFiles(personasDir, "*.agent.md")
-        .Select(f =>
+    var agents = store.ListAgents();
+    var personas = agents.Select(a => new
         {
-            var persona = AgentPersonaLoader.Load(f);
-            return new
-            {
-                file = Path.GetFileName(f),
-                name = persona.Name,
-                backend = persona.Backend,
-                mcpServers = persona.McpServers,
-            };
+            file = a.Filename,
+            name = a.Name,
+            backend = a.Backend,
+            mcpServers = a.McpServers,
         })
         .ToList();
 
@@ -119,14 +109,14 @@ app.MapPost("/api/sessions", async (CreateSessionRequest req, CancellationToken 
     if (string.IsNullOrWhiteSpace(req.Persona))
         return Results.BadRequest(new { error = "persona is required." });
 
-    var agentFile = Path.Combine(personasDir, req.Persona);
-    if (!File.Exists(agentFile))
+    var agentRecord = store.GetAgent(req.Persona);
+    if (agentRecord is null)
         return Results.NotFound(new { error = $"Persona '{req.Persona}' not found." });
 
     var sessionId = Guid.NewGuid().ToString("N")[..12];
-    var persona = AgentPersonaLoader.Load(agentFile);
+    var persona = agentRecord.ToPersona();
 
-    store.CreateSession(sessionId, agentFile);
+    store.CreateSession(sessionId, agentRecord.Filename);
 
     // Spin up an agent runner and cache it.
     var runner = new AgentRunner(persona);
@@ -150,7 +140,11 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
     // Get or create runner.
     if (!runners.TryGetValue(id, out var runner))
     {
-        var persona = AgentPersonaLoader.Load(conversation.AgentFile);
+        var agentRecord = store.GetAgent(conversation.AgentFile);
+        if (agentRecord is null)
+            return Results.NotFound(new { error = $"Agent definition '{conversation.AgentFile}' not found." });
+
+        var persona = agentRecord.ToPersona();
         runner = new AgentRunner(persona);
         await runner.InitializeAsync(ct);
         runners[id] = runner;
@@ -177,13 +171,11 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
             if (runner.Persona.Name.Equals("Coordinator", StringComparison.OrdinalIgnoreCase))
             {
                 var availableAgents = new Dictionary<string, string>();
-                foreach (var file in Directory.GetFiles(personasDir, "*.agent.md"))
+                foreach (var agentRec in store.ListAgents())
                 {
-                    var filename = Path.GetFileName(file);
-                    if (filename.Equals("coordinator.agent.md", StringComparison.OrdinalIgnoreCase))
+                    if (agentRec.Filename.Equals("coordinator.agent.md", StringComparison.OrdinalIgnoreCase))
                         continue;
-                    var agent = AgentPersonaLoader.Load(file);
-                    availableAgents[filename] = agent.Name + " — " + agent.SystemPrompt.Split('\n')[0];
+                    availableAgents[agentRec.Filename] = agentRec.Name + " — " + agentRec.SystemPrompt.Split('\n')[0];
                 }
 
                 var coordinator = new CoordinatorAgent(
@@ -198,10 +190,10 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
 
                 if (decision.Agent is not null)
                 {
-                    var specialistFile = Path.Combine(personasDir, decision.Agent);
-                    if (File.Exists(specialistFile))
+                    var specialistRecord = store.GetAgent(decision.Agent);
+                    if (specialistRecord is not null)
                     {
-                        var specialistPersona = AgentPersonaLoader.Load(specialistFile);
+                        var specialistPersona = specialistRecord.ToPersona();
                         var specialistRunner = new AgentRunner(specialistPersona);
                         await specialistRunner.InitializeAsync(CancellationToken.None);
 
