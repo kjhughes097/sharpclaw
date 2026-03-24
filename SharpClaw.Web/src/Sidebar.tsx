@@ -7,9 +7,13 @@ interface SidebarProps {
   activeIdx: number;
   onSelect: (idx: number) => void;
   onNewSession: (personaFile: string) => void;
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
-export function Sidebar({ sessions, activeIdx, onSelect, onNewSession }: SidebarProps) {
+export function Sidebar({ sessions, activeIdx, onSelect, onNewSession, theme, onToggleTheme, isOpen, onClose }: SidebarProps) {
   const [showModal, setShowModal] = useState(false);
   const [personas, setPersonas] = useState<Persona[]>([]);
 
@@ -18,10 +22,21 @@ export function Sidebar({ sessions, activeIdx, onSelect, onNewSession }: Sidebar
   }, []);
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${isOpen ? ' open' : ''}`}>
       <div className="sidebar-header">
         <span className="logo">🐾</span>
         <span>SharpClaw</span>
+        <div className="sidebar-header-actions">
+          <button
+            className="theme-toggle-btn"
+            onClick={onToggleTheme}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+          >
+            {theme === 'dark' ? '☀️' : '🌙'}
+          </button>
+          <button className="sidebar-close-btn" onClick={onClose} aria-label="Close sidebar">✕</button>
+        </div>
       </div>
       <button className="new-session-btn" onClick={() => setShowModal(true)}>
         + New Chat
