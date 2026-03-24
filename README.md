@@ -15,7 +15,7 @@ SharpClaw provides:
 - Multiple agent backends:
 	- Anthropic
 	- GitHub Copilot SDK
-- MCP tool execution with permission policies
+- MCP tool execution with MCP-scoped permission policies
 - Coordinator-based routing to specialist agents
 - In-app agent management:
 	- list agents
@@ -110,6 +110,8 @@ Agent definitions currently include:
 - permission policy
 - system prompt
 - enabled/disabled state
+
+Older flat permission rules are migrated on startup to MCP-scoped patterns when the target MCP can be inferred safely.
 
 ## Project Structure
 
@@ -350,7 +352,8 @@ Example response:
 		"model": "gpt-5.4",
 		"mcpServers": ["filesystem"],
 		"permissionPolicy": {
-			"read_file": "auto_approve",
+			"filesystem.read_*": "auto_approve",
+			"filesystem.list_*": "auto_approve",
 			"*": "ask"
 		},
 		"systemPrompt": "You are a helpful file browser assistant...",
@@ -375,7 +378,8 @@ Example request:
 	"model": "claude-haiku-4-5-20251001",
 	"mcpServers": ["filesystem"],
 	"permissionPolicy": {
-		"read_file": "auto_approve",
+		"filesystem.read_*": "auto_approve",
+		"filesystem.list_*": "auto_approve",
 		"*": "ask"
 	},
 	"systemPrompt": "You are an operations assistant.",

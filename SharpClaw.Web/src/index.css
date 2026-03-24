@@ -1016,6 +1016,36 @@ html, body, #root {
   align-items: flex-start;
 }
 
+.mcp-option-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.permission-state-badge {
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.permission-state-badge.recommended {
+  background: rgba(43, 154, 62, 0.14);
+  color: var(--success);
+}
+
+.permission-state-badge.customized {
+  background: rgba(74, 108, 247, 0.14);
+  color: var(--accent);
+}
+
+.permission-state-badge.no-rules {
+  background: rgba(107, 111, 131, 0.14);
+  color: var(--text-dim);
+}
+
 .mcp-option-slug,
 .mcp-card-command,
 .json-textarea,
@@ -1072,6 +1102,43 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.permission-group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.permission-group-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--bg-input);
+}
+
+.permission-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.permission-group-header h4 {
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.permission-group-header p {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.permission-group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .permission-row {

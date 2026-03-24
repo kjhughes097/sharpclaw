@@ -10,12 +10,14 @@ namespace SharpClaw.Core;
 /// </summary>
 public sealed class AgentRunner : IAsyncDisposable
 {
+    private sealed record ResolvedTool(McpClient Client, string RawToolName);
+
     private readonly AgentPersona _persona;
     private readonly IReadOnlyList<McpServerRecord> _mcpServers;
     private readonly Func<AgentPersona, PermissionGate, IAgentBackend>? _backendFactory;
     private readonly List<McpClient> _mcpClients = [];
     private readonly List<ToolSchema> _toolSchemas = [];
-    private readonly Dictionary<string, McpClient> _toolClientMap = [];
+    private readonly Dictionary<string, ResolvedTool> _toolClientMap = [];
     private PermissionGate? _permissionGate;
     private AsyncPermissionGate? _asyncPermissionGate;
     private IAgentBackend? _backend;
@@ -56,8 +58,9 @@ public sealed class AgentRunner : IAsyncDisposable
             var tools = await client.ListToolsAsync(cancellationToken: ct);
             foreach (var t in tools)
             {
-                _toolSchemas.Add(t.ToToolSchema());
-                _toolClientMap[t.Name] = client;
+                var namespacedToolName = CreateToolName(server.Slug, t.Name);
+                _toolSchemas.Add(t.ToToolSchema(namespacedToolName));
+                _toolClientMap[namespacedToolName] = new ResolvedTool(client, t.Name);
             }
         }
 
@@ -124,10 +127,10 @@ public sealed class AgentRunner : IAsyncDisposable
         if (!allowed)
             return new ToolCallResult($"Tool '{call.Name}' was blocked by the permission policy.", IsError: true);
 
-        if (!_toolClientMap.TryGetValue(call.Name, out var mcpClient))
+        if (!_toolClientMap.TryGetValue(call.Name, out var resolvedTool))
             return new ToolCallResult($"No MCP client registered for tool '{call.Name}'.", IsError: true);
 
-        var callResult = await mcpClient.CallToolAsync(call.Name, call.Arguments, cancellationToken: ct);
+        var callResult = await resolvedTool.Client.CallToolAsync(resolvedTool.RawToolName, call.Arguments, cancellationToken: ct);
         var resultText = string.Join("\n",
             callResult.Content
                 .OfType<ModelContextProtocol.Protocol.TextContentBlock>()
@@ -141,10 +144,10 @@ public sealed class AgentRunner : IAsyncDisposable
         if (!_permissionGate!.Evaluate(call.Name, call.Arguments as IReadOnlyDictionary<string, object?>))
             return new ToolCallResult($"Tool '{call.Name}' was blocked by the permission policy.", IsError: true);
 
-        if (!_toolClientMap.TryGetValue(call.Name, out var mcpClient))
+        if (!_toolClientMap.TryGetValue(call.Name, out var resolvedTool))
             return new ToolCallResult($"No MCP client registered for tool '{call.Name}'.", IsError: true);
 
-        var callResult = await mcpClient.CallToolAsync(call.Name, call.Arguments, cancellationToken: ct);
+        var callResult = await resolvedTool.Client.CallToolAsync(resolvedTool.RawToolName, call.Arguments, cancellationToken: ct);
         var resultText = string.Join("\n",
             callResult.Content
                 .OfType<ModelContextProtocol.Protocol.TextContentBlock>()
@@ -175,6 +178,8 @@ public sealed class AgentRunner : IAsyncDisposable
         var anthropic = new AnthropicClient(new Anthropic.Core.ClientOptions { ApiKey = apiKey });
         return new AnthropicBackend(anthropic, string.IsNullOrWhiteSpace(model) ? "claude-haiku-4-5-20251001" : model);
     }
+
+    private static string CreateToolName(string mcpSlug, string rawToolName) => $"{mcpSlug}.{rawToolName}";
 
     public async ValueTask DisposeAsync()
     {

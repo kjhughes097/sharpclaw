@@ -11,6 +11,16 @@ interface PermissionRow {
   value: string;
 }
 
+interface PermissionGroup {
+  key: string;
+  title: string;
+  description: string;
+  indices: number[];
+  defaultPattern: string;
+}
+
+type McpPermissionStatus = 'recommended' | 'customized' | 'no-rules';
+
 type BackendKind = 'anthropic' | 'copilot';
 
 const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
@@ -18,21 +28,20 @@ const DEFAULT_COPILOT_MODEL = 'gpt-5.4';
 
 const PERMISSION_TEMPLATES: Record<string, Record<string, string>> = {
   'workspace-editor': {
-    read_file: 'auto_approve',
-    list_directory: 'auto_approve',
-    list_allowed_directories: 'auto_approve',
-    search_files: 'auto_approve',
-    get_file_info: 'auto_approve',
-    write_file: 'ask',
-    create_directory: 'ask',
+    'filesystem.read_*': 'auto_approve',
+    'filesystem.list_*': 'auto_approve',
+    'filesystem.search_*': 'auto_approve',
+    'filesystem.get_*': 'auto_approve',
+    'filesystem.write_*': 'ask',
+    'filesystem.create_*': 'ask',
+    'github.*': 'ask',
     '*': 'ask',
   },
   'read-only-filesystem': {
-    read_file: 'auto_approve',
-    list_directory: 'auto_approve',
-    list_allowed_directories: 'auto_approve',
-    search_files: 'auto_approve',
-    get_file_info: 'auto_approve',
+    'filesystem.read_*': 'auto_approve',
+    'filesystem.list_*': 'auto_approve',
+    'filesystem.search_*': 'auto_approve',
+    'filesystem.get_*': 'auto_approve',
     '*': 'ask',
   },
   'ask-all': {
@@ -42,6 +51,32 @@ const PERMISSION_TEMPLATES: Record<string, Record<string, string>> = {
     '*': 'deny',
   },
 };
+
+const MCP_RECOMMENDED_PERMISSIONS: Record<string, Record<string, string>> = {
+  filesystem: {
+    'filesystem.read_*': 'auto_approve',
+    'filesystem.list_*': 'auto_approve',
+    'filesystem.search_*': 'auto_approve',
+    'filesystem.get_*': 'auto_approve',
+    'filesystem.write_*': 'ask',
+    'filesystem.create_*': 'ask',
+  },
+  github: {
+    'github.*': 'ask',
+  },
+  sqlite: {
+    'sqlite.*': 'ask',
+  },
+};
+
+const PERMISSION_NORMALIZATION_FAMILIES: Array<{ wildcard: string; patterns: string[] }> = [
+  { wildcard: 'filesystem.read_*', patterns: ['filesystem.read_file'] },
+  { wildcard: 'filesystem.list_*', patterns: ['filesystem.list_directory', 'filesystem.list_allowed_directories'] },
+  { wildcard: 'filesystem.search_*', patterns: ['filesystem.search_files'] },
+  { wildcard: 'filesystem.get_*', patterns: ['filesystem.get_file_info'] },
+  { wildcard: 'filesystem.write_*', patterns: ['filesystem.write_file'] },
+  { wildcard: 'filesystem.create_*', patterns: ['filesystem.create_directory'] },
+];
 
 const BACKEND_DEFAULT_TEMPLATE: Record<BackendKind, keyof typeof PERMISSION_TEMPLATES> = {
   anthropic: 'workspace-editor',
@@ -131,6 +166,114 @@ function normalizePermissions(rows: PermissionRow[]): Record<string, string> {
   }, {});
 }
 
+function toSortedPermissionRows(policy: Record<string, string>): PermissionRow[] {
+  return Object.entries(policy)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([pattern, value]) => ({ pattern, value }));
+}
+
+function applyMcpPresetToPolicy(policy: Record<string, string>, mcpSlug: string): Record<string, string> {
+  const preset = MCP_RECOMMENDED_PERMISSIONS[mcpSlug];
+  if (!preset) return policy;
+
+  const updated = Object.fromEntries(
+    Object.entries(policy).filter(([pattern]) => !pattern.startsWith(`${mcpSlug}.`)),
+  );
+
+  return {
+    ...updated,
+    ...preset,
+  };
+}
+
+function normalizePermissionFamilies(policy: Record<string, string>): Record<string, string> {
+  const normalized = { ...policy };
+
+  for (const family of PERMISSION_NORMALIZATION_FAMILIES) {
+    if (family.patterns.some(pattern => !(pattern in normalized)))
+      continue;
+
+    const values = family.patterns.map(pattern => normalized[pattern]);
+    if (values.some(value => value !== values[0]))
+      continue;
+
+    for (const pattern of family.patterns)
+      delete normalized[pattern];
+
+    normalized[family.wildcard] = values[0];
+  }
+
+  return normalized;
+}
+
+function getMcpScopedPolicy(policy: Record<string, string>, mcpSlug: string): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(policy).filter(([pattern]) => pattern.startsWith(`${mcpSlug}.`)),
+  );
+}
+
+function getMcpPermissionStatus(policy: Record<string, string>, mcpSlug: string): McpPermissionStatus {
+  const scopedPolicy = getMcpScopedPolicy(policy, mcpSlug);
+  if (Object.keys(scopedPolicy).length === 0)
+    return 'no-rules';
+
+  const recommended = MCP_RECOMMENDED_PERMISSIONS[mcpSlug];
+  if (recommended && policiesEqual(scopedPolicy, recommended))
+    return 'recommended';
+
+  return 'customized';
+}
+
+function buildPermissionGroups(rows: PermissionRow[], mcps: string[]): PermissionGroup[] {
+  const groups: PermissionGroup[] = [
+    {
+      key: 'global',
+      title: 'Global Rules',
+      description: 'Catch-all or shared rules such as *.',
+      indices: [],
+      defaultPattern: '*',
+    },
+    ...mcps.map(slug => ({
+      key: slug,
+      title: slug,
+      description: `Rules scoped to the ${slug} MCP.`,
+      indices: [],
+      defaultPattern: `${slug}.*`,
+    })),
+    {
+      key: 'custom',
+      title: 'Custom Rules',
+      description: 'Rules that do not map cleanly to a selected MCP.',
+      indices: [],
+      defaultPattern: '',
+    },
+  ];
+
+  const groupLookup = new Map(groups.map(group => [group.key, group] as const));
+
+  rows.forEach((row, index) => {
+    const pattern = row.pattern.trim();
+    if (!pattern || pattern === '*') {
+      groupLookup.get('global')?.indices.push(index);
+      return;
+    }
+
+    const separatorIndex = pattern.indexOf('.');
+    if (separatorIndex > 0) {
+      const slug = pattern.slice(0, separatorIndex);
+      const group = groupLookup.get(slug);
+      if (group) {
+        group.indices.push(index);
+        return;
+      }
+    }
+
+    groupLookup.get('custom')?.indices.push(index);
+  });
+
+  return groups.filter(group => group.indices.length > 0 || group.key !== 'custom' || rows.length === 0);
+}
+
 export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [mcps, setMcps] = useState<McpDefinition[]>([]);
@@ -149,6 +292,16 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   const selectedAgent = useMemo(
     () => agents.find(agent => agent.file === selectedFile) ?? null,
     [agents, selectedFile],
+  );
+
+  const permissionGroups = useMemo(
+    () => buildPermissionGroups(permissionRows, form.mcpServers),
+    [permissionRows, form.mcpServers],
+  );
+
+  const currentPermissionPolicy = useMemo(
+    () => normalizePermissions(permissionRows),
+    [permissionRows],
   );
 
   const mcpLookup = useMemo(
@@ -220,6 +373,24 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     setError(null);
   }
 
+  function applyRecommendedMcpPreset(mcpSlug: string) {
+    setPermissionRows(prev => {
+      const nextPolicy = applyMcpPresetToPolicy(normalizePermissions(prev), mcpSlug);
+      return toSortedPermissionRows(nextPolicy);
+    });
+    setStatus(`Applied recommended ${mcpSlug} permissions.`);
+    setError(null);
+  }
+
+  function normalizePermissionFamiliesInForm() {
+    setPermissionRows(prev => {
+      const nextPolicy = normalizePermissionFamilies(normalizePermissions(prev));
+      return toSortedPermissionRows(nextPolicy);
+    });
+    setStatus('Normalized exact permission rules into wildcard families where safe.');
+    setError(null);
+  }
+
   function handleBackendChange(nextBackend: string) {
     const currentPolicy = normalizePermissions(permissionRows);
     const shouldResetPermissions =
@@ -246,8 +417,8 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     setPermissionRows(prev => prev.map((row, rowIndex) => rowIndex === index ? { ...row, [field]: value } : row));
   }
 
-  function addPermissionRow() {
-    setPermissionRows(prev => [...prev, { pattern: '', value: 'ask' }]);
+  function addPermissionRowForGroup(defaultPattern: string) {
+    setPermissionRows(prev => [...prev, { pattern: defaultPattern, value: 'ask' }]);
   }
 
   function removePermissionRow(index: number) {
@@ -506,6 +677,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                 <div className="mcp-selection-grid">
                   {mcps.map(mcp => {
                     const selected = form.mcpServers.includes(mcp.slug);
+                    const permissionStatus = getMcpPermissionStatus(currentPermissionPolicy, mcp.slug);
                     return (
                       <button
                         key={mcp.slug}
@@ -516,9 +688,18 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                       >
                         <div className="mcp-option-top">
                           <strong>{mcp.name}</strong>
-                          <span className={`agent-status-pill ${mcp.isEnabled ? 'enabled' : 'disabled'}`}>
-                            {mcp.isEnabled ? 'Enabled' : 'Disabled'}
-                          </span>
+                          <div className="mcp-option-badges">
+                            <span className={`permission-state-badge ${permissionStatus}`}>
+                              {permissionStatus === 'recommended'
+                                ? 'Recommended'
+                                : permissionStatus === 'customized'
+                                  ? 'Customized'
+                                  : 'No Rules'}
+                            </span>
+                            <span className={`agent-status-pill ${mcp.isEnabled ? 'enabled' : 'disabled'}`}>
+                              {mcp.isEnabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </div>
                         </div>
                         <div className="mcp-option-slug">{mcp.slug}</div>
                         <p className="mcp-option-description">{mcp.description}</p>
@@ -537,11 +718,12 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
               <div className="agent-permissions-header">
                 <div>
                   <h3>Permissions</h3>
-                  <p>Use values like auto_approve, ask, or deny.</p>
+                  <p>Rules are grouped by MCP. Use MCP-scoped patterns like filesystem.read_* or github.* with values like auto_approve, ask, or deny.</p>
                 </div>
                 <div className="agent-permissions-actions">
                   <button type="button" className="secondary-btn" onClick={() => applyPermissionTemplate(BACKEND_DEFAULT_TEMPLATE[(form.backend === 'copilot' ? 'copilot' : 'anthropic') as BackendKind])}>Apply Backend Defaults</button>
-                  <button type="button" className="secondary-btn" onClick={addPermissionRow}>Add Rule</button>
+                  <button type="button" className="secondary-btn" onClick={normalizePermissionFamiliesInForm}>Normalize Families</button>
+                  <button type="button" className="secondary-btn" onClick={() => addPermissionRowForGroup('*')}>Add Global Rule</button>
                 </div>
               </div>
 
@@ -552,24 +734,50 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                 <button type="button" className="secondary-btn" onClick={() => applyPermissionTemplate('deny-all')}>Deny All</button>
               </div>
 
-              <div className="permission-grid">
-                {permissionRows.map((row, index) => (
-                  <div key={`${index}-${row.pattern}-${row.value}`} className="permission-row">
-                    <input
-                      value={row.pattern}
-                      onChange={event => updatePermissionRow(index, 'pattern', event.target.value)}
-                      placeholder="read_file"
-                    />
-                    <select
-                      value={row.value}
-                      onChange={event => updatePermissionRow(index, 'value', event.target.value)}
-                    >
-                      <option value="auto_approve">auto_approve</option>
-                      <option value="ask">ask</option>
-                      <option value="deny">deny</option>
-                    </select>
-                    <button type="button" className="icon-btn" onClick={() => removePermissionRow(index)} aria-label="Remove permission rule">✕</button>
-                  </div>
+              <div className="permission-group-list">
+                {permissionGroups.map(group => (
+                  <section key={group.key} className="permission-group-card">
+                    <div className="permission-group-header">
+                      <div>
+                        <h4>{group.title}</h4>
+                        <p>{group.description}</p>
+                      </div>
+                      <div className="permission-group-actions">
+                        {group.key !== 'global' && group.key !== 'custom' && MCP_RECOMMENDED_PERMISSIONS[group.key] && (
+                          <button type="button" className="secondary-btn" onClick={() => applyRecommendedMcpPreset(group.key)}>
+                            Use Recommended
+                          </button>
+                        )}
+                        <button type="button" className="secondary-btn" onClick={() => addPermissionRowForGroup(group.defaultPattern)}>
+                          Add Rule
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="permission-grid">
+                      {group.indices.map(index => {
+                        const row = permissionRows[index];
+                        return (
+                          <div key={`${index}-${row.pattern}-${row.value}`} className="permission-row">
+                            <input
+                              value={row.pattern}
+                              onChange={event => updatePermissionRow(index, 'pattern', event.target.value)}
+                              placeholder={group.defaultPattern || 'custom.pattern'}
+                            />
+                            <select
+                              value={row.value}
+                              onChange={event => updatePermissionRow(index, 'value', event.target.value)}
+                            >
+                              <option value="auto_approve">auto_approve</option>
+                              <option value="ask">ask</option>
+                              <option value="deny">deny</option>
+                            </select>
+                            <button type="button" className="icon-btn" onClick={() => removePermissionRow(index)} aria-label="Remove permission rule">✕</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
                 ))}
               </div>
             </div>

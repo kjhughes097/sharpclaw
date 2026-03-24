@@ -43,14 +43,28 @@ public sealed class PermissionGate
 
     private ToolPermission Resolve(string toolName)
     {
-        foreach (var (pattern, permission) in _rules)
+        foreach (var candidate in GetCandidates(toolName))
         {
-            if (pattern.IsMatch(toolName))
-                return permission;
+            foreach (var (pattern, permission) in _rules)
+            {
+                if (pattern.IsMatch(candidate))
+                    return permission;
+            }
         }
 
         // Default-deny anything not in the policy.
         return ToolPermission.Deny;
+    }
+
+    private static IEnumerable<string> GetCandidates(string toolName)
+    {
+        yield return toolName;
+
+        var separatorIndex = toolName.IndexOf('.');
+        if (separatorIndex <= 0 || separatorIndex >= toolName.Length - 1)
+            yield break;
+
+        yield return toolName[(separatorIndex + 1)..];
     }
 
     private static bool Denied(string toolName)

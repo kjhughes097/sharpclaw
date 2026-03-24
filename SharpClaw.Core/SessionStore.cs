@@ -77,6 +77,7 @@ public sealed class SessionStore : IDisposable
         SeedMcps(conn);
         SeedAgents(conn);
         EnsureCodyAgent(conn);
+        MigratePermissionPolicies(conn);
     }
 
     /// <summary>
@@ -195,6 +196,95 @@ public sealed class SessionStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Migrates legacy flat permission rules to namespaced MCP-aware rules when the target MCP can be inferred safely.
+    /// </summary>
+    private static void MigratePermissionPolicies(NpgsqlConnection conn)
+    {
+        using var selectCmd = conn.CreateCommand();
+        selectCmd.CommandText = """
+            SELECT filename, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            FROM agents
+            ORDER BY created_at
+            """;
+
+        var agents = new List<AgentRecord>();
+        using (var reader = selectCmd.ExecuteReader())
+        {
+            while (reader.Read())
+                agents.Add(ReadAgentRecord(reader));
+        }
+
+        foreach (var agent in agents)
+        {
+            var migratedPolicy = MigratePermissionPolicy(agent.McpServers, agent.PermissionPolicy);
+            if (PoliciesEqual(agent.PermissionPolicy, migratedPolicy))
+                continue;
+
+            using var updateCmd = conn.CreateCommand();
+            updateCmd.CommandText = "UPDATE agents SET permission_policy = @permission_policy WHERE filename = @filename";
+            updateCmd.Parameters.AddWithValue("filename", agent.Filename);
+            updateCmd.Parameters.AddWithValue("permission_policy", JsonSerializer.Serialize(migratedPolicy, JsonOpts));
+            updateCmd.ExecuteNonQuery();
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> MigratePermissionPolicy(
+        IReadOnlyList<string> mcpServers,
+        IReadOnlyDictionary<string, string> permissionPolicy)
+    {
+        var migrated = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (pattern, value) in permissionPolicy)
+        {
+            var normalizedPattern = NormalizePermissionPattern(pattern, mcpServers);
+            if (!migrated.ContainsKey(normalizedPattern))
+                migrated[normalizedPattern] = value;
+        }
+
+        return migrated;
+    }
+
+    private static string NormalizePermissionPattern(string pattern, IReadOnlyList<string> mcpServers)
+    {
+        if (string.IsNullOrWhiteSpace(pattern) || pattern == "*" || pattern.Contains('.', StringComparison.Ordinal))
+            return pattern;
+
+        if (mcpServers.Count == 1)
+            return $"{mcpServers[0]}.{pattern}";
+
+        if (mcpServers.Contains("filesystem", StringComparer.OrdinalIgnoreCase) && LooksLikeFilesystemPattern(pattern))
+            return $"filesystem.{pattern}";
+
+        return pattern;
+    }
+
+    private static bool LooksLikeFilesystemPattern(string pattern)
+    {
+        return pattern.StartsWith("read", StringComparison.OrdinalIgnoreCase)
+            || pattern.StartsWith("list", StringComparison.OrdinalIgnoreCase)
+            || pattern.StartsWith("search", StringComparison.OrdinalIgnoreCase)
+            || pattern.StartsWith("get", StringComparison.OrdinalIgnoreCase)
+            || pattern.StartsWith("write", StringComparison.OrdinalIgnoreCase)
+            || pattern.StartsWith("create", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool PoliciesEqual(
+        IReadOnlyDictionary<string, string> left,
+        IReadOnlyDictionary<string, string> right)
+    {
+        if (left.Count != right.Count)
+            return false;
+
+        foreach (var (key, value) in left)
+        {
+            if (!right.TryGetValue(key, out var otherValue) || !string.Equals(value, otherValue, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
+    }
+
     // ── Built-in agent seed data ──────────────────────────────────────────────
 
     private static readonly IReadOnlyList<McpServerRecord> BuiltInMcps =
@@ -233,13 +323,13 @@ public sealed class SessionStore : IDisposable
         McpServers: ["filesystem", "github"],
         PermissionPolicy: new Dictionary<string, string>
         {
-            ["read_file"] = "auto_approve",
-            ["list_directory"] = "auto_approve",
-            ["list_allowed_directories"] = "auto_approve",
-            ["search_files"] = "auto_approve",
-            ["get_file_info"] = "auto_approve",
-            ["write_file"] = "ask",
-            ["create_directory"] = "ask",
+            ["filesystem.read_*"] = "auto_approve",
+            ["filesystem.list_*"] = "auto_approve",
+            ["filesystem.search_*"] = "auto_approve",
+            ["filesystem.get_*"] = "auto_approve",
+            ["filesystem.write_*"] = "ask",
+            ["filesystem.create_*"] = "ask",
+            ["github.*"] = "ask",
             ["*"] = "ask",
         },
         SystemPrompt: """
@@ -284,13 +374,12 @@ public sealed class SessionStore : IDisposable
             McpServers: ["filesystem"],
             PermissionPolicy: new Dictionary<string, string>
             {
-                ["read_file"] = "auto_approve",
-                ["list_directory"] = "auto_approve",
-                ["list_allowed_directories"] = "auto_approve",
-                ["search_files"] = "auto_approve",
-                ["get_file_info"] = "auto_approve",
-                ["write_file"] = "ask",
-                ["create_directory"] = "ask",
+                ["filesystem.read_*"] = "auto_approve",
+                ["filesystem.list_*"] = "auto_approve",
+                ["filesystem.search_*"] = "auto_approve",
+                ["filesystem.get_*"] = "auto_approve",
+                ["filesystem.write_*"] = "ask",
+                ["filesystem.create_*"] = "ask",
                 ["*"] = "ask",
             },
             SystemPrompt: """
@@ -313,11 +402,10 @@ public sealed class SessionStore : IDisposable
             McpServers: ["filesystem"],
             PermissionPolicy: new Dictionary<string, string>
             {
-                ["read_file"] = "auto_approve",
-                ["list_directory"] = "auto_approve",
-                ["list_allowed_directories"] = "auto_approve",
-                ["search_files"] = "auto_approve",
-                ["get_file_info"] = "auto_approve",
+                ["filesystem.read_*"] = "auto_approve",
+                ["filesystem.list_*"] = "auto_approve",
+                ["filesystem.search_*"] = "auto_approve",
+                ["filesystem.get_*"] = "auto_approve",
                 ["*"] = "ask",
             },
             SystemPrompt: """
@@ -335,13 +423,12 @@ public sealed class SessionStore : IDisposable
             McpServers: ["filesystem"],
             PermissionPolicy: new Dictionary<string, string>
             {
-                ["read_file"] = "auto_approve",
-                ["list_directory"] = "auto_approve",
-                ["list_allowed_directories"] = "auto_approve",
-                ["search_files"] = "auto_approve",
-                ["get_file_info"] = "auto_approve",
-                ["write_file"] = "ask",
-                ["create_directory"] = "ask",
+                ["filesystem.read_*"] = "auto_approve",
+                ["filesystem.list_*"] = "auto_approve",
+                ["filesystem.search_*"] = "auto_approve",
+                ["filesystem.get_*"] = "auto_approve",
+                ["filesystem.write_*"] = "ask",
+                ["filesystem.create_*"] = "ask",
                 ["*"] = "ask",
             },
             SystemPrompt: """
@@ -365,11 +452,10 @@ public sealed class SessionStore : IDisposable
             McpServers: ["filesystem"],
             PermissionPolicy: new Dictionary<string, string>
             {
-                ["read_file"] = "auto_approve",
-                ["list_directory"] = "auto_approve",
-                ["list_allowed_directories"] = "auto_approve",
-                ["write_file"] = "ask",
-                ["create_directory"] = "ask",
+                ["filesystem.read_*"] = "auto_approve",
+                ["filesystem.list_*"] = "auto_approve",
+                ["filesystem.write_*"] = "ask",
+                ["filesystem.create_*"] = "ask",
                 ["*"] = "ask",
             },
             SystemPrompt: """
