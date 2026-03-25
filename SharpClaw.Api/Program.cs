@@ -19,8 +19,14 @@ var expectedApiKey = app.Configuration["ApiKey"]
 // ── Session store (PostgreSQL) ───────────────────────────────────────────────
 
 var connectionString = app.Configuration.GetConnectionString("DefaultConnection")
-    ?? Environment.GetEnvironmentVariable("SHARPCLAW_DB_CONNECTION")
-    ?? "Host=localhost;Database=sharpclaw;Username=sharpclaw;Password=sharpclaw";
+    ?? Environment.GetEnvironmentVariable("SHARPCLAW_DB_CONNECTION");
+
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException(
+        "Database connection is not configured. Set ConnectionStrings:DefaultConnection or SHARPCLAW_DB_CONNECTION. " +
+        "For Docker Compose runs, ensure POSTGRES_DB, POSTGRES_USER, and POSTGRES_PASSWORD are set.");
+}
 
 var store = new SessionStore(connectionString);
 var providerHttpClient = new HttpClient();
