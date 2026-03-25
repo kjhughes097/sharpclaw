@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createAgent, deleteAgent, fetchAgents, fetchMcps, setAgentEnabled, updateAgent } from './api';
-import type { AgentDefinition, AgentUpsertRequest, McpDefinition } from './types';
+import { createAgent, deleteAgent, fetchAgents, fetchBackendModels, fetchMcps, setAgentEnabled, updateAgent } from './api';
+import type { AgentDefinition, AgentUpsertRequest, BackendModelListResponse, BackendModelOption, McpDefinition } from './types';
 
 interface AgentConfigViewProps {
   onMenuClick: () => void;
@@ -22,9 +22,6 @@ interface PermissionGroup {
 type McpPermissionStatus = 'recommended' | 'customized' | 'no-rules';
 
 type BackendKind = 'anthropic' | 'copilot';
-
-const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001';
-const DEFAULT_COPILOT_MODEL = 'gpt-5.4';
 
 const PERMISSION_TEMPLATES: Record<string, Record<string, string>> = {
   'workspace-editor': {
@@ -83,13 +80,23 @@ const BACKEND_DEFAULT_TEMPLATE: Record<BackendKind, keyof typeof PERMISSION_TEMP
   copilot: 'read-only-filesystem',
 };
 
-function defaultModelForBackend(backend: string): string {
-  return backend === 'copilot' ? DEFAULT_COPILOT_MODEL : DEFAULT_ANTHROPIC_MODEL;
-}
-
 function defaultPermissionsForBackend(backend: string): Record<string, string> {
   const key = BACKEND_DEFAULT_TEMPLATE[(backend === 'copilot' ? 'copilot' : 'anthropic') as BackendKind];
   return PERMISSION_TEMPLATES[key];
+}
+
+function withCurrentModelOption(options: BackendModelOption[], currentModel?: string): BackendModelOption[] {
+  const nextOptions = [...options];
+  const trimmedModel = currentModel?.trim();
+
+  if (trimmedModel && !nextOptions.some(option => option.id === trimmedModel)) {
+    nextOptions.unshift({
+      id: trimmedModel,
+      displayName: `${trimmedModel} (current custom model)`,
+    });
+  }
+
+  return nextOptions;
 }
 
 function policiesEqual(left: Record<string, string>, right: Record<string, string>): boolean {
@@ -127,7 +134,7 @@ function blankAgent(): AgentUpsertRequest {
     name: '',
     description: '',
     backend: 'anthropic',
-    model: DEFAULT_ANTHROPIC_MODEL,
+    model: '',
     mcpServers: [],
     permissionPolicy: { ...PERMISSION_TEMPLATES['workspace-editor'] },
     systemPrompt: '',
@@ -287,6 +294,9 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [modelOptions, setModelOptions] = useState<BackendModelOption[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AgentDefinition | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [purgeLinkedSessions, setPurgeLinkedSessions] = useState(false);
@@ -311,6 +321,11 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     [mcps],
   );
 
+  const availableModelOptions = useMemo(
+    () => withCurrentModelOption(modelOptions, form.model),
+    [form.model, modelOptions],
+  );
+
   useEffect(() => {
     void loadData();
   }, []);
@@ -320,6 +335,59 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     setForm(toForm(selectedAgent));
     setPermissionRows(toPermissionRows(selectedAgent.permissionPolicy));
   }, [selectedAgent]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const backend = form.backend;
+
+    async function loadModels() {
+      setModelsLoading(true);
+      setModelsError(null);
+
+      try {
+        const result: BackendModelListResponse = await fetchBackendModels(backend);
+        if (isCancelled) return;
+
+        const nextOptions = result.models;
+        setModelOptions(nextOptions);
+        if (result.source === 'cache') {
+          const cachedAt = result.cachedAt ? new Date(result.cachedAt).toLocaleString() : null;
+          setModelsError(
+            cachedAt
+              ? `${result.warning ?? 'Provider model lookup failed.'} Showing cached models from ${cachedAt}.`
+              : `${result.warning ?? 'Provider model lookup failed.'} Showing cached models.`,
+          );
+        }
+        setForm(prev => {
+          if (prev.backend !== backend) return prev;
+
+          const trimmedModel = prev.model.trim();
+          if (trimmedModel && nextOptions.some(option => option.id === trimmedModel))
+            return prev;
+
+          const nextModel = trimmedModel && nextOptions.length === 0
+            ? trimmedModel
+            : nextOptions[0]?.id ?? '';
+
+          return nextModel === prev.model
+            ? prev
+            : { ...prev, model: nextModel };
+        });
+      } catch (err) {
+        if (isCancelled) return;
+        setModelOptions([]);
+        setModelsError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!isCancelled)
+          setModelsLoading(false);
+      }
+    }
+
+    void loadModels();
+    return () => {
+      isCancelled = true;
+    };
+  }, [form.backend]);
 
   async function loadData(preferredSelection?: string | null) {
     setLoading(true);
@@ -399,13 +467,9 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
       Object.keys(currentPolicy).length === 0 ||
       policiesEqual(currentPolicy, defaultPermissionsForBackend(form.backend));
 
-    const currentModel = form.model.trim();
-    const shouldResetModel = !currentModel || currentModel === defaultModelForBackend(form.backend);
-
     setForm(prev => ({
       ...prev,
       backend: nextBackend,
-      model: shouldResetModel ? defaultModelForBackend(nextBackend) : prev.model,
     }));
 
     if (shouldResetPermissions) {
@@ -634,11 +698,18 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
             <div className="agent-form-row two-up">
               <label>
                 <span>Model</span>
-                <input
+                <select
                   value={form.model}
+                  disabled={modelsLoading || availableModelOptions.length === 0}
                   onChange={event => setForm(prev => ({ ...prev, model: event.target.value }))}
-                  placeholder={form.backend === 'copilot' ? DEFAULT_COPILOT_MODEL : DEFAULT_ANTHROPIC_MODEL}
-                />
+                >
+                  {availableModelOptions.length === 0 ? (
+                    <option value="">{modelsLoading ? 'Loading models…' : 'No models available'}</option>
+                  ) : availableModelOptions.map(option => (
+                    <option key={option.id} value={option.id}>{option.displayName}</option>
+                  ))}
+                </select>
+                {modelsError && <small className="field-hint">{modelsError}</small>}
               </label>
               <label className="agent-checkbox">
                 <span>Enabled</span>
@@ -673,7 +744,33 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
               <div className="agent-permissions-header">
                 <div>
                   <h3>MCP Access</h3>
-                  <p>Select the stored MCP servers this agent can reach at runtime.</p>
+                  <p>Select the stored MCP servers this agent can reach at runtime, or remove existing links from the list below.</p>
+                </div>
+              </div>
+
+              <div className="link-summary-panel">
+                <div className="link-summary-copy">
+                  <strong>Linked MCPs</strong>
+                  <span>{form.mcpServers.length === 0 ? 'No MCPs linked yet.' : 'Click any linked MCP to remove it.'}</span>
+                </div>
+                <div className="linked-chip-row">
+                  {form.mcpServers.length > 0 ? form.mcpServers.map(server => {
+                    const mcp = mcpLookup.get(server);
+                    return (
+                      <button
+                        key={server}
+                        type="button"
+                        className="link-chip"
+                        onClick={() => toggleMcpSelection(server)}
+                        title={`Remove ${mcp?.name ?? server}`}
+                      >
+                        <span>{mcp?.name ?? server}</span>
+                        <span className="link-chip-action">Remove</span>
+                      </button>
+                    );
+                  }) : (
+                    <span className="agent-chip muted">Choose one or more MCPs below.</span>
+                  )}
                 </div>
               </div>
 
@@ -695,6 +792,9 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                         <div className="mcp-option-top">
                           <strong>{mcp.name}</strong>
                           <div className="mcp-option-badges">
+                            <span className={`permission-state-badge ${selected ? 'recommended' : 'no-rules'}`}>
+                              {selected ? 'Linked' : 'Available'}
+                            </span>
                             <span className={`permission-state-badge ${permissionStatus}`}>
                               {permissionStatus === 'recommended'
                                 ? 'Recommended'

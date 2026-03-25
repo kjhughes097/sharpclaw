@@ -138,6 +138,9 @@ public sealed class AnthropicBackend : IAgentBackend
             });
         }
 
+        long totalInputTokens = 0;
+        long totalOutputTokens = 0;
+
         while (true)
         {
             var stream = _anthropic.Messages.CreateStreaming(
@@ -155,26 +158,52 @@ public sealed class AnthropicBackend : IAgentBackend
             var fullText = new StringBuilder();
             var assistantBlocks = new List<Anthropic.Models.Messages.ContentBlockParam>();
             var pendingTools = new List<(string Id, string Name, string InputJson)>();
+            StringBuilder? curTextBlock = null;
             string? curToolId = null;
             string? curToolName = null;
             var curToolInput = new StringBuilder();
             var hasToolUse = false;
+            long iterationInputTokens = 0;
+            long iterationOutputTokens = 0;
 
             await foreach (var evt in stream.WithCancellation(cancellationToken))
             {
-                if (evt.TryPickContentBlockStart(out var blockStart))
+                if (evt.TryPickDelta(out var messageDelta))
+                {
+                    if (messageDelta.Usage is { } usage)
+                    {
+                        iterationInputTokens = (usage.InputTokens ?? 0)
+                            + (usage.CacheCreationInputTokens ?? 0)
+                            + (usage.CacheReadInputTokens ?? 0);
+                        iterationOutputTokens = usage.OutputTokens;
+                    }
+                }
+                else if (evt.TryPickContentBlockStart(out var blockStart))
                 {
                     if (blockStart.ContentBlock.TryPickToolUse(out var toolUse))
                     {
+                        curTextBlock = null;
                         curToolId = toolUse.ID;
                         curToolName = toolUse.Name;
                         curToolInput.Clear();
+                    }
+                    else if (blockStart.ContentBlock.TryPickText(out var textBlock))
+                    {
+                        curTextBlock = new StringBuilder();
+                        if (!string.IsNullOrEmpty(textBlock.Text))
+                        {
+                            curTextBlock.Append(textBlock.Text);
+                            fullText.Append(textBlock.Text);
+                            yield return new TokenEvent(textBlock.Text);
+                        }
                     }
                 }
                 else if (evt.TryPickContentBlockDelta(out var blockDelta))
                 {
                     if (blockDelta.Delta.TryPickText(out var textDelta))
                     {
+                        curTextBlock ??= new StringBuilder();
+                        curTextBlock.Append(textDelta.Text);
                         fullText.Append(textDelta.Text);
                         yield return new TokenEvent(textDelta.Text);
                     }
@@ -209,15 +238,23 @@ public sealed class AnthropicBackend : IAgentBackend
                         curToolId = null;
                         curToolName = null;
                     }
-                    else if (fullText.Length > 0)
+                    else if (curTextBlock is not null)
                     {
-                        // Text block finished — add to assistant blocks for history.
-                        assistantBlocks.Add(new Anthropic.Models.Messages.ContentBlockParam(
-                            new Anthropic.Models.Messages.TextBlockParam(fullText.ToString()),
-                            element: null));
+                        if (curTextBlock.Length > 0)
+                        {
+                            // Text block finished — add only this block to the assistant history.
+                            assistantBlocks.Add(new Anthropic.Models.Messages.ContentBlockParam(
+                                new Anthropic.Models.Messages.TextBlockParam(curTextBlock.ToString()),
+                                element: null));
+                        }
+
+                        curTextBlock = null;
                     }
                 }
             }
+
+            totalInputTokens += iterationInputTokens;
+            totalOutputTokens += iterationOutputTokens;
 
             // Append the assistant turn to the conversation.
             if (assistantBlocks.Count > 0)
@@ -231,6 +268,7 @@ public sealed class AnthropicBackend : IAgentBackend
 
             if (!hasToolUse)
             {
+                yield return new UsageEvent("anthropic", totalInputTokens, totalOutputTokens);
                 yield return new DoneEvent(fullText.ToString());
                 yield break;
             }

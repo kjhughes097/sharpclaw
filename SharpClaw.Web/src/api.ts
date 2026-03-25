@@ -1,4 +1,4 @@
-import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, McpDefinition, McpUpsertRequest } from './types';
+import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -36,6 +36,12 @@ export async function fetchPersonas(): Promise<Persona[]> {
 export async function fetchAgents(): Promise<AgentDefinition[]> {
     const res = await fetch(`${BASE}/agents`, { headers: headers() });
     if (!res.ok) throw new Error(`GET /agents: ${res.status}`);
+    return res.json();
+}
+
+export async function fetchBackendModels(backend: string): Promise<BackendModelListResponse> {
+    const res = await fetch(`${BASE}/backends/${encodeURIComponent(backend)}/models`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /backends/${backend}/models: ${res.status}`));
     return res.json();
 }
 
@@ -139,6 +145,21 @@ export async function fetchSessions(): Promise<PersistedSession[]> {
     return res.json();
 }
 
+export async function fetchSession(sessionId: string): Promise<PersistedSession> {
+    const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}`, { headers: headers() });
+    if (!res.ok) throw new Error(`GET /sessions/${sessionId}: ${res.status}`);
+    return res.json();
+}
+
+export async function deleteSession(sessionId: string): Promise<{ sessionId: string; deleted: boolean }> {
+    const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE',
+        headers: headers(),
+    });
+    if (!res.ok) throw new Error(await readError(res, `DELETE /sessions/${sessionId}: ${res.status}`));
+    return res.json();
+}
+
 export async function sendMessage(
     sessionId: string,
     message: string,
@@ -161,7 +182,7 @@ export function streamEvents(
 ): () => void {
     const url = `${BASE}/sessions/${sessionId}/messages/${messageId}/stream`;
     const eventSource = new EventSource(url);
-    const eventTypes = ['token', 'tool_call', 'tool_result', 'permission_request', 'status', 'done'] as const;
+    const eventTypes = ['token', 'tool_call', 'tool_result', 'permission_request', 'status', 'usage', 'done'] as const;
 
     for (const type of eventTypes) {
         eventSource.addEventListener(type, (e: MessageEvent) => {

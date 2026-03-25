@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createMcp, deleteMcp, fetchMcps, setMcpEnabled, updateMcp } from './api';
-import type { McpDefinition, McpUpsertRequest } from './types';
+import { createMcp, deleteMcp, fetchAgents, fetchMcps, setMcpEnabled, updateAgent, updateMcp } from './api';
+import type { AgentDefinition, AgentUpsertRequest, McpDefinition, McpUpsertRequest } from './types';
 
 interface McpConfigViewProps {
   onMenuClick: () => void;
@@ -28,6 +28,19 @@ function toForm(mcp: McpDefinition): McpUpsertRequest {
   };
 }
 
+function toAgentPayload(agent: AgentDefinition): AgentUpsertRequest {
+  return {
+    name: agent.name,
+    description: agent.description,
+    backend: agent.backend,
+    model: agent.model,
+    mcpServers: [...agent.mcpServers],
+    permissionPolicy: { ...agent.permissionPolicy },
+    systemPrompt: agent.systemPrompt,
+    isEnabled: agent.isEnabled,
+  };
+}
+
 function formatArgs(args: string[]): string {
   return JSON.stringify(args, null, 2);
 }
@@ -47,6 +60,7 @@ function parseArgs(value: string): string[] {
 
 export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
   const [mcps, setMcps] = useState<McpDefinition[]>([]);
+  const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [mode, setMode] = useState<'list' | 'edit'>('list');
   const [form, setForm] = useState<McpUpsertRequest>(blankMcp);
@@ -55,6 +69,7 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [linkingAgentId, setLinkingAgentId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<McpDefinition | null>(null);
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [detachLinkedAgents, setDetachLinkedAgents] = useState(false);
@@ -64,8 +79,13 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
     [mcps, selectedSlug],
   );
 
+  const linkedAgents = useMemo(
+    () => selectedMcp ? agents.filter(agent => agent.mcpServers.includes(selectedMcp.slug)) : [],
+    [agents, selectedMcp],
+  );
+
   useEffect(() => {
-    void loadMcps();
+    void loadData();
   }, []);
 
   useEffect(() => {
@@ -74,15 +94,16 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
     setArgsText(formatArgs(selectedMcp.args));
   }, [selectedMcp]);
 
-  async function loadMcps(preferredSelection?: string | null) {
+  async function loadData(preferredSelection?: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchMcps();
-      setMcps(result);
+      const [mcpResult, agentResult] = await Promise.all([fetchMcps(), fetchAgents()]);
+      setMcps(mcpResult);
+      setAgents(agentResult);
 
       const nextSelection = preferredSelection
-        ?? (selectedSlug && result.some(mcp => mcp.slug === selectedSlug) ? selectedSlug : result[0]?.slug ?? null);
+        ?? (selectedSlug && mcpResult.some(mcp => mcp.slug === selectedSlug) ? selectedSlug : mcpResult[0]?.slug ?? null);
 
       setSelectedSlug(nextSelection);
 
@@ -144,7 +165,7 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
         : await createMcp(payload);
 
       setStatus(selectedMcp ? 'MCP updated.' : 'MCP created.');
-      await loadMcps(saved.slug);
+      await loadData(saved.slug);
       setMode('list');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -159,9 +180,38 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
     try {
       await setMcpEnabled(mcp.slug, !mcp.isEnabled);
       setStatus(`${mcp.name} ${mcp.isEnabled ? 'disabled' : 'enabled'}.`);
-      await loadMcps(mcp.slug);
+      await loadData(mcp.slug);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function handleAgentLinkToggle(agent: AgentDefinition) {
+    if (!selectedMcp)
+      return;
+
+    setLinkingAgentId(agent.id);
+    setError(null);
+    setStatus(null);
+
+    try {
+      const hasLink = agent.mcpServers.includes(selectedMcp.slug);
+      const payload = toAgentPayload(agent);
+      payload.mcpServers = hasLink
+        ? payload.mcpServers.filter(server => server !== selectedMcp.slug)
+        : [...payload.mcpServers, selectedMcp.slug];
+
+      await updateAgent(agent.id, payload);
+      setStatus(
+        hasLink
+          ? `Removed ${selectedMcp.name} from ${agent.name}.`
+          : `Linked ${selectedMcp.name} to ${agent.name}.`,
+      );
+      await loadData(selectedMcp.slug);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLinkingAgentId(null);
     }
   }
 
@@ -180,7 +230,7 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
       setDeleteTarget(null);
       setDeleteConfirmation('');
       setDetachLinkedAgents(false);
-      await loadMcps();
+      await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -331,6 +381,81 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
                 placeholder={'[\n  "-y",\n  "@modelcontextprotocol/server-github"\n]'}
               />
             </label>
+
+            <div className="mcp-selection-panel">
+              <div className="agent-permissions-header">
+                <div>
+                  <h3>Linked Agents</h3>
+                  <p>Manage which agents can access this MCP directly from the MCP editor.</p>
+                </div>
+              </div>
+
+              {!isEditing ? (
+                <div className="config-empty-state compact">Save this MCP first, then link agents to it.</div>
+              ) : agents.length === 0 ? (
+                <div className="config-empty-state compact">No agents are defined yet.</div>
+              ) : (
+                <>
+                  <div className="link-summary-panel">
+                    <div className="link-summary-copy">
+                      <strong>Currently Linked</strong>
+                      <span>{linkedAgents.length === 0 ? 'No agents linked yet.' : 'Click any linked agent below to remove it.'}</span>
+                    </div>
+                    <div className="linked-chip-row">
+                      {linkedAgents.length > 0 ? linkedAgents.map(agent => (
+                        <button
+                          key={agent.id}
+                          type="button"
+                          className="link-chip"
+                          onClick={() => void handleAgentLinkToggle(agent)}
+                          disabled={linkingAgentId === agent.id}
+                          title={`Remove ${selectedMcp?.name} from ${agent.name}`}
+                        >
+                          <span>{agent.name}</span>
+                          <span className="link-chip-action">Remove</span>
+                        </button>
+                      )) : (
+                        <span className="agent-chip muted">Use the cards below to link agents.</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mcp-selection-grid">
+                    {agents.map(agent => {
+                      const linked = !!selectedMcp && agent.mcpServers.includes(selectedMcp.slug);
+                      return (
+                        <button
+                          key={agent.id}
+                          type="button"
+                          className={`mcp-option agent-link-option ${linked ? 'selected' : ''} ${agent.isEnabled ? '' : 'disabled'}`}
+                          onClick={() => void handleAgentLinkToggle(agent)}
+                          disabled={linkingAgentId === agent.id}
+                          aria-pressed={linked}
+                        >
+                          <div className="mcp-option-top">
+                            <strong>{agent.name}</strong>
+                            <div className="mcp-option-badges">
+                              <span className={`permission-state-badge ${linked ? 'recommended' : 'no-rules'}`}>
+                                {linked ? 'Linked' : 'Available'}
+                              </span>
+                              <span className={`agent-status-pill ${agent.isEnabled ? 'enabled' : 'disabled'}`}>
+                                {agent.isEnabled ? 'Enabled' : 'Disabled'}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mcp-option-slug">{agent.id}</div>
+                          <p className="mcp-option-description">{agent.description}</p>
+                          <div className="mcp-option-meta">
+                            <span>{agent.backend}</span>
+                            <span>{agent.mcpServers.length} MCP{agent.mcpServers.length === 1 ? '' : 's'}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
 
             <div className="agent-form-actions">
               <button type="submit" className="send-btn" disabled={saving}>{saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Create MCP'}</button>

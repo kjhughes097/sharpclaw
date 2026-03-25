@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { FluentProvider, webDarkTheme, webLightTheme } from '@fluentui/react-components';
 import { AgentConfigView } from './AgentConfigView';
 import { McpConfigView } from './McpConfigView';
 import { Sidebar } from './Sidebar';
@@ -21,7 +22,8 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'mcps'>('chat');
-  const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, send } = useChat(authed === true);
+  const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, send } = useChat(authed === true);
+  const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 
   // Apply theme to <html>
   useEffect(() => {
@@ -70,6 +72,11 @@ export function App() {
     setSidebarOpen(false);
   }, [startSession]);
 
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    await deleteSession(sessionId);
+    setCurrentView('chat');
+  }, [deleteSession]);
+
   const handleChangeDraftPersona = useCallback((agentId: string, personaName: string) => {
     if (activeIdx < 0) return;
     setDraftPersona(activeIdx, agentId, personaName);
@@ -88,48 +95,57 @@ export function App() {
   // Loading check
   if (authed === null) return null;
 
-  if (!authed) return <LoginScreen onLogin={handleLogin} error={loginError} />;
+  if (!authed) {
+    return (
+      <FluentProvider theme={fluentTheme} className="fluent-shell">
+        <LoginScreen onLogin={handleLogin} error={loginError} />
+      </FluentProvider>
+    );
+  }
 
   return (
-    <div className="app">
-      {sidebarOpen && (
-        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
-      )}
-      <Sidebar
-        sessions={sessions}
-        activeIdx={activeIdx}
-        onSelect={handleSelectSession}
-        onNewSession={handleNewSession}
-        onShowAgents={handleShowAgents}
-        onShowMcps={handleShowMcps}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        isOpen={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-        currentView={currentView}
-      />
-      {currentView === 'agents' ? (
-        <AgentConfigView onMenuClick={() => setSidebarOpen(true)} />
-      ) : currentView === 'mcps' ? (
-        <McpConfigView onMenuClick={() => setSidebarOpen(true)} />
-      ) : active ? (
-        <ChatView
-          state={active}
-          onSend={send}
-          onMenuClick={() => setSidebarOpen(true)}
-          onChangePersona={handleChangeDraftPersona}
+    <FluentProvider theme={fluentTheme} className="fluent-shell">
+      <div className="app">
+        {sidebarOpen && (
+          <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+        )}
+        <Sidebar
+          sessions={sessions}
+          activeIdx={activeIdx}
+          onSelect={handleSelectSession}
+          onDeleteSession={handleDeleteSession}
+          onNewSession={handleNewSession}
+          onShowAgents={handleShowAgents}
+          onShowMcps={handleShowMcps}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          isOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          currentView={currentView}
         />
-      ) : (
-        <div className="chat-area">
-          <div className="chat-header">
-            <button className="menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
+        {currentView === 'agents' ? (
+          <AgentConfigView onMenuClick={() => setSidebarOpen(true)} />
+        ) : currentView === 'mcps' ? (
+          <McpConfigView onMenuClick={() => setSidebarOpen(true)} />
+        ) : active ? (
+          <ChatView
+            state={active}
+            onSend={send}
+            onMenuClick={() => setSidebarOpen(true)}
+            onChangePersona={handleChangeDraftPersona}
+          />
+        ) : (
+          <div className="chat-area">
+            <div className="chat-header">
+              <button className="menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Open menu">☰</button>
+            </div>
+            <div className="empty-state">
+              <div className="big">🐾</div>
+              <div>Select a session or create a new one to get started</div>
+            </div>
           </div>
-          <div className="empty-state">
-            <div className="big">🐾</div>
-            <div>Select a session or create a new one to get started</div>
-          </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </FluentProvider>
   );
 }

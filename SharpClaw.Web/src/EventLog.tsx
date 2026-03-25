@@ -21,6 +21,8 @@ function eventSummary(item: StreamItem): string {
       return `${e.isError ? '✗' : '✓'} Result: ${e.tool}`;
     case 'status':
       return `💭 ${e.message}`;
+    case 'usage':
+      return `📊 ${e.totalTokens.toLocaleString()} tokens`;
     case 'permission_request':
       return `⚠ Permission: ${e.tool}`;
     case 'token':
@@ -46,6 +48,13 @@ function eventDetail(item: StreamItem): string | null {
       return `Tool: ${e.tool}\n${e.isError ? 'Error' : 'Result'}:\n${e.result}`;
     case 'status':
       return null; // summary is enough
+    case 'usage':
+      return [
+        `Provider: ${e.provider}`,
+        `Input tokens: ${e.inputTokens.toLocaleString()}`,
+        `Output tokens: ${e.outputTokens.toLocaleString()}`,
+        `Total tokens: ${e.totalTokens.toLocaleString()}`,
+      ].join('\n');
     case 'permission_request':
       return e.input ? JSON.stringify(e.input, null, 2) : null;
     case 'token':

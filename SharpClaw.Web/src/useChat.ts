@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { Session, ChatMessage, PersistedStreamItem, StreamItem, AgentEvent, ToolResultEvent } from './types';
-import { createSession, fetchSessions, sendMessage, streamEvents } from './api';
+import type { Session, ChatMessage, PersistedSession, PersistedStreamItem, StreamItem, AgentEvent, ToolResultEvent } from './types';
+import { createSession, deleteSession as deletePersistedSession, fetchSession, fetchSessions, sendMessage, streamEvents } from './api';
 
 const DEFAULT_AGENT_ID = 'ade.agent.md';
 const DEFAULT_PERSONA_NAME = 'Ade';
@@ -17,6 +17,10 @@ export interface SessionState {
     /** Completed event logs, one per assistant message (index matches assistant messages) */
     eventLogs: StreamItem[][];
     streaming: boolean;
+}
+
+function removeSessionAtIndex(items: SessionState[], index: number): SessionState[] {
+    return items.filter((_, itemIndex) => itemIndex !== index);
 }
 
 function restoreEventLog(items: PersistedStreamItem[], counter: React.MutableRefObject<number>): StreamItem[] {
@@ -37,6 +41,23 @@ function restoreEventLogs(messages: ChatMessage[], eventLogs: PersistedStreamIte
     return restored;
 }
 
+function toSessionState(session: PersistedSession, counter: React.MutableRefObject<number>): SessionState {
+    return {
+        session: {
+            sessionId: session.sessionId,
+            persona: session.persona,
+        },
+        agentId: session.agentId,
+        createdAt: session.createdAt,
+        lastActivityAt: session.lastActivityAt,
+        isDraft: false,
+        messages: session.messages,
+        streamItems: [],
+        eventLogs: restoreEventLogs(session.messages, session.eventLogs, counter),
+        streaming: false,
+    };
+}
+
 export function useChat(enabled: boolean) {
     const [sessions, setSessions] = useState<SessionState[]>([]);
     const [activeIdx, setActiveIdx] = useState<number>(-1);
@@ -46,13 +67,35 @@ export function useChat(enabled: boolean) {
 
     const active = activeIdx >= 0 ? sessions[activeIdx] : null;
 
-    function moveSessionToTop(items: SessionState[], sessionKey: string, update: (session: SessionState) => SessionState): SessionState[] {
-        const index = items.findIndex(session => session.session.sessionId === sessionKey);
+    function moveSessionToTopByKeys(
+        items: SessionState[],
+        sessionKeys: readonly string[],
+        update: (session: SessionState) => SessionState,
+    ): SessionState[] {
+        const index = items.findIndex(session => sessionKeys.includes(session.session.sessionId));
         if (index < 0)
             return items;
 
         const updated = update(items[index]);
         return [updated, ...items.filter((_, itemIndex) => itemIndex !== index)];
+    }
+
+    async function reconcileSessionFromServer(sessionId: string) {
+        try {
+            const persisted = await fetchSession(sessionId);
+            const restored = toSessionState(persisted, itemCounter);
+
+            setSessions(prev => {
+                const index = prev.findIndex(session => session.session.sessionId === sessionId);
+                if (index < 0)
+                    return prev;
+
+                return [restored, ...prev.filter((_, itemIndex) => itemIndex !== index)];
+            });
+            setActiveIdx(0);
+        } catch (err) {
+            console.error('failed to reconcile session:', err);
+        }
     }
 
     useEffect(() => {
@@ -66,20 +109,7 @@ export function useChat(enabled: boolean) {
                 if (cancelled)
                     return;
 
-                const restored = persistedSessions.map(session => ({
-                    session: {
-                        sessionId: session.sessionId,
-                        persona: session.persona,
-                    },
-                    agentId: session.agentId,
-                    createdAt: session.createdAt,
-                    lastActivityAt: session.lastActivityAt,
-                    isDraft: false,
-                    messages: session.messages,
-                    streamItems: [],
-                    eventLogs: restoreEventLogs(session.messages, session.eventLogs, itemCounter),
-                    streaming: false,
-                } satisfies SessionState));
+                const restored = persistedSessions.map(session => toSessionState(session, itemCounter));
 
                 setSessions(restored);
                 setActiveIdx(restored.length > 0 ? 0 : -1);
@@ -139,23 +169,64 @@ export function useChat(enabled: boolean) {
         setActiveIdx(idx);
     }, []);
 
+    const deleteSession = useCallback(async (sessionId: string) => {
+        const sessionIndex = sessions.findIndex(session => session.session.sessionId === sessionId);
+        if (sessionIndex < 0)
+            return;
+
+        const session = sessions[sessionIndex];
+        if (session.streaming)
+            throw new Error('This chat is still streaming. Wait for it to finish before deleting it.');
+
+        if (!session.isDraft)
+            await deletePersistedSession(sessionId);
+
+        if (active?.session.sessionId === sessionId) {
+            cleanupRef.current?.();
+            cleanupRef.current = null;
+        }
+
+        setSessions(prev => {
+            const index = prev.findIndex(item => item.session.sessionId === sessionId);
+            if (index < 0)
+                return prev;
+
+            const next = removeSessionAtIndex(prev, index);
+
+            setActiveIdx(currentIdx => {
+                if (next.length === 0)
+                    return -1;
+                if (currentIdx === index)
+                    return Math.min(index, next.length - 1);
+                if (currentIdx > index)
+                    return currentIdx - 1;
+                return currentIdx;
+            });
+
+            return next;
+        });
+    }, [active, sessions]);
+
     const send = useCallback(async (text: string) => {
         if (!active || active.streaming) return;
         let currentSessionKey = active.session.sessionId;
         let sessionId = active.session.sessionId;
+        const trackedSessionKeys = [currentSessionKey];
+
+        const updateTrackedSession = (update: (session: SessionState) => SessionState) => {
+            setSessions(prev => moveSessionToTopByKeys(prev, trackedSessionKeys, update));
+        };
 
         // Add user message
         const userMsg: ChatMessage = { role: 'user', content: text };
         const activityAt = new Date().toISOString();
-        setSessions(prev => {
-            return moveSessionToTop(prev, currentSessionKey, session => ({
-                ...session,
-                messages: [...session.messages, userMsg],
-                streamItems: [],
-                streaming: true,
-                lastActivityAt: activityAt,
-            }));
-        });
+        updateTrackedSession(session => ({
+            ...session,
+            messages: [...session.messages, userMsg],
+            streamItems: [],
+            streaming: true,
+            lastActivityAt: activityAt,
+        }));
         setActiveIdx(0);
 
         try {
@@ -165,7 +236,7 @@ export function useChat(enabled: boolean) {
 
                 setSessions(prev => {
                     const createdAt = new Date().toISOString();
-                    return moveSessionToTop(prev, currentSessionKey, session => ({
+                    return moveSessionToTopByKeys(prev, trackedSessionKeys, session => ({
                         ...session,
                         session: created,
                         createdAt,
@@ -175,10 +246,12 @@ export function useChat(enabled: boolean) {
                 });
 
                 currentSessionKey = sessionId;
+                trackedSessionKeys.push(sessionId);
                 setActiveIdx(0);
             }
 
             const { messageId } = await sendMessage(sessionId, text);
+            let sawDone = false;
 
             // Map tool_call IDs to their stream item IDs so we can pair results
             const toolCallMap = new Map<number, string>(); // index -> streamItem id
@@ -192,13 +265,7 @@ export function useChat(enabled: boolean) {
 
                     if (event.type === 'tool_result') {
                         // Pair with the matching tool_call
-                        setSessions(prev => {
-                            const index = prev.findIndex(session => session.session.sessionId === currentSessionKey);
-                            if (index < 0)
-                                return prev;
-
-                            const updated = [...prev];
-                            const state = { ...updated[index] };
+                        updateTrackedSession(state => {
                             const items = [...state.streamItems];
                             // Find the last tool_call for the same tool that doesn't have a result yet
                             const pairIdx = items.findLastIndex(
@@ -211,51 +278,44 @@ export function useChat(enabled: boolean) {
                             } else {
                                 items.push({ id, event });
                             }
-                            state.streamItems = items;
-                            updated[index] = state;
-                            return updated;
+                            return {
+                                ...state,
+                                streamItems: items,
+                            };
                         });
                         return;
                     }
 
                     if (event.type === 'done') {
+                        sawDone = true;
                         const lastActivityAt = new Date().toISOString();
-                        setSessions(prev => {
-                            return moveSessionToTop(prev, currentSessionKey, state => {
-                                const assistantText = state.streamItems
-                                    .filter(i => i.event.type === 'token')
-                                    .map(i => (i.event as { text: string }).text)
-                                    .join('') || event.content;
+                        updateTrackedSession(state => {
+                            const assistantText = state.streamItems
+                                .filter(i => i.event.type === 'token')
+                                .map(i => (i.event as { text: string }).text)
+                                .join('') || event.content;
 
-                                return {
-                                    ...state,
-                                    messages: [
-                                        ...state.messages,
-                                        { role: 'assistant', content: assistantText },
-                                    ],
-                                    eventLogs: [...state.eventLogs, state.streamItems],
-                                    streamItems: [],
-                                    streaming: false,
-                                    lastActivityAt,
-                                };
-                            });
+                            return {
+                                ...state,
+                                messages: [
+                                    ...state.messages,
+                                    { role: 'assistant', content: assistantText },
+                                ],
+                                eventLogs: [...state.eventLogs, state.streamItems],
+                                streamItems: [],
+                                streaming: false,
+                                lastActivityAt,
+                            };
                         });
                         setActiveIdx(0);
                         return;
                     }
 
                     // token, tool_call, permission_request
-                    setSessions(prev => {
-                        const index = prev.findIndex(session => session.session.sessionId === currentSessionKey);
-                        if (index < 0)
-                            return prev;
-
-                        const updated = [...prev];
-                        const state = { ...updated[index] };
-                        state.streamItems = [...state.streamItems, { id, event }];
-                        updated[index] = state;
-                        return updated;
-                    });
+                    updateTrackedSession(state => ({
+                        ...state,
+                        streamItems: [...state.streamItems, { id, event }],
+                    }));
 
                     if (event.type === 'tool_call') {
                         toolCallMap.set(toolCallIndex++, id);
@@ -264,62 +324,55 @@ export function useChat(enabled: boolean) {
                 () => {
                     // SSE closed — ensure streaming is off
                     const lastActivityAt = new Date().toISOString();
-                    setSessions(prev => {
-                        return moveSessionToTop(prev, currentSessionKey, state => {
-                            if (!state.streaming)
-                                return state;
+                    let shouldReconcile = false;
+                    updateTrackedSession(state => {
+                        if (!state.streaming)
+                            return state;
 
-                            const assistantText = state.streamItems
-                                .filter(i => i.event.type === 'token')
-                                .map(i => (i.event as { text: string }).text)
-                                .join('');
+                        const assistantText = state.streamItems
+                            .filter(i => i.event.type === 'token')
+                            .map(i => (i.event as { text: string }).text)
+                            .join('');
 
-                            return {
-                                ...state,
-                                messages: assistantText
-                                    ? [...state.messages, { role: 'assistant', content: assistantText }]
-                                    : state.messages,
-                                eventLogs: assistantText
-                                    ? [...state.eventLogs, state.streamItems]
-                                    : state.eventLogs,
-                                streamItems: [],
-                                streaming: false,
-                                lastActivityAt,
-                            };
-                        });
+                        shouldReconcile = !sawDone && !assistantText;
+
+                        return {
+                            ...state,
+                            messages: assistantText
+                                ? [...state.messages, { role: 'assistant', content: assistantText }]
+                                : state.messages,
+                            eventLogs: assistantText
+                                ? [...state.eventLogs, state.streamItems]
+                                : state.eventLogs,
+                            streamItems: [],
+                            streaming: false,
+                            lastActivityAt,
+                        };
                     });
+
+                    if (shouldReconcile)
+                        void reconcileSessionFromServer(sessionId);
+
                     setActiveIdx(0);
                 },
                 (err) => {
                     console.error('SSE error:', err);
-                    setSessions(prev => {
-                        const index = prev.findIndex(session => session.session.sessionId === currentSessionKey);
-                        if (index < 0)
-                            return prev;
-
-                        const updated = [...prev];
-                        const state = { ...updated[index] };
-                        state.streaming = false;
-                        updated[index] = state;
-                        return updated;
-                    });
+                    updateTrackedSession(state => ({
+                        ...state,
+                        streaming: false,
+                    }));
                 },
             );
 
             cleanupRef.current = close;
         } catch (err) {
             console.error('send error:', err);
-            setSessions(prev => {
-                const index = prev.findIndex(session => session.session.sessionId === currentSessionKey);
-                if (index < 0)
-                    return prev;
-
-                const updated = [...prev];
-                updated[index] = { ...updated[index], streaming: false };
-                return updated;
-            });
+            updateTrackedSession(session => ({
+                ...session,
+                streaming: false,
+            }));
         }
     }, [active]);
 
-    return { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, send };
+    return { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, send };
 }

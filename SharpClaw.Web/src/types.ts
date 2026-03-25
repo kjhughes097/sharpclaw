@@ -36,6 +36,18 @@ export interface AgentUpsertRequest {
     isEnabled: boolean;
 }
 
+export interface BackendModelOption {
+    id: string;
+    displayName: string;
+}
+
+export interface BackendModelListResponse {
+    models: BackendModelOption[];
+    source: 'live' | 'cache';
+    cachedAt: string | null;
+    warning?: string | null;
+}
+
 export interface McpDefinition {
     slug: string;
     name: string;
@@ -112,12 +124,21 @@ export interface StatusEvent {
     message: string;
 }
 
+export interface UsageEvent {
+    type: 'usage';
+    provider: string;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+}
+
 export type AgentEvent =
     | TokenEvent
     | ToolCallEvent
     | ToolResultEvent
     | PermissionRequestEvent
     | StatusEvent
+    | UsageEvent
     | DoneEvent;
 
 /* ── Stream item: an AgentEvent plus metadata for the UI ──────────────────── */

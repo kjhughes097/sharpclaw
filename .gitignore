@@ -40,8 +40,6 @@ ScaffoldingReadMe.txt
 ~$*
 *~
 CodeCoverage/
-**/[Aa]pp[Ss]ettings.[Dd]evelopment.json
-**/[Aa]pp[Ss]ettings.Local.json
 
 # MSBuild Binary and Structured Log
 *.binlog
@@ -60,3 +58,10 @@ TestResult.xml
 **/*.tsbuildinfo
 SharpClaw.Api/wwwroot/
 nunit-*.xml
+
+# Environment / settings files
+**/.env
+**/.env.local
+**/.env.*.local
+**/[Aa]pp[Ss]ettings.[Dd]evelopment.json
+**/[Aa]pp[Ss]ettings.Local.json

@@ -16,7 +16,7 @@ SharpClaw provides:
 	- Anthropic
 	- GitHub Copilot SDK
 - MCP tool execution with MCP-scoped permission policies
-- Coordinator-based routing to specialist agents
+- Ade-based routing to specialist agents
 - In-app agent management:
 	- list agents
 	- create agents
@@ -40,10 +40,10 @@ If you want to use a `.env` file, copy `.env.example` to `.env` and fill in the 
 
 ### Chat UX
 
-- New chats default to the `Coordinator` agent
+- New chats default to the `Ade` agent
 - The selected agent can be changed from a dropdown beside the chat input before the first message is sent
 - Once the first message is sent, the session is bound to that agent
-- If the active session uses the `Coordinator`, the backend routes the request to the best enabled specialist agent
+- If the active session uses `Ade`, the backend routes the request to the best enabled specialist agent when one is a better fit
 
 ### Agent Management
 
@@ -323,14 +323,14 @@ Example response:
 ```json
 [
 	{
-		"file": "coordinator.agent.md",
-		"name": "Coordinator",
-		"description": "Routes a user request to the best specialist agent.",
+		"id": "ade.agent.md",
+		"name": "Ade",
+		"description": "A general assistant who helps directly and hands work to a better-fit specialist when needed.",
 		"backend": "anthropic",
 		"model": "claude-haiku-4-5-20251001",
 		"mcpServers": [],
 		"permissionPolicy": {},
-		"systemPrompt": "You are a routing coordinator...",
+		"systemPrompt": "You are Ade, a general assistant and aide...",
 		"isEnabled": true
 	}
 ]
@@ -345,7 +345,7 @@ Example response:
 ```json
 [
 	{
-		"file": "file-browser.agent.md",
+		"id": "file-browser.agent.md",
 		"name": "FileBrowser",
 		"description": "Searches, lists, and reads files from the local workspace.",
 		"backend": "copilot",
@@ -371,7 +371,6 @@ Example request:
 
 ```json
 {
-	"file": "ops.agent.md",
 	"name": "Ops",
 	"description": "Handles operations and service diagnostics.",
 	"backend": "anthropic",
@@ -384,7 +383,7 @@ Example request:
 	},
 	"systemPrompt": "You are an operations assistant.",
 	"isEnabled": true
-}
+	}
 ```
 
 #### `PATCH /api/agents/{filename}/enabled`
@@ -428,7 +427,7 @@ Example request:
 
 ```json
 {
-	"persona": "coordinator.agent.md"
+	"agentId": "ade.agent.md"
 }
 ```
 
@@ -437,7 +436,8 @@ Example response:
 ```json
 {
 	"sessionId": "abc123def456",
-	"persona": "Coordinator"
+	"persona": "Ade",
+	"agentId": "ade.agent.md"
 }
 ```
 
@@ -493,13 +493,9 @@ Example request:
 
 ## Built-In Agents
 
-The database is automatically seeded with built-in agents on startup. Current seeded agents include:
+The database is automatically seeded with built-in agents on startup. The current built-in agent is:
 
-- `coordinator.agent.md`
-- `developer.agent.md`
-- `file-browser.agent.md`
-- `homelab.agent.md`
-- `home-assistant.agent.md`
+- `ade.agent.md`
 
 These seeds are inserted safely and do not overwrite user-edited definitions.
 

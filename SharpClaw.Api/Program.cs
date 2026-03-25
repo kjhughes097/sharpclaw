@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Anthropic;
 using Anthropic.Core;
+using GitHub.Copilot.SDK;
 using Microsoft.Extensions.FileProviders;
 using SharpClaw.Copilot;
 using SharpClaw.Core;
@@ -22,6 +23,8 @@ var connectionString = app.Configuration.GetConnectionString("DefaultConnection"
     ?? "Host=localhost;Database=sharpclaw;Username=sharpclaw;Password=sharpclaw";
 
 var store = new SessionStore(connectionString);
+var providerHttpClient = new HttpClient();
+var backendModelCache = new ConcurrentDictionary<string, (DateTimeOffset CachedAt, IReadOnlyList<(string Id, string DisplayName)> Models)>();
 
 // ── Live agent runners keyed by session ID ───────────────────────────────────
 
@@ -165,6 +168,45 @@ object ToMcpDto(McpServerRecord mcp, int linkedAgentCount) => new
     linkedAgentCount,
 };
 
+object ToBackendModelsDto(
+    IReadOnlyList<(string Id, string DisplayName)> models,
+    string source,
+    DateTimeOffset? cachedAt = null,
+    string? warning = null) => new
+{
+    models = models.Select(model => new { id = model.Id, displayName = model.DisplayName }).ToList(),
+    source,
+    cachedAt,
+    warning,
+};
+
+object ToSessionDto(StoredSession session, Dictionary<string, AgentRecord> agentsBySlug)
+{
+    var conversation = store.Load(session.SessionId);
+    var eventLogs = store.LoadEventLogs(session.SessionId);
+    var hasAgent = agentsBySlug.TryGetValue(session.AgentSlug, out var agentRecord);
+    var personaName = hasAgent ? agentRecord!.Name : session.AgentSlug;
+
+    return new
+    {
+        sessionId = session.SessionId,
+        persona = personaName,
+        agentId = session.AgentSlug,
+        createdAt = session.CreatedAt,
+        lastActivityAt = session.LastActivityAt,
+        messages = conversation?.Messages.Select(message => new
+        {
+            role = message.Role == ChatRole.User ? "user" : "assistant",
+            content = message.Content,
+        }).ToList() ?? [],
+        eventLogs = eventLogs.Select(log => log.Select(item => new
+        {
+            Event = item.Event,
+            result = item.Result,
+        }).ToList()).ToList(),
+    };
+}
+
 List<string> NormalizeStringList(IEnumerable<string>? values) => (values ?? [])
     .Where(value => !string.IsNullOrWhiteSpace(value))
     .Select(value => value.Trim())
@@ -236,6 +278,116 @@ AgentRunner CreateRunner(AgentRecord agentRecord)
     return new AgentRunner(persona, mcps, CreateBackend);
 }
 
+string BuildDirectResponseSystemPrompt(AgentRecord agentRecord)
+{
+    return $"""
+        You are {agentRecord.Name}. {agentRecord.Description}
+
+        Help the user directly and answer in normal conversational language.
+        Do not return a routing JSON object or mention internal routing behavior unless it genuinely helps the user.
+        """;
+}
+
+CopilotClient CreateCopilotClient()
+{
+    var opts = new CopilotClientOptions
+    {
+        Cwd = Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE") ?? Environment.CurrentDirectory,
+    };
+
+    var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
+    if (string.IsNullOrWhiteSpace(token))
+        token = Environment.GetEnvironmentVariable("GITHUB_COPILOT_TOKEN");
+    if (string.IsNullOrWhiteSpace(token))
+        token = TryGetGhToken();
+
+    if (!string.IsNullOrWhiteSpace(token))
+        opts.GitHubToken = token;
+
+    return new CopilotClient(opts);
+}
+
+string? TryGetGhToken()
+{
+    try
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo("gh", "auth token")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+        };
+
+        using var proc = System.Diagnostics.Process.Start(psi);
+        if (proc is null)
+            return null;
+
+        var output = proc.StandardOutput.ReadToEnd().Trim();
+        proc.WaitForExit(5000);
+        return proc.ExitCode == 0 && output.StartsWith("gho_") ? output : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+async Task<IReadOnlyList<(string Id, string DisplayName)>> ListCopilotModelsAsync(CancellationToken cancellationToken)
+{
+    await using var client = CreateCopilotClient();
+    await client.StartAsync(cancellationToken);
+
+    var response = await client.ListModelsAsync(cancellationToken);
+    return response
+        .Where(model => !string.IsNullOrWhiteSpace(model.Id))
+        .Select(model => (
+            model.Id,
+            string.IsNullOrWhiteSpace(model.Name) ? model.Id : model.Name))
+        .ToList();
+}
+
+async Task<IReadOnlyList<(string Id, string DisplayName)>> ListAnthropicModelsAsync(CancellationToken cancellationToken)
+{
+    var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+    if (string.IsNullOrWhiteSpace(apiKey))
+        throw new InvalidOperationException("ANTHROPIC_API_KEY is not set.");
+
+    using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.anthropic.com/v1/models");
+    request.Headers.Add("x-api-key", apiKey);
+    request.Headers.Add("anthropic-version", "2023-06-01");
+
+    using var response = await providerHttpClient.SendAsync(request, cancellationToken);
+    var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+    if (!response.IsSuccessStatusCode)
+    {
+        throw new InvalidOperationException(
+            $"Anthropic model list request failed with {(int)response.StatusCode}: {responseBody}");
+    }
+
+    using var document = JsonDocument.Parse(responseBody);
+    if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+        return [];
+
+    var models = new List<(string Id, string DisplayName)>();
+    foreach (var item in data.EnumerateArray())
+    {
+        if (!item.TryGetProperty("id", out var idElement))
+            continue;
+
+        var id = idElement.GetString();
+        if (string.IsNullOrWhiteSpace(id))
+            continue;
+
+        var displayName = item.TryGetProperty("display_name", out var nameElement)
+            ? nameElement.GetString()
+            : null;
+
+        models.Add((id, string.IsNullOrWhiteSpace(displayName) ? id : displayName));
+    }
+
+    return models;
+}
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 app.MapGet("/api/health", () => Results.Ok(new { status = "ok", service = "SharpClaw" }));
@@ -255,6 +407,52 @@ app.MapGet("/api/agents", () =>
     var sessionCounts = store.GetSessionCountsByAgent();
     return Results.Ok(store.ListAgents().Select(agent =>
         ToAgentDto(agent, sessionCounts.GetValueOrDefault(agent.Slug, 0))).ToList());
+});
+
+app.MapGet("/api/backends/{backend}/models", async (string backend, CancellationToken cancellationToken) =>
+{
+    var normalizedBackend = backend.Trim().ToLowerInvariant();
+    if (normalizedBackend is not ("anthropic" or "copilot"))
+        return Results.BadRequest(new { error = "backend must be either 'anthropic' or 'copilot'." });
+
+    try
+    {
+        var models = normalizedBackend switch
+        {
+            "anthropic" => await ListAnthropicModelsAsync(cancellationToken),
+            "copilot" => await ListCopilotModelsAsync(cancellationToken),
+            _ => [],
+        };
+
+        backendModelCache[normalizedBackend] = (DateTimeOffset.UtcNow, models);
+
+        return Results.Ok(ToBackendModelsDto(models, source: "live"));
+    }
+    catch (Exception ex) when (backendModelCache.TryGetValue(normalizedBackend, out var cachedModels))
+    {
+        return Results.Ok(ToBackendModelsDto(
+            cachedModels.Models,
+            source: "cache",
+            cachedAt: cachedModels.CachedAt,
+            warning: ex.Message));
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        if (ex.Message.Contains("Not authenticated", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("authenticate first", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+
+        return Results.Problem(
+            detail: ex.Message,
+            title: $"Failed to load models for backend '{normalizedBackend}'.",
+            statusCode: StatusCodes.Status502BadGateway);
+    }
 });
 
 app.MapGet("/api/mcps", () =>
@@ -407,35 +605,46 @@ app.MapGet("/api/sessions", () =>
         .ToDictionary(agent => agent.Slug, StringComparer.OrdinalIgnoreCase);
 
     var sessions = store.ListSessions()
-        .Select(session =>
-        {
-            var conversation = store.Load(session.SessionId);
-            var eventLogs = store.LoadEventLogs(session.SessionId);
-            var hasAgent = agentsBySlug.TryGetValue(session.AgentSlug, out var agentRecord);
-            var personaName = hasAgent ? agentRecord!.Name : session.AgentSlug;
-
-            return new
-            {
-                sessionId = session.SessionId,
-                persona = personaName,
-                agentId = session.AgentSlug,
-                createdAt = session.CreatedAt,
-                lastActivityAt = session.LastActivityAt,
-                messages = conversation?.Messages.Select(message => new
-                {
-                    role = message.Role == ChatRole.User ? "user" : "assistant",
-                    content = message.Content,
-                }).ToList() ?? [],
-                eventLogs = eventLogs.Select(log => log.Select(item => new
-                {
-                    Event = item.Event,
-                    result = item.Result,
-                }).ToList()).ToList(),
-            };
-        })
+        .Select(session => ToSessionDto(session, agentsBySlug))
         .ToList();
 
     return Results.Ok(sessions);
+});
+
+app.MapGet("/api/sessions/{id}", (string id) =>
+{
+    var session = store.ListSessions().FirstOrDefault(item => item.SessionId == id);
+    if (session is null)
+        return Results.NotFound(new { error = $"Session '{id}' not found." });
+
+    var agentsBySlug = store.ListAgents()
+        .ToDictionary(agent => agent.Slug, StringComparer.OrdinalIgnoreCase);
+
+    return Results.Ok(ToSessionDto(session, agentsBySlug));
+});
+
+app.MapDelete("/api/sessions/{id}", async (string id) =>
+{
+    var session = store.ListSessions().FirstOrDefault(item => item.SessionId == id);
+    if (session is null)
+        return Results.NotFound(new { error = $"Session '{id}' not found." });
+
+    if (messageStreams.Keys.Any(key => key.StartsWith($"{id}/", StringComparison.Ordinal)))
+        return Results.Conflict(new { error = $"Session '{id}' is currently streaming and cannot be deleted yet." });
+
+    if (!store.DeleteSession(id))
+        return Results.NotFound(new { error = $"Session '{id}' not found." });
+
+    if (runners.TryRemove(id, out var runner))
+        await runner.DisposeAsync();
+
+    foreach (var streamKey in messageStreams.Keys.Where(key => key.StartsWith($"{id}/", StringComparison.Ordinal)).ToList())
+    {
+        if (messageStreams.TryRemove(streamKey, out var stream))
+            stream.Writer.TryComplete();
+    }
+
+    return Results.Ok(new { sessionId = id, deleted = true });
 });
 
 // POST /api/sessions — create a session, return its ID.
@@ -474,8 +683,11 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
     if (conversation is null)
         return Results.NotFound(new { error = $"Session '{id}' not found." });
 
+    var isAdeSession = conversation.AgentSlug.Equals(AdeAgentId, StringComparison.OrdinalIgnoreCase);
+
     // Get or create runner.
-    if (!runners.TryGetValue(id, out var runner))
+    AgentRunner? runner = null;
+    if (!isAdeSession && !runners.TryGetValue(id, out runner))
     {
         var agentRecord = store.GetAgent(conversation.AgentSlug);
         if (agentRecord is null)
@@ -500,6 +712,9 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
     // Fire-and-forget: run the agent turn in the background, writing events to the channel.
     _ = Task.Run(async () =>
     {
+        AgentRunner? turnRunner = runner;
+        var disposeTurnRunner = false;
+
         try
         {
             var assistantIndex = conversation.Messages.Count(message => message.Role == ChatRole.Assistant);
@@ -513,24 +728,27 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                         persistedEventLog.Add(new StoredEventLogItem(toolCall, null));
                         break;
                     case ToolResultEvent toolResult:
-                    {
-                        for (var i = persistedEventLog.Count - 1; i >= 0; i--)
                         {
-                            var item = persistedEventLog[i];
-                            if (item.Event is ToolCallEvent pendingCall &&
-                                pendingCall.Tool == toolResult.Tool &&
-                                item.Result is null)
+                            for (var i = persistedEventLog.Count - 1; i >= 0; i--)
                             {
-                                persistedEventLog[i] = item with { Result = toolResult };
-                                return;
+                                var item = persistedEventLog[i];
+                                if (item.Event is ToolCallEvent pendingCall &&
+                                    pendingCall.Tool == toolResult.Tool &&
+                                    item.Result is null)
+                                {
+                                    persistedEventLog[i] = item with { Result = toolResult };
+                                    return;
+                                }
                             }
-                        }
 
-                        persistedEventLog.Add(new StoredEventLogItem(toolResult, toolResult));
-                        break;
-                    }
+                            persistedEventLog.Add(new StoredEventLogItem(toolResult, toolResult));
+                            break;
+                        }
                     case StatusEvent status:
                         persistedEventLog.Add(new StoredEventLogItem(status, null));
+                        break;
+                    case UsageEvent usage:
+                        persistedEventLog.Add(new StoredEventLogItem(usage, null));
                         break;
                     case PermissionRequestEvent permissionRequest:
                         persistedEventLog.Add(new StoredEventLogItem(permissionRequest, null));
@@ -538,10 +756,24 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                 }
             }
 
-            // ── Coordinator routing ──────────────────────────────────────
-            // If this session uses the coordinator persona, route to a specialist first.
-            if (conversation.AgentSlug.Equals(AdeAgentId, StringComparison.OrdinalIgnoreCase))
+            void EmitStatus(string message)
             {
+                var status = new StatusEvent(message);
+                RecordEvent(status);
+                channel.Writer.TryWrite(status);
+            }
+
+            // ── Ade routing ───────────────────────────────────────────────
+            // If this session uses Ade, ask him whether a specialist is a better fit first.
+            if (isAdeSession)
+            {
+                var adeRecord = store.GetAgent(conversation.AgentSlug);
+                if (adeRecord is null)
+                    throw new InvalidOperationException($"Agent definition '{conversation.AgentSlug}' not found.");
+
+                if (runners.TryRemove(id, out var staleRunner))
+                    await staleRunner.DisposeAsync();
+
                 var availableAgents = new Dictionary<string, string>();
                 foreach (var agentRec in store.ListAgents())
                 {
@@ -552,28 +784,40 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                     availableAgents[agentRec.Slug] = agentRec.Name + " — " + agentRec.Description;
                 }
 
-                var coordinator = new CoordinatorAgent(
+                EmitStatus("Checking who can handle this...");
+                app.Logger.LogInformation(
+                    "Ade routing started for session {SessionId}, message {MessageId}.",
+                    id,
+                    msgId);
+
+                var routingAgent = new RoutingAgent(
                     new AnthropicBackend(new Anthropic.AnthropicClient(
                         new Anthropic.Core.ClientOptions
                         {
                             ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!
                         })),
-                    runner.Persona);
+                    adeRecord.ToPersona());
 
-                var decision = await coordinator.RouteAsync(req.Message, availableAgents);
+                var decision = await routingAgent.RouteAsync(req.Message, availableAgents);
 
                 if (decision.Agent is not null)
                 {
                     var specialistRecord = store.GetAgent(decision.Agent);
                     if (specialistRecord is not null)
                     {
+                        EmitStatus($"Passing this to {specialistRecord.Name}...");
+                        app.Logger.LogInformation(
+                            "Ade routed session {SessionId}, message {MessageId} to specialist {AgentSlug} ({AgentName}).",
+                            id,
+                            msgId,
+                            specialistRecord.Slug,
+                            specialistRecord.Name);
+
                         var specialistRunner = CreateRunner(specialistRecord);
                         await specialistRunner.InitializeAsync(CancellationToken.None);
-
-                        // Replace the coordinator runner with the specialist for this session.
-                        await runner.DisposeAsync();
-                        runner = specialistRunner;
-                        runners[id] = runner;
+                        turnRunner = specialistRunner;
+                        disposeTurnRunner = true;
+                        runners[id] = turnRunner;
 
                         // Use the rewritten prompt if available.
                         if (decision.RewrittenPrompt is not null)
@@ -582,10 +826,33 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                         }
                     }
                 }
+                else
+                {
+                    EmitStatus("I'll handle this myself...");
+                    app.Logger.LogInformation(
+                        "Ade kept session {SessionId}, message {MessageId} for direct handling.",
+                        id,
+                        msgId);
+
+                    var directAdeRunner = CreateRunner(adeRecord with
+                    {
+                        SystemPrompt = BuildDirectResponseSystemPrompt(adeRecord),
+                    });
+                    await directAdeRunner.InitializeAsync(CancellationToken.None);
+                    turnRunner = directAdeRunner;
+                    disposeTurnRunner = true;
+                    runners[id] = turnRunner;
+                }
+
+                app.Logger.LogInformation(
+                    "Ade handling phase started for session {SessionId}, message {MessageId} with runner persona {PersonaName}.",
+                    id,
+                    msgId,
+                    turnRunner?.Persona.Name);
             }
 
             var fullText = new System.Text.StringBuilder();
-            await foreach (var evt in runner.StreamAsync(
+            await foreach (var evt in turnRunner!.StreamAsync(
                 conversation.Messages,
                 eventSink: e =>
                 {
@@ -607,14 +874,28 @@ app.MapPost("/api/sessions/{id}/messages", async (string id, SendMessageRequest 
                 conversation.AddAssistant(fullText.ToString());
                 store.Append(id, assistantMsg);
                 store.SaveEventLog(id, assistantIndex, persistedEventLog);
+                app.Logger.LogInformation(
+                    "Assistant response persisted for session {SessionId}, message {MessageId}, length {Length}.",
+                    id,
+                    msgId,
+                    fullText.Length);
             }
         }
         catch (Exception ex)
         {
+            app.Logger.LogError(ex, "Message handling failed for session {SessionId}, message {MessageId}.", id, msgId);
             channel.Writer.TryWrite(new DoneEvent($"Error: {ex.Message}"));
         }
         finally
         {
+            if (disposeTurnRunner && turnRunner is not null)
+            {
+                if (runners.TryGetValue(id, out var currentRunner) && ReferenceEquals(currentRunner, turnRunner))
+                    runners.TryRemove(id, out _);
+
+                await turnRunner.DisposeAsync();
+            }
+
             channel.Writer.TryComplete();
         }
     });

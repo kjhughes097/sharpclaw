@@ -3,27 +3,27 @@ using System.Text.Json;
 namespace SharpClaw.Core;
 
 /// <summary>
-/// Result of the coordinator's routing decision.
+/// Result of the routing agent's decision.
 /// </summary>
 public sealed record RoutingDecision(string? Agent, string? RewrittenPrompt);
 
 /// <summary>
 /// Runs a single-turn LLM call to classify user intent and select a specialist agent.
-/// No tool loop — the coordinator only returns a JSON routing decision.
+/// No tool loop — the routing agent only returns a JSON routing decision.
 /// </summary>
-public sealed class CoordinatorAgent
+public sealed class RoutingAgent
 {
     private readonly IAgentBackend _backend;
     private readonly AgentPersona _persona;
 
-    public CoordinatorAgent(IAgentBackend backend, AgentPersona persona)
+    public RoutingAgent(IAgentBackend backend, AgentPersona persona)
     {
         _backend = backend;
         _persona = persona;
     }
 
     /// <summary>
-    /// Asks the coordinator to pick an agent for the given user prompt.
+    /// Asks the routing agent to pick an agent for the given user prompt.
     /// </summary>
     /// <param name="userPrompt">The raw user message to classify.</param>
     /// <param name="availableAgents">
@@ -56,18 +56,13 @@ public sealed class CoordinatorAgent
         return ParseDecision(response);
     }
 
-    private static RoutingDecision ParseDecision(string response)
+    private RoutingDecision ParseDecision(string response)
     {
-        // Strip markdown fences if the model wraps the JSON.
-        var json = response.Trim();
-        if (json.StartsWith("```"))
+        var json = ExtractJsonObject(response);
+        if (json is null)
         {
-            var firstNewline = json.IndexOf('\n');
-            if (firstNewline >= 0)
-                json = json[(firstNewline + 1)..];
-            if (json.EndsWith("```"))
-                json = json[..^3];
-            json = json.Trim();
+            Console.Error.WriteLine($"Warning: {_persona.Name} returned unparseable routing response: {response}");
+            return new RoutingDecision(null, null);
         }
 
         try
@@ -87,8 +82,70 @@ public sealed class CoordinatorAgent
         }
         catch (JsonException)
         {
-            Console.Error.WriteLine($"Warning: Coordinator returned unparseable response: {response}");
+            Console.Error.WriteLine($"Warning: {_persona.Name} returned unparseable routing response: {response}");
             return new RoutingDecision(null, null);
         }
+    }
+
+    private static string? ExtractJsonObject(string response)
+    {
+        var text = response.Trim();
+        if (text.StartsWith("```"))
+        {
+            var firstNewline = text.IndexOf('\n');
+            if (firstNewline >= 0)
+                text = text[(firstNewline + 1)..];
+
+            var closingFence = text.IndexOf("```");
+            if (closingFence >= 0)
+                text = text[..closingFence];
+
+            text = text.Trim();
+        }
+
+        var start = text.IndexOf('{');
+        if (start < 0)
+            return null;
+
+        var depth = 0;
+        var inString = false;
+        var escaped = false;
+
+        for (var i = start; i < text.Length; i++)
+        {
+            var ch = text[i];
+
+            if (escaped)
+            {
+                escaped = false;
+                continue;
+            }
+
+            if (ch == '\\')
+            {
+                escaped = true;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                inString = !inString;
+                continue;
+            }
+
+            if (inString)
+                continue;
+
+            if (ch == '{')
+                depth++;
+            else if (ch == '}')
+            {
+                depth--;
+                if (depth == 0)
+                    return text[start..(i + 1)];
+            }
+        }
+
+        return null;
     }
 }

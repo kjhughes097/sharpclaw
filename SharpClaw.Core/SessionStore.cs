@@ -780,6 +780,41 @@ public sealed class SessionStore : IDisposable
         return count;
     }
 
+    public bool DeleteSession(string sessionId)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var tx = conn.BeginTransaction();
+
+        using var countCmd = conn.CreateCommand();
+        countCmd.Transaction = tx;
+        countCmd.CommandText = "SELECT COUNT(*)::INT FROM sessions WHERE session_id = @sid";
+        countCmd.Parameters.AddWithValue("sid", sessionId);
+        var exists = (int)(countCmd.ExecuteScalar() ?? 0) > 0;
+        if (!exists)
+            return false;
+
+        using var eventLogCmd = conn.CreateCommand();
+        eventLogCmd.Transaction = tx;
+        eventLogCmd.CommandText = "DELETE FROM session_event_logs WHERE session_id = @sid";
+        eventLogCmd.Parameters.AddWithValue("sid", sessionId);
+        eventLogCmd.ExecuteNonQuery();
+
+        using var msgCmd = conn.CreateCommand();
+        msgCmd.Transaction = tx;
+        msgCmd.CommandText = "DELETE FROM messages WHERE session_id = @sid";
+        msgCmd.Parameters.AddWithValue("sid", sessionId);
+        msgCmd.ExecuteNonQuery();
+
+        using var sessionCmd = conn.CreateCommand();
+        sessionCmd.Transaction = tx;
+        sessionCmd.CommandText = "DELETE FROM sessions WHERE session_id = @sid";
+        sessionCmd.Parameters.AddWithValue("sid", sessionId);
+        sessionCmd.ExecuteNonQuery();
+
+        tx.Commit();
+        return true;
+    }
+
     public bool DeleteAgent(string slug)
     {
         using var conn = _dataSource.OpenConnection();
