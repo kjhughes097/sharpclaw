@@ -640,14 +640,14 @@ This project is licensed under the MIT License. See [LICENSE](/home/khughes/proj
 
 ## Still To Do (not prioritized)
 
-- OpenAI backend - add support for the OpenAI API
-- OpenRouter backend - add support for the OpenRouter API
-- Refactor some of the classes that are all defined in a single file (prefer one class per file)
-- Some structure around where files (generated) get stored (file system hierarchy)
-- Telegram Channel - allow interaction via Telegram
-- Heartbeat Agent (Cron) - check that nothing has 'stuck' every x minutes
-- Add some sample agent definitions (maybe files with instructions on hot to create, or an import feature, or just seed them but 'disabled')
-- Refactor the permissions stuff - it's still too unwieldy
-- Figure out the blue/green deployment setup so SharpClaw can update its own code and restart, but have a fallback if it breaks something and can't start
-- Scripts to install and run locally (rather than in Docker)
-- A 'sandbox' docker version of the Api that has more dev tools available
+- [#7 Add OpenAI backend support](https://github.com/kjhughes097/sharpclaw/issues/7)
+- [#8 Add OpenRouter backend support](https://github.com/kjhughes097/sharpclaw/issues/8)
+- [#9 Refactor multi-class source files into one class per file](https://github.com/kjhughes097/sharpclaw/issues/9)
+- [#10 Define a file storage hierarchy for generated artifacts](https://github.com/kjhughes097/sharpclaw/issues/10)
+- [#11 Add Telegram channel integration](https://github.com/kjhughes097/sharpclaw/issues/11)
+- [#12 Add a heartbeat agent or scheduled stuck-session monitor](https://github.com/kjhughes097/sharpclaw/issues/12)
+- [#13 Add sample agent definitions and an importable starter set](https://github.com/kjhughes097/sharpclaw/issues/13)
+- [#14 Refactor the permission system to reduce complexity](https://github.com/kjhughes097/sharpclaw/issues/14)
+- [#15 Design a blue-green deployment strategy with automatic rollback](https://github.com/kjhughes097/sharpclaw/issues/15)
+- [#16 Add scripts for local installation and non-Docker startup](https://github.com/kjhughes097/sharpclaw/issues/16)
+- [#17 Create a sandbox API Docker image with additional development tools](https://github.com/kjhughes097/sharpclaw/issues/17)
