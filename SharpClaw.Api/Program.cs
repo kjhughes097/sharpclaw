@@ -173,12 +173,12 @@ object ToBackendModelsDto(
     string source,
     DateTimeOffset? cachedAt = null,
     string? warning = null) => new
-{
-    models = models.Select(model => new { id = model.Id, displayName = model.DisplayName }).ToList(),
-    source,
-    cachedAt,
-    warning,
-};
+    {
+        models = models.Select(model => new { id = model.Id, displayName = model.DisplayName }).ToList(),
+        source,
+        cachedAt,
+        warning,
+    };
 
 object ToSessionDto(StoredSession session, Dictionary<string, AgentRecord> agentsBySlug)
 {

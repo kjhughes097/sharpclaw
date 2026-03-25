@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react';
-import { Delete16Regular } from '@fluentui/react-icons';
+import { Delete16Regular, Dismiss20Regular } from '@fluentui/react-icons';
 import type { StreamItem } from './types';
+import clawIcon from './sharpclaw-pincer-detailed.svg';
 
 interface SidebarProps {
   sessions: {
@@ -182,18 +183,35 @@ export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewS
   return (
     <aside className={`sidebar${isOpen ? ' open' : ''}`}>
       <div className="sidebar-header">
-        <span className="logo">🐾</span>
-        <span>SharpClaw</span>
+        <span className="logo" aria-hidden="true">
+          <img className="brand-mark-image" src={clawIcon} alt="" />
+        </span>
+        <span className="sidebar-brand-name">SharpClaw</span>
         <div className="sidebar-header-actions">
           <button
+            type="button"
+            className="sidebar-drawer-close"
+            onClick={onClose}
+            aria-label="Close menu"
+          >
+            <Dismiss20Regular />
+          </button>
+          <button
             className="theme-toggle-btn"
+            data-theme={theme}
             onClick={onToggleTheme}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            aria-pressed={theme === 'dark'}
             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
           >
-            {theme === 'dark' ? '☀️' : '🌙'}
+            <span className="theme-toggle-thumb" aria-hidden="true" />
+            <span className="theme-toggle-option theme-toggle-option-light" aria-hidden="true">
+              <span className="theme-toggle-option-icon">☀</span>
+            </span>
+            <span className="theme-toggle-option theme-toggle-option-dark" aria-hidden="true">
+              <span className="theme-toggle-option-icon">☾</span>
+            </span>
           </button>
-          <button className="sidebar-close-btn" onClick={onClose} aria-label="Close sidebar">✕</button>
         </div>
       </div>
       <button className="new-session-btn" onClick={onNewSession}>

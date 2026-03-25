@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import clawIcon from './sharpclaw-pincer-detailed.svg';
 
 interface Props {
   onLogin: (key: string) => void;
@@ -16,7 +17,9 @@ export function LoginScreen({ onLogin, error }: Props) {
   return (
     <div className="login-backdrop">
       <form className="login-card" onSubmit={handleSubmit}>
-        <div className="login-logo">🐾</div>
+        <div className="login-logo" aria-hidden="true">
+          <img className="brand-mark-image" src={clawIcon} alt="" />
+        </div>
         <h1 className="login-title">SharpClaw</h1>
         <p className="login-subtitle">Enter your API key to continue</p>
         {error && <div className="login-error">{error}</div>}

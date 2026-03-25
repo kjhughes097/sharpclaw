@@ -6,6 +6,7 @@ import type { SessionState } from './useChat';
 import type { Persona } from './types';
 import { PermissionCard } from './PermissionCard';
 import { EventLog } from './EventLog';
+import clawIcon from './sharpclaw-pincer-detailed.svg';
 
 interface ChatViewProps {
   state: SessionState;
@@ -71,7 +72,7 @@ export function ChatView({ state, onSend, onMenuClick, onChangePersona }: ChatVi
   return (
     <div className="chat-area">
       <div className="chat-header">
-        <button className="menu-btn" onClick={onMenuClick} aria-label="Open menu">☰</button>
+        <button className="menu-btn chat-menu-btn" onClick={onMenuClick} aria-label="Open menu">☰</button>
         <div className="avatar">{initials}</div>
         <span>{state.session.persona}</span>
       </div>
@@ -79,7 +80,9 @@ export function ChatView({ state, onSend, onMenuClick, onChangePersona }: ChatVi
       <div className="chat-messages">
         {state.messages.length === 0 && !state.streaming && (
           <div className="empty-state">
-            <div className="big">🐾</div>
+            <div className="big" aria-hidden="true">
+              <img className="brand-mark-image" src={clawIcon} alt="" />
+            </div>
             <div>Start a conversation with {state.session.persona}</div>
           </div>
         )}
