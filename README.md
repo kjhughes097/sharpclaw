@@ -649,3 +649,5 @@ This project is licensed under the MIT License. See [LICENSE](/home/khughes/proj
 - Add some sample agent definitions (maybe files with instructions on hot to create, or an import feature, or just seed them but 'disabled')
 - Refactor the permissions stuff - it's still too unwieldy
 - Figure out the blue/green deployment setup so SharpClaw can update its own code and restart, but have a fallback if it breaks something and can't start
+- Scripts to install and run locally (rather than in Docker)
+- A 'sandbox' docker version of the Api that has more dev tools available
