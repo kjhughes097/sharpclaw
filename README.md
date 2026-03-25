@@ -11,18 +11,23 @@ It is inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [GoClaw](
 SharpClaw provides:
 
 - A web chat interface for interacting with agents
+- API-key login flow in the web UI when backend auth is enabled
 - Database-backed storage for agent definitions, sessions, and message history
 - Multiple agent backends:
 	- Anthropic
 	- GitHub Copilot SDK
 - MCP tool execution with MCP-scoped permission policies
 - Ade-based routing to specialist agents
+- Backend model discovery for Anthropic and Copilot-backed agents
 - In-app agent management:
 	- list agents
 	- create agents
 	- edit agents
 	- enable/disable agents
 	- safe delete with linked-session protection
+- In-app MCP management with agent-to-MCP linking from both directions
+- Session restore and safe session deletion from the sidebar
+- Light/dark theme toggle and mobile-friendly navigation
 
 ## Quick Start
 
@@ -31,8 +36,9 @@ If you just want to get the stack running locally:
 ```bash
 cp .env.example .env
 docker compose up --build -d
-open http://localhost:8080
 ```
+
+Then browse to `http://localhost:8080`.
 
 If you want to use a `.env` file, copy `.env.example` to `.env` and fill in the values for your environment.
 
@@ -44,6 +50,10 @@ If you want to use a `.env` file, copy `.env.example` to `.env` and fill in the 
 - The selected agent can be changed from a dropdown beside the chat input before the first message is sent
 - Once the first message is sent, the session is bound to that agent
 - If the active session uses `Ade`, the backend routes the request to the best enabled specialist agent when one is a better fit
+- Existing sessions are restored from PostgreSQL on reload
+- Sessions can be deleted from the sidebar when they are not actively streaming
+- The web client prompts for an API key when `SHARPCLAW_API_KEY` is configured on the backend
+- The web UI includes a persisted light/dark theme toggle and responsive mobile navigation
 
 ### Agent Management
 
@@ -55,6 +65,7 @@ The UI includes a `Configure > Agents` screen where users can:
 - Configure:
 	- backend
 	- model
+	- live backend model list lookup
 	- description
 	- system prompt
 	- MCP servers
@@ -62,9 +73,18 @@ The UI includes a `Configure > Agents` screen where users can:
 - Enable or disable agents
 - Delete agents with hard confirmation
 - Purge linked sessions when deleting an agent that is already in use
-- Manage a DB-backed MCP registry from the UI
+- View linked-session counts per agent
+
+### MCP Management
+
+The UI includes a `Configure > MCPs` screen where users can:
+
+- Browse and edit stored MCP definitions
+- Create new MCP definitions with command and args
 - Enable or disable MCPs globally
-- Detach MCPs from linked agents during deletion
+- See which agents are linked to an MCP
+- Detach linked agents while deleting an MCP
+- Link and unlink MCPs from either the MCP editor or the agent editor
 
 ### Tooling and MCP
 
@@ -101,7 +121,7 @@ The PostgreSQL store persists:
 
 Agent definitions currently include:
 
-- filename
+- slug
 - name
 - brief description
 - backend
@@ -227,6 +247,17 @@ docker compose logs -f sharpclaw web
 
 ## Local Development
 
+If you are iterating on the codebase rather than running the full stack through Docker Compose, use the sections below.
+
+### Frontend Dependencies
+
+Install frontend dependencies once before running the Vite dev server or local web builds:
+
+```bash
+cd SharpClaw.Web
+npm ci
+```
+
 ### Backend
 
 Build the solution:
@@ -245,7 +276,6 @@ dotnet run --project SharpClaw.Api
 
 ```bash
 cd SharpClaw.Web
-npm ci
 npm run build
 ```
 
@@ -253,8 +283,42 @@ For iterative frontend work:
 
 ```bash
 cd SharpClaw.Web
-npm ci
 npm run dev
+```
+
+## Development Workflow
+
+Common commands during day-to-day development:
+
+### Rebuild Only The Web Container
+
+```bash
+docker compose build web && docker compose up -d web
+```
+
+### Rebuild Only The API Container
+
+```bash
+docker compose build sharpclaw && docker compose up -d sharpclaw
+```
+
+### Rebuild The Full Stack
+
+```bash
+docker compose up --build -d
+```
+
+### Follow API And Web Logs
+
+```bash
+docker compose logs -f sharpclaw web
+```
+
+### Run A Frontend Production Build Locally
+
+```bash
+cd SharpClaw.Web
+npm run build
 ```
 
 ## API Surface
@@ -278,10 +342,12 @@ Example response:
 	- returns enabled agents for chat selection
 - `GET /api/agents`
 	- returns all agents with linked session counts
+- `GET /api/backends/{backend}/models`
+	- returns live or cached models for `anthropic` or `copilot`
 - `POST /api/agents`
-- `PUT /api/agents/{filename}`
-- `PATCH /api/agents/{filename}/enabled`
-- `DELETE /api/agents/{filename}`
+- `PUT /api/agents/{slug}`
+- `PATCH /api/agents/{slug}/enabled`
+- `DELETE /api/agents/{slug}`
 	- blocks if sessions exist unless `purgeSessions=true`
 
 ### MCPs
@@ -383,10 +449,30 @@ Example request:
 	},
 	"systemPrompt": "You are an operations assistant.",
 	"isEnabled": true
-	}
+}
 ```
 
-#### `PATCH /api/agents/{filename}/enabled`
+#### `GET /api/backends/{backend}/models`
+
+Returns available models for a backend. On upstream failure, the API may return a cached list with a warning.
+
+Example response:
+
+```json
+{
+	"models": [
+		{
+			"id": "claude-haiku-4-5-20251001",
+			"displayName": "Claude Haiku 4.5"
+		}
+	],
+	"source": "live",
+	"cachedAt": null,
+	"warning": null
+}
+```
+
+#### `PATCH /api/agents/{slug}/enabled`
 
 Enables or disables an existing agent.
 
@@ -398,7 +484,7 @@ Example request:
 }
 ```
 
-#### `DELETE /api/agents/{filename}`
+#### `DELETE /api/agents/{slug}`
 
 Deletes an agent. If the agent has linked sessions, deletion is blocked unless `purgeSessions=true` is supplied.
 
@@ -414,10 +500,25 @@ Conflict response example:
 
 ### Sessions and Streaming
 
+- `GET /api/sessions`
+- `GET /api/sessions/{id}`
+- `DELETE /api/sessions/{id}`
 - `POST /api/sessions`
 - `POST /api/sessions/{id}/messages`
 - `GET /api/sessions/{id}/messages/{msgId}/stream`
 - `POST /api/sessions/{id}/permissions/{requestId}`
+
+#### `GET /api/sessions`
+
+Returns persisted sessions for sidebar restoration, including messages and stored event logs.
+
+#### `GET /api/sessions/{id}`
+
+Returns a single persisted session payload.
+
+#### `DELETE /api/sessions/{id}`
+
+Deletes a session unless it is currently streaming. Streaming sessions return a conflict response instead.
 
 #### `POST /api/sessions`
 
@@ -471,6 +572,7 @@ Returns an SSE stream of agent events such as:
 - `tool_result`
 - `permission_request`
 - `status`
+- `usage`
 - `done`
 
 #### `POST /api/sessions/{id}/permissions/{requestId}`
@@ -517,9 +619,7 @@ These seeds are inserted safely and do not overwrite user-edited definitions.
 
 `SharpClaw.RebuildHook` is an optional companion service for accepting local webhook requests and triggering Docker Compose rebuilds.
 
-See:
-
-- [SharpClaw.RebuildHook/README.md](SharpClaw.RebuildHook/README.md)
+See [SharpClaw.RebuildHook/README.md](SharpClaw.RebuildHook/README.md).
 
 ## Development Notes
 
@@ -533,3 +633,14 @@ See:
 - Copilot-backed agent model selection is stored but not fully enforced at runtime
 - SSE authentication is intentionally relaxed due to browser limitations around custom headers
 - MCP process arguments are stored as JSON arrays and must remain string-only because they are passed directly to stdio transports
+
+## Still To Do (not prioritized)
+
+- OpenAI backend - add support for the OpenAI API
+- OpenRouter backend - add support for the OpenRouter API
+- Refactor some of the classes that are all defined in a single file (prefer one class per file)
+- Some structure around where files (generated) get stored (file system hierarchy)
+- Telegram Channel - allow interaction via Telegram
+- Heartbeat Agent (Cron) - check that nothing has 'stuck' every x minutes
+- Add some sample agent definitions (maybe files with instructions on hot to create, or an import feature, or just seed them but 'disabled')
+- Refactor the permissions stuff - it's still too unwieldy
