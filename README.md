@@ -176,11 +176,14 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 
 | Variable | Purpose |
 |---|---|
+| `POSTGRES_DB` | Required PostgreSQL database name for the Docker Compose stack |
+| `POSTGRES_USER` | Required PostgreSQL username for the Docker Compose stack and API container |
+| `POSTGRES_PASSWORD` | Required PostgreSQL password for the Docker Compose stack and API container |
 | `ANTHROPIC_API_KEY` | Required for Anthropic-backed agents |
 | `GITHUB_COPILOT_TOKEN` | Copilot auth token used by the GitHub Copilot backend |
 | `GITHUB_TOKEN` | Alternate token source checked by the Copilot backend |
 | `SHARPCLAW_API_KEY` | Optional API key enforced on `/api/*` routes except SSE streams |
-| `SHARPCLAW_DB_CONNECTION` | Optional PostgreSQL connection string override |
+| `SHARPCLAW_DB_CONNECTION` | Required for non-Docker API runs unless `ConnectionStrings:DefaultConnection` is supplied another way |
 | `SHARPCLAW_WORKSPACE` | Workspace path used by the backend and filesystem MCP tooling |
 | `MCP_ALLOWED_DIRS` | Colon-delimited allowed directories for filesystem MCP access when `SHARPCLAW_WORKSPACE` is not set |
 
@@ -189,6 +192,9 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 You can use a local `.env` file with Docker Compose:
 
 ```dotenv
+POSTGRES_DB=sharpclaw
+POSTGRES_USER=sharpclaw
+POSTGRES_PASSWORD=change-me
 ANTHROPIC_API_KEY=your-anthropic-key
 GITHUB_COPILOT_TOKEN=your-copilot-token
 SHARPCLAW_API_KEY=replace-me-if-you-want-api-auth
@@ -197,6 +203,8 @@ SHARPCLAW_WORKSPACE=/absolute/path/to/your/workspace
 
 Notes:
 
+- `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are required for Docker Compose runs and are used to configure both the PostgreSQL container and the API container's default connection string
+- Direct `dotnet run` execution also requires a database connection via `SHARPCLAW_DB_CONNECTION` or `ConnectionStrings:DefaultConnection`; the API no longer falls back to a hard-coded local database credential set
 - `ANTHROPIC_API_KEY` is required for Anthropic-backed agents
 - `GITHUB_COPILOT_TOKEN` or `GITHUB_TOKEN` is required for Copilot-backed agents
 - `SHARPCLAW_API_KEY` is optional, but recommended if you do not want an open local API
@@ -207,7 +215,7 @@ Notes:
 The API resolves configuration in this order where applicable:
 
 - API key: `ApiKey` config value, then `SHARPCLAW_API_KEY`
-- DB connection: `ConnectionStrings:DefaultConnection`, then `SHARPCLAW_DB_CONNECTION`, then a local default PostgreSQL connection string
+- DB connection: `ConnectionStrings:DefaultConnection`, then `SHARPCLAW_DB_CONNECTION`
 - Workspace: `SHARPCLAW_WORKSPACE`, then current working directory
 
 ## Running the Project
