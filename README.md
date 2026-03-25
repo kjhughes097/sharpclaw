@@ -1,6 +1,6 @@
 # SharpClaw
 
-SharpClaw is a .NET 8 personal agent framework with a web UI, PostgreSQL-backed agent/session storage, Anthropic and GitHub Copilot backends, and Model Context Protocol support for tool execution.
+SharpClaw is a .NET 10 personal agent framework with a web UI, PostgreSQL-backed agent/session storage, Anthropic and GitHub Copilot backends, and Model Context Protocol support for tool execution.
 
 It is inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [GoClaw](https://github.com/nextlevelbuilder/goclaw), but is implemented as a native .NET stack with a React frontend.
 
@@ -17,7 +17,7 @@ SharpClaw provides:
 	- Anthropic
 	- GitHub Copilot SDK
 - MCP tool execution with MCP-scoped permission policies
-- Ade-based routing to specialist agents
+- 'Ade' an agent that is expert in routing to specialist agents
 - Backend model discovery for Anthropic and Copilot-backed agents
 - In-app agent management:
 	- list agents
@@ -628,6 +628,10 @@ See [SharpClaw.RebuildHook/README.md](SharpClaw.RebuildHook/README.md).
 - The compose web container serves the built frontend through Nginx
 - The API container installs Node.js and npm because some MCP servers are launched via `npx`
 
+## License
+
+This project is licensed under the MIT License. See [LICENSE](/home/khughes/projects/sharpclaw/LICENSE).
+
 ## Known Limitations
 
 - Copilot-backed agent model selection is stored but not fully enforced at runtime
@@ -644,3 +648,4 @@ See [SharpClaw.RebuildHook/README.md](SharpClaw.RebuildHook/README.md).
 - Heartbeat Agent (Cron) - check that nothing has 'stuck' every x minutes
 - Add some sample agent definitions (maybe files with instructions on hot to create, or an import feature, or just seed them but 'disabled')
 - Refactor the permissions stuff - it's still too unwieldy
+- Figure out the blue/green deployment setup so SharpClaw can update its own code and restart, but have a fallback if it breaks something and can't start

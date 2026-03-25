@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy solution and project files first for layer caching.
@@ -13,7 +13,7 @@ COPY . .
 RUN dotnet publish SharpClaw.Api/SharpClaw.Api.csproj -c Release -o /app --no-restore
 
 # ── Runtime image ─────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 # Install Node.js (needed for MCP servers that use npx).

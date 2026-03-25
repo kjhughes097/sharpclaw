@@ -1,6 +1,6 @@
 # SharpClaw.RebuildHook
 
-A minimal .NET 8 Web API that acts as a local webhook listener for triggering Docker Compose per-service rebuilds.
+A minimal .NET 10 Web API that acts as a local webhook listener for triggering Docker Compose per-service rebuilds.
 
 ## Build & Run
 
