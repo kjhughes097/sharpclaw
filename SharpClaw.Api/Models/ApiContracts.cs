@@ -1,0 +1,115 @@
+using SharpClaw.Core;
+
+namespace SharpClaw.Api.Models;
+
+public interface IApiPayload;
+
+public sealed record ApiResponse<TPayload>(int StatusCode, TPayload Payload)
+    where TPayload : IApiPayload;
+
+public sealed record ErrorResponse(string Error) : IApiPayload;
+
+public sealed record ProblemResponse(string Title, string Detail) : IApiPayload;
+
+public sealed record HealthResponse(string Status, string Service) : IApiPayload;
+
+public sealed record PersonaDto(
+    string Id,
+    string Name,
+    string Description,
+    string Backend,
+    string Model,
+    IReadOnlyList<string> McpServers,
+    IReadOnlyDictionary<string, string> PermissionPolicy,
+    string SystemPrompt,
+    bool IsEnabled) : IApiPayload;
+
+public sealed record AgentDto(
+    string Id,
+    string Name,
+    string Description,
+    string Backend,
+    string Model,
+    IReadOnlyList<string> McpServers,
+    IReadOnlyDictionary<string, string> PermissionPolicy,
+    string SystemPrompt,
+    bool IsEnabled,
+    int SessionCount) : IApiPayload;
+
+public sealed record McpDto(
+    string Slug,
+    string Name,
+    string Description,
+    string Command,
+    IReadOnlyList<string> Args,
+    bool IsEnabled,
+    int LinkedAgentCount) : IApiPayload;
+
+public sealed record BackendModelDto(string Id, string DisplayName);
+
+public sealed record BackendModelsResponse(
+    IReadOnlyList<BackendModelDto> Models,
+    string Source,
+    DateTimeOffset? CachedAt,
+    string? Warning) : IApiPayload;
+
+public sealed record MessageDto(string Role, string Content);
+
+public sealed record StoredEventLogItemDto(AgentEvent Event, ToolResultEvent? Result);
+
+public sealed record SessionDto(
+    string SessionId,
+    string Persona,
+    string AgentId,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset LastActivityAt,
+    IReadOnlyList<MessageDto> Messages,
+    IReadOnlyList<IReadOnlyList<StoredEventLogItemDto>> EventLogs) : IApiPayload;
+
+public sealed record EnabledStateResponse(string Id, bool IsEnabled) : IApiPayload;
+
+public sealed record McpEnabledStateResponse(string Slug, bool IsEnabled) : IApiPayload;
+
+public sealed record AgentDeletedResponse(string Id, int DeletedSessions) : IApiPayload;
+
+public sealed record McpDeletedResponse(string Slug, int DetachedAgents) : IApiPayload;
+
+public sealed record SessionDeletedResponse(string SessionId, bool Deleted) : IApiPayload;
+
+public sealed record SessionCreatedResponse(string SessionId, string Persona, string AgentId) : IApiPayload;
+
+public sealed record MessageQueuedResponse(string SessionId, string MessageId) : IApiPayload;
+
+public sealed record PermissionResolvedResponse(string RequestId, bool Allowed) : IApiPayload;
+
+public sealed record AgentDeleteConflictResponse(string Error, int LinkedSessionCount, bool RequiresSessionPurge) : IApiPayload;
+
+public sealed record McpDeleteConflictResponse(string Error, int LinkedAgentCount, bool RequiresAgentDetach) : IApiPayload;
+
+public sealed record CreateSessionRequest(string? AgentId);
+
+public sealed record SendMessageRequest(string? Message);
+
+public sealed record PermissionDecision(bool Allow);
+
+public sealed record AgentEnabledRequest(bool IsEnabled);
+
+public sealed record McpEnabledRequest(bool IsEnabled);
+
+public sealed record AgentDefinitionRequest(
+    string? Name,
+    string? Description,
+    string? Backend,
+    string? Model,
+    List<string>? McpServers,
+    Dictionary<string, string>? PermissionPolicy,
+    string? SystemPrompt,
+    bool? IsEnabled);
+
+public sealed record McpDefinitionRequest(
+    string? Slug,
+    string? Name,
+    string? Description,
+    string? Command,
+    List<string>? Args,
+    bool? IsEnabled);
