@@ -27,6 +27,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
       - GITHUB_COPILOT_TOKEN=${GITHUB_COPILOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       - SHARPCLAW_WORKSPACE=/workspace
 

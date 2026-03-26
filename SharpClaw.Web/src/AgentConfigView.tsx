@@ -21,7 +21,7 @@ interface PermissionGroup {
 
 type McpPermissionStatus = 'recommended' | 'customized' | 'no-rules';
 
-type BackendKind = 'anthropic' | 'copilot';
+type BackendKind = 'anthropic' | 'copilot' | 'openai';
 
 const PERMISSION_TEMPLATES: Record<string, Record<string, string>> = {
   'workspace-editor': {
@@ -78,10 +78,11 @@ const PERMISSION_NORMALIZATION_FAMILIES: Array<{ wildcard: string; patterns: str
 const BACKEND_DEFAULT_TEMPLATE: Record<BackendKind, keyof typeof PERMISSION_TEMPLATES> = {
   anthropic: 'workspace-editor',
   copilot: 'read-only-filesystem',
+  openai: 'workspace-editor',
 };
 
 function defaultPermissionsForBackend(backend: string): Record<string, string> {
-  const key = BACKEND_DEFAULT_TEMPLATE[(backend === 'copilot' ? 'copilot' : 'anthropic') as BackendKind];
+  const key = BACKEND_DEFAULT_TEMPLATE[backend as BackendKind] ?? BACKEND_DEFAULT_TEMPLATE.anthropic;
   return PERMISSION_TEMPLATES[key];
 }
 
@@ -691,6 +692,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                 >
                   <option value="anthropic">anthropic</option>
                   <option value="copilot">copilot</option>
+                  <option value="openai">openai</option>
                 </select>
               </label>
             </div>
@@ -827,7 +829,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                   <p>Rules are grouped by MCP. Use MCP-scoped patterns like filesystem.read_* or github.* with values like auto_approve, ask, or deny.</p>
                 </div>
                 <div className="agent-permissions-actions">
-                  <button type="button" className="secondary-btn" onClick={() => applyPermissionTemplate(BACKEND_DEFAULT_TEMPLATE[(form.backend === 'copilot' ? 'copilot' : 'anthropic') as BackendKind])}>Apply Backend Defaults</button>
+                  <button type="button" className="secondary-btn" onClick={() => applyPermissionTemplate(BACKEND_DEFAULT_TEMPLATE[form.backend as BackendKind] ?? BACKEND_DEFAULT_TEMPLATE.anthropic)}>Apply Backend Defaults</button>
                   <button type="button" className="secondary-btn" onClick={normalizePermissionFamiliesInForm}>Normalize Families</button>
                   <button type="button" className="secondary-btn" onClick={() => addPermissionRowForGroup('*')}>Add Global Rule</button>
                 </div>
