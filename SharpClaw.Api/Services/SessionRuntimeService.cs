@@ -7,6 +7,7 @@ using Anthropic.Core;
 using SharpClaw.Api.Models;
 using SharpClaw.Copilot;
 using SharpClaw.Core;
+using SharpClaw.OpenAI;
 
 namespace SharpClaw.Api.Services;
 
@@ -184,6 +185,10 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
         }), string.IsNullOrWhiteSpace(persona.Model) ? "claude-haiku-4-5-20251001" : persona.Model),
         "copilot" => new CopilotBackend(gate,
             Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE") ?? Environment.CurrentDirectory),
+        "openai" => new OpenAIBackend(
+            Environment.GetEnvironmentVariable("OPENAI_API_KEY")
+                ?? throw new InvalidOperationException("OPENAI_API_KEY is not set."),
+            string.IsNullOrWhiteSpace(persona.Model) ? "gpt-4o-mini" : persona.Model),
         _ => throw new InvalidOperationException($"Unknown backend '{persona.Backend}'."),
     };
 

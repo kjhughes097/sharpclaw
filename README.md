@@ -1,6 +1,6 @@
 # SharpClaw
 
-SharpClaw is a .NET 10 personal agent framework with a web UI, PostgreSQL-backed agent/session storage, Anthropic and GitHub Copilot backends, and Model Context Protocol support for tool execution.
+SharpClaw is a .NET 10 personal agent framework with a web UI, PostgreSQL-backed agent/session storage, Anthropic, OpenAI and GitHub Copilot backends, and Model Context Protocol support for tool execution.
 
 It is inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [GoClaw](https://github.com/nextlevelbuilder/goclaw), but is implemented as a native .NET stack with a React frontend.
 
@@ -15,10 +15,11 @@ SharpClaw provides:
 - Database-backed storage for agent definitions, sessions, and message history
 - Multiple agent backends:
 	- Anthropic
+	- OpenAI
 	- GitHub Copilot SDK
 - MCP tool execution with MCP-scoped permission policies
 - 'Ade' an agent that is expert in routing to specialist agents
-- Backend model discovery for Anthropic and Copilot-backed agents
+- Backend model discovery for Anthropic, OpenAI, and Copilot-backed agents
 - In-app agent management:
 	- list agents
 	- create agents
@@ -107,6 +108,7 @@ The filesystem MCP server is constrained to allowed directories resolved from:
 - `SharpClaw.Api`: ASP.NET Core backend API and runtime host
 - `SharpClaw.Core`: shared agent runtime, persistence, permissions, routing, and MCP integration
 - `SharpClaw.Copilot`: GitHub Copilot SDK backend implementation
+- `SharpClaw.OpenAI`: OpenAI Chat Completions backend implementation
 - `SharpClaw.Web`: React + Vite frontend
 - `SharpClaw.RebuildHook`: optional local webhook service for Docker Compose rebuilds
 
@@ -144,6 +146,7 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 ├── SharpClaw.Api/
 ├── SharpClaw.Copilot/
 ├── SharpClaw.Core/
+├── SharpClaw.OpenAI/
 ├── SharpClaw.RebuildHook/
 ├── SharpClaw.Web/
 └── workspace/
@@ -162,6 +165,8 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 	- MCP server registry
 - `SharpClaw.Copilot/`
 	- GitHub Copilot backend integration via `GitHub.Copilot.SDK`
+- `SharpClaw.OpenAI/`
+	- OpenAI backend integration via `OpenAI` NuGet package
 - `SharpClaw.Web/`
 	- React frontend
 	- Nginx config for proxying `/api/` to the backend in Docker
@@ -180,6 +185,7 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 | `POSTGRES_USER` | Required PostgreSQL username for the Docker Compose stack and API container |
 | `POSTGRES_PASSWORD` | Required PostgreSQL password for the Docker Compose stack and API container |
 | `ANTHROPIC_API_KEY` | Required for Anthropic-backed agents |
+| `OPENAI_API_KEY` | Required for OpenAI-backed agents |
 | `GITHUB_COPILOT_TOKEN` | Copilot auth token used by the GitHub Copilot backend |
 | `GITHUB_TOKEN` | Alternate token source checked by the Copilot backend |
 | `SHARPCLAW_API_KEY` | Optional API key enforced on `/api/*` routes except SSE streams |
@@ -196,6 +202,7 @@ POSTGRES_DB=sharpclaw
 POSTGRES_USER=sharpclaw
 POSTGRES_PASSWORD=change-me
 ANTHROPIC_API_KEY=your-anthropic-key
+OPENAI_API_KEY=your-openai-key
 GITHUB_COPILOT_TOKEN=your-copilot-token
 SHARPCLAW_API_KEY=replace-me-if-you-want-api-auth
 SHARPCLAW_WORKSPACE=/absolute/path/to/your/workspace
@@ -206,6 +213,7 @@ Notes:
 - `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are required for Docker Compose runs and are used to configure both the PostgreSQL container and the API container's default connection string
 - Direct `dotnet run` execution also requires a database connection via `SHARPCLAW_DB_CONNECTION` or `ConnectionStrings:DefaultConnection`; the API no longer falls back to a hard-coded local database credential set
 - `ANTHROPIC_API_KEY` is required for Anthropic-backed agents
+- `OPENAI_API_KEY` is required for OpenAI-backed agents
 - `GITHUB_COPILOT_TOKEN` or `GITHUB_TOKEN` is required for Copilot-backed agents
 - `SHARPCLAW_API_KEY` is optional, but recommended if you do not want an open local API
 - `SHARPCLAW_WORKSPACE` should point at the directory you want the filesystem MCP server to expose
@@ -351,7 +359,7 @@ Example response:
 - `GET /api/agents`
 	- returns all agents with linked session counts
 - `GET /api/backends/{backend}/models`
-	- returns live or cached models for `anthropic` or `copilot`
+	- returns live or cached models for `anthropic`, `openai`, or `copilot`
 - `POST /api/agents`
 - `PUT /api/agents/{slug}`
 - `PATCH /api/agents/{slug}/enabled`
@@ -615,6 +623,14 @@ These seeds are inserted safely and do not overwrite user-edited definitions.
 
 - Uses the configured model from the stored agent definition
 - Requires `ANTHROPIC_API_KEY`
+
+### OpenAI Backend
+
+- Uses the `OpenAI` NuGet package (`OpenAI` 2.x) to call the Chat Completions API
+- Requires `OPENAI_API_KEY`
+- Supports streaming and tool use
+- Default model: `gpt-4o-mini`
+- Available models are surfaced via `GET /api/backends/openai/models`
 
 ### Copilot Backend
 

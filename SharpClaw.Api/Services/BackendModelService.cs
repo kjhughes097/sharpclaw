@@ -14,11 +14,11 @@ public sealed class BackendModelService(IHttpClientFactory httpClientFactory)
     public async Task<ApiResponse<IApiPayload>> GetModelsAsync(string backend, CancellationToken cancellationToken)
     {
         var normalizedBackend = backend.Trim().ToLowerInvariant();
-        if (normalizedBackend is not ("anthropic" or "copilot"))
+        if (normalizedBackend is not ("anthropic" or "copilot" or "openai"))
         {
             return new ApiResponse<IApiPayload>(
                 StatusCodes.Status400BadRequest,
-                new ErrorResponse("backend must be either 'anthropic' or 'copilot'."));
+                new ErrorResponse("backend must be 'anthropic', 'copilot', or 'openai'."));
         }
 
         try
@@ -27,6 +27,7 @@ public sealed class BackendModelService(IHttpClientFactory httpClientFactory)
             {
                 "anthropic" => await ListAnthropicModelsAsync(cancellationToken),
                 "copilot" => await ListCopilotModelsAsync(cancellationToken),
+                "openai" => await ListOpenAiModelsAsync(cancellationToken),
                 _ => [],
             };
 
@@ -164,6 +165,50 @@ public sealed class BackendModelService(IHttpClientFactory httpClientFactory)
             models.Add((id, string.IsNullOrWhiteSpace(displayName) ? id : displayName));
         }
 
+        return models;
+    }
+
+    private async Task<IReadOnlyList<(string Id, string DisplayName)>> ListOpenAiModelsAsync(CancellationToken cancellationToken)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("OPENAI_API_KEY is not set.");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.openai.com/v1/models");
+        request.Headers.Add("Authorization", $"Bearer {apiKey}");
+
+        using var httpClient = httpClientFactory.CreateClient();
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"OpenAI model list request failed with {(int)response.StatusCode}: {responseBody}");
+        }
+
+        using var document = JsonDocument.Parse(responseBody);
+        if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+            return [];
+
+        var models = new List<(string Id, string DisplayName)>();
+        foreach (var item in data.EnumerateArray())
+        {
+            if (!item.TryGetProperty("id", out var idElement))
+                continue;
+
+            var id = idElement.GetString();
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+
+            // Only surface chat-capable models: gpt-* series and o-series (o1, o2, o3, … oN).
+            if (!id.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase) &&
+                !(id.Length > 1 && id[0] is 'o' or 'O' && char.IsDigit(id[1])))
+                continue;
+
+            models.Add((id, id));
+        }
+
+        models.Sort((a, b) => string.Compare(a.Id, b.Id, StringComparison.OrdinalIgnoreCase));
         return models;
     }
 }
