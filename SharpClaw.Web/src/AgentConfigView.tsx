@@ -21,7 +21,7 @@ interface PermissionGroup {
 
 type McpPermissionStatus = 'recommended' | 'customized' | 'no-rules';
 
-type BackendKind = 'anthropic' | 'copilot' | 'openai';
+type BackendKind = 'anthropic' | 'copilot' | 'openai' | 'openrouter';
 
 const PERMISSION_TEMPLATES: Record<string, Record<string, string>> = {
   'workspace-editor': {
@@ -79,6 +79,7 @@ const BACKEND_DEFAULT_TEMPLATE: Record<BackendKind, keyof typeof PERMISSION_TEMP
   anthropic: 'workspace-editor',
   copilot: 'read-only-filesystem',
   openai: 'workspace-editor',
+  openrouter: 'workspace-editor',
 };
 
 function defaultPermissionsForBackend(backend: string): Record<string, string> {
@@ -693,6 +694,7 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                   <option value="anthropic">anthropic</option>
                   <option value="copilot">copilot</option>
                   <option value="openai">openai</option>
+                  <option value="openrouter">openrouter</option>
                 </select>
               </label>
             </div>

@@ -1,6 +1,6 @@
 # SharpClaw
 
-SharpClaw is a .NET 10 personal agent framework with a web UI, PostgreSQL-backed agent/session storage, Anthropic, OpenAI and GitHub Copilot backends, and Model Context Protocol support for tool execution.
+SharpClaw is a .NET 10 personal agent framework with a web UI, PostgreSQL-backed agent/session storage, Anthropic, OpenAI, OpenRouter, and GitHub Copilot backends, and Model Context Protocol support for tool execution.
 
 It is inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [GoClaw](https://github.com/nextlevelbuilder/goclaw), but is implemented as a native .NET stack with a React frontend.
 
@@ -16,10 +16,11 @@ SharpClaw provides:
 - Multiple agent backends:
 	- Anthropic
 	- OpenAI
+	- OpenRouter
 	- GitHub Copilot SDK
 - MCP tool execution with MCP-scoped permission policies
 - 'Ade' an agent that is expert in routing to specialist agents
-- Backend model discovery for Anthropic, OpenAI, and Copilot-backed agents
+- Backend model discovery for Anthropic, OpenAI, OpenRouter, and Copilot-backed agents
 - In-app agent management:
 	- list agents
 	- create agents
@@ -109,6 +110,7 @@ The filesystem MCP server is constrained to allowed directories resolved from:
 - `SharpClaw.Core`: shared agent runtime, persistence, permissions, routing, and MCP integration
 - `SharpClaw.Copilot`: GitHub Copilot SDK backend implementation
 - `SharpClaw.OpenAI`: OpenAI Chat Completions backend implementation
+- `SharpClaw.OpenRouter`: OpenRouter backend implementation (OpenAI-compatible API)
 - `SharpClaw.Web`: React + Vite frontend
 - `SharpClaw.RebuildHook`: optional local webhook service for Docker Compose rebuilds
 
@@ -147,6 +149,7 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 ├── SharpClaw.Copilot/
 ├── SharpClaw.Core/
 ├── SharpClaw.OpenAI/
+├── SharpClaw.OpenRouter/
 ├── SharpClaw.RebuildHook/
 ├── SharpClaw.Web/
 └── workspace/
@@ -167,6 +170,8 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 	- GitHub Copilot backend integration via `GitHub.Copilot.SDK`
 - `SharpClaw.OpenAI/`
 	- OpenAI backend integration via `OpenAI` NuGet package
+- `SharpClaw.OpenRouter/`
+	- OpenRouter backend integration; uses the OpenAI-compatible Chat Completions API at `https://openrouter.ai/api/v1`
 - `SharpClaw.Web/`
 	- React frontend
 	- Nginx config for proxying `/api/` to the backend in Docker
@@ -186,6 +191,7 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 | `POSTGRES_PASSWORD` | Required PostgreSQL password for the Docker Compose stack and API container |
 | `ANTHROPIC_API_KEY` | Required for Anthropic-backed agents |
 | `OPENAI_API_KEY` | Required for OpenAI-backed agents |
+| `OPENROUTER_API_KEY` | Required for OpenRouter-backed agents |
 | `GITHUB_COPILOT_TOKEN` | Copilot auth token used by the GitHub Copilot backend |
 | `GITHUB_TOKEN` | Alternate token source checked by the Copilot backend |
 | `SHARPCLAW_API_KEY` | Optional API key enforced on `/api/*` routes except SSE streams |
