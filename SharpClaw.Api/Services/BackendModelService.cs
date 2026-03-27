@@ -14,11 +14,11 @@ public sealed class BackendModelService(IHttpClientFactory httpClientFactory)
     public async Task<ApiResponse<IApiPayload>> GetModelsAsync(string backend, CancellationToken cancellationToken)
     {
         var normalizedBackend = backend.Trim().ToLowerInvariant();
-        if (normalizedBackend is not ("anthropic" or "copilot" or "openai"))
+        if (normalizedBackend is not ("anthropic" or "copilot" or "openai" or "openrouter"))
         {
             return new ApiResponse<IApiPayload>(
                 StatusCodes.Status400BadRequest,
-                new ErrorResponse("backend must be 'anthropic', 'copilot', or 'openai'."));
+                new ErrorResponse("backend must be 'anthropic', 'copilot', 'openai', or 'openrouter'."));
         }
 
         try
@@ -28,6 +28,7 @@ public sealed class BackendModelService(IHttpClientFactory httpClientFactory)
                 "anthropic" => await ListAnthropicModelsAsync(cancellationToken),
                 "copilot" => await ListCopilotModelsAsync(cancellationToken),
                 "openai" => await ListOpenAiModelsAsync(cancellationToken),
+                "openrouter" => await ListOpenRouterModelsAsync(cancellationToken),
                 _ => [],
             };
 
@@ -206,6 +207,49 @@ public sealed class BackendModelService(IHttpClientFactory httpClientFactory)
                 continue;
 
             models.Add((id, id));
+        }
+
+        models.Sort((a, b) => string.Compare(a.Id, b.Id, StringComparison.OrdinalIgnoreCase));
+        return models;
+    }
+
+    private async Task<IReadOnlyList<(string Id, string DisplayName)>> ListOpenRouterModelsAsync(CancellationToken cancellationToken)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("OPENROUTER_API_KEY is not set.");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://openrouter.ai/api/v1/models");
+        request.Headers.Add("Authorization", $"Bearer {apiKey}");
+
+        using var httpClient = httpClientFactory.CreateClient();
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"OpenRouter model list request failed with {(int)response.StatusCode}: {responseBody}");
+        }
+
+        using var document = JsonDocument.Parse(responseBody);
+        if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+            return [];
+
+        var models = new List<(string Id, string DisplayName)>();
+        foreach (var item in data.EnumerateArray())
+        {
+            if (!item.TryGetProperty("id", out var idElement))
+                continue;
+
+            var id = idElement.GetString();
+            if (string.IsNullOrWhiteSpace(id))
+                continue;
+
+            var displayName = item.TryGetProperty("name", out var nameElement)
+                ? nameElement.GetString()
+                : null;
+
+            models.Add((id, string.IsNullOrWhiteSpace(displayName) ? id : displayName));
         }
 
         models.Sort((a, b) => string.Compare(a.Id, b.Id, StringComparison.OrdinalIgnoreCase));

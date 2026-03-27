@@ -17,8 +17,8 @@ internal static class ApiValidator
             return "systemPrompt is required.";
 
         var backend = req.Backend.Trim().ToLowerInvariant();
-        if (backend is not ("anthropic" or "copilot"))
-            return "backend must be either 'anthropic' or 'copilot'.";
+        if (backend is not ("anthropic" or "copilot" or "openai" or "openrouter"))
+            return "backend must be 'anthropic', 'copilot', 'openai', or 'openrouter'.";
 
         var unknownMcp = ApiMapper.NormalizeStringList(req.McpServers)
             .FirstOrDefault(slug => store.GetMcp(slug) is null);
