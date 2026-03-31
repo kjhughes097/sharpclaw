@@ -110,7 +110,7 @@ The sequence when SharpClaw (or an operator) wants to deploy new code:
  │    idle = (A if active → B) else B                             │
  │                                                                │
  │ 2. Pull / apply changes in idle slot                           │
- │    cd /opt/sharpclaw/$idle && git pull                          │
+ │    cd /opt/sharpclaw/$idle && git pull origin main              │
  │                                                                │
  │ 3. Build and start the idle slot (no published port yet)       │
  │    COMPOSE_PROJECT_NAME=sharpclaw-$idle docker compose up -d   │
