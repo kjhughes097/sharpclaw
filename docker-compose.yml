@@ -23,6 +23,12 @@ services:
         condition: service_healthy
     volumes:
       - ${SHARPCLAW_WORKSPACE:-./workspace}:/workspace
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}

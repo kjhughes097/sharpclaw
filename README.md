@@ -678,6 +678,6 @@ This project is licensed under the MIT License. See [LICENSE](/home/khughes/proj
 - [#12 Add a heartbeat agent or scheduled stuck-session monitor](https://github.com/kjhughes097/sharpclaw/issues/12)
 - [#13 Add sample agent definitions and an importable starter set](https://github.com/kjhughes097/sharpclaw/issues/13)
 - [#14 Refactor the permission system to reduce complexity](https://github.com/kjhughes097/sharpclaw/issues/14)
-- [#15 Design a blue-green deployment strategy with automatic rollback](https://github.com/kjhughes097/sharpclaw/issues/15)
+- [#15 Design a blue-green deployment strategy with automatic rollback](https://github.com/kjhughes097/sharpclaw/issues/15) — [design document](docs/blue-green-deployment.md)
 - [#16 Add scripts for local installation and non-Docker startup](https://github.com/kjhughes097/sharpclaw/issues/16)
 - [#17 Create a sandbox API Docker image with additional development tools](https://github.com/kjhughes097/sharpclaw/issues/17)

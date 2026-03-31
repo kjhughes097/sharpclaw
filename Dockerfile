@@ -16,8 +16,8 @@ RUN dotnet publish SharpClaw.Api/SharpClaw.Api.csproj -c Release -o /app --no-re
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
-# Install Node.js (needed for MCP servers that use npx).
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm && rm -rf /var/lib/apt/lists/*
+# Install Node.js (needed for MCP servers that use npx) and curl (used by the Docker healthcheck).
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm curl && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /app .
 
