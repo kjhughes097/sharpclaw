@@ -267,6 +267,95 @@ docker compose up --build -d
 docker compose logs -f sharpclaw web
 ```
 
+## Running as Linux Systemd Services
+
+Use this path to install SharpClaw as persistent systemd services that start automatically on boot.  The API runs as a dedicated `sharpclaw` system user; nginx serves the compiled frontend and proxies `/api/` to the backend.
+
+### Prerequisites
+
+The system dependencies must already be installed before running the service install script.  If they are not, run `scripts/install-linux.sh` first (see [Running Locally on Linux](#running-locally-on-linux-without-docker)).
+
+The service install script requires:
+- .NET 10 SDK
+- Node.js 18+ (22 LTS recommended) and npm
+- PostgreSQL 16 running with the SharpClaw database already created
+- A populated `.env` file at the repo root
+
+### Environment Setup
+
+Copy `.env.example` to `.env` and fill in your values if you have not done so already:
+
+```bash
+cp .env.example .env
+$EDITOR .env
+```
+
+### Running the Service Install Script
+
+```bash
+sudo ./scripts/install-service-linux.sh
+```
+
+The script:
+
+1. Validates prerequisites (.NET SDK, Node.js, npm, PostgreSQL client)
+2. Creates a dedicated `sharpclaw` system user (no login shell)
+3. Publishes the .NET API to `/opt/sharpclaw/api`
+4. Builds the React frontend (`npm ci && npm run build`) and deploys it to `/var/www/sharpclaw`
+5. Installs nginx if not present
+6. Writes an nginx site configuration that:
+   - Serves the compiled frontend
+   - Proxies `/api/` to the backend with SSE streaming support
+7. Writes `/etc/sharpclaw/env` from your `.env` values (owned `root:sharpclaw`, mode `640`)
+8. Writes `/etc/systemd/system/sharpclaw-api.service`
+9. Enables and starts `sharpclaw-api.service` and `nginx`
+
+> **Note:** Run the script again at any time to redeploy after a code change.  The script stops the running service, republishes, redeploys, and restarts.
+
+### Installed Paths
+
+| Path | Contents |
+|---|---|
+| `/opt/sharpclaw/api` | Published .NET API binary |
+| `/var/www/sharpclaw` | Compiled React frontend |
+| `/etc/sharpclaw/env` | Environment file (secrets, API keys, DB connection) |
+| `/etc/systemd/system/sharpclaw-api.service` | API systemd unit |
+| `/etc/nginx/sites-available/sharpclaw` (Debian/Ubuntu) | nginx site config |
+| `/etc/nginx/conf.d/sharpclaw.conf` (RHEL/Fedora) | nginx site config |
+| `/opt/sharpclaw/workspace` | Default filesystem MCP workspace |
+
+### Accessing the App
+
+Browse to `http://localhost` (port 80, served by nginx).
+
+> **Security note:** The nginx site configuration serves HTTP on port 80.  For deployments accessible beyond a trusted local or LAN environment, configure SSL/TLS (e.g. via Let's Encrypt / Certbot) and restrict inbound access with firewall rules before exposing the host to the internet.
+
+### Managing the Services
+
+```bash
+# API service
+sudo systemctl status  sharpclaw-api
+sudo systemctl restart sharpclaw-api
+sudo systemctl stop    sharpclaw-api
+sudo journalctl -u     sharpclaw-api -f
+
+# nginx (frontend + proxy)
+sudo systemctl status  nginx
+sudo systemctl restart nginx
+sudo journalctl -u     nginx -f
+```
+
+### Editing the Environment File
+
+The environment file at `/etc/sharpclaw/env` holds all secrets and configuration for the running service.  Edit it directly for runtime changes:
+
+```bash
+sudo $EDITOR /etc/sharpclaw/env
+sudo systemctl restart sharpclaw-api
+```
+
+---
+
 ## Running Locally on Linux (without Docker)
 
 Use this path when you want to run the full SharpClaw stack on a Linux machine without Docker — for example during active development, debugging, or in environments where containers are impractical.
