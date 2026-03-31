@@ -8,6 +8,7 @@ using SharpClaw.Api.Models;
 using SharpClaw.Copilot;
 using SharpClaw.Core;
 using SharpClaw.OpenAI;
+using SharpClaw.OpenRouter;
 
 namespace SharpClaw.Api.Services;
 
@@ -189,6 +190,10 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
             Environment.GetEnvironmentVariable("OPENAI_API_KEY")
                 ?? throw new InvalidOperationException("OPENAI_API_KEY is not set."),
             string.IsNullOrWhiteSpace(persona.Model) ? "gpt-4o-mini" : persona.Model),
+        "openrouter" => new OpenRouterBackend(
+            Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")
+                ?? throw new InvalidOperationException("OPENROUTER_API_KEY is not set."),
+            string.IsNullOrWhiteSpace(persona.Model) ? "openai/gpt-4o-mini" : persona.Model),
         _ => throw new InvalidOperationException($"Unknown backend '{persona.Backend}'."),
     };
 
