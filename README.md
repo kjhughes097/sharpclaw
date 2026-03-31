@@ -267,6 +267,113 @@ docker compose up --build -d
 docker compose logs -f sharpclaw web
 ```
 
+## Running Locally on Linux (without Docker)
+
+Use this path when you want to run the full SharpClaw stack on a Linux machine without Docker — for example during active development, debugging, or in environments where containers are impractical.
+
+### Prerequisites
+
+The following tools must be installed:
+
+| Tool | Minimum version | Purpose |
+|---|---|---|
+| .NET SDK | 10.0 | Build and run the ASP.NET Core API |
+| Node.js | 18 LTS (22 recommended) | Build and serve the React frontend |
+| npm | bundled with Node.js | Frontend package management |
+| PostgreSQL | 16 | Persistent storage for agents, sessions, and messages |
+
+If you are starting from a fresh Debian/Ubuntu or RHEL/Fedora/CentOS Stream machine, the install script handles everything:
+
+```bash
+sudo ./scripts/install-linux.sh
+```
+
+The script:
+
+1. Installs .NET 10 SDK (via the Microsoft install script)
+2. Installs Node.js 22 LTS and npm (via the NodeSource package feed)
+3. Installs PostgreSQL 16
+4. Creates the PostgreSQL role and database using credentials from your `.env` file
+
+> **Note:** Open a new terminal after running the install script so that updated `PATH` entries take effect.
+
+### Environment Setup
+
+Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+cp .env.example .env
+$EDITOR .env
+```
+
+Key variables for a local run (see [Environment Variables](#environment-variables) for the full list):
+
+| Variable | Notes |
+|---|---|
+| `POSTGRES_DB` | Database name (e.g. `sharpclaw`) |
+| `POSTGRES_USER` | PostgreSQL role name |
+| `POSTGRES_PASSWORD` | PostgreSQL role password |
+| `SHARPCLAW_DB_CONNECTION` | Full connection string – the backend script constructs this automatically from `POSTGRES_*` if it is not set |
+| `SHARPCLAW_WORKSPACE` | Absolute path to the directory exposed to the filesystem MCP server |
+| `ANTHROPIC_API_KEY` | Required for Anthropic-backed agents |
+| `OPENAI_API_KEY` | Required for OpenAI-backed agents |
+| `OPENROUTER_API_KEY` | Required for OpenRouter-backed agents |
+| `GITHUB_COPILOT_TOKEN` | Required for Copilot-backed agents |
+| `SHARPCLAW_API_KEY` | Optional; restricts access to the `/api/*` routes |
+
+### Starting the Backend
+
+```bash
+./scripts/start-backend.sh
+```
+
+The script:
+
+- Loads `.env` from the repo root
+- Derives `SHARPCLAW_DB_CONNECTION` from `POSTGRES_*` variables if neither `SHARPCLAW_DB_CONNECTION` nor `ConnectionStrings__DefaultConnection` is already set
+- Restores NuGet packages
+- Runs the API with `dotnet run`
+
+The API listens on `http://localhost:5000` (and `https://localhost:5001`) by default.  Pass extra `dotnet run` flags after the script name if needed:
+
+```bash
+./scripts/start-backend.sh --launch-profile Development
+```
+
+### Starting the Frontend Dev Server
+
+In a **second terminal**:
+
+```bash
+./scripts/start-frontend.sh
+```
+
+The script:
+
+- Runs `npm ci` in `SharpClaw.Web/` if `node_modules` is absent
+- Starts the Vite dev server on `http://localhost:5173`
+
+The Vite configuration (`SharpClaw.Web/vite.config.ts`) already proxies `/api/` requests to the backend at `http://localhost:5000`, so no additional configuration is needed for a local dev setup.
+
+### Accessing the App
+
+Browse to `http://localhost:5173`.
+
+### Typical Local Development Workflow
+
+```text
+Terminal 1:  sudo ./scripts/install-linux.sh   # one time only
+             # open a new terminal after install to pick up updated PATH
+
+Terminal 1 (new shell):
+             cp .env.example .env && $EDITOR .env
+             ./scripts/start-backend.sh
+
+Terminal 2:  ./scripts/start-frontend.sh
+```
+
+---
+
 ## Local Development
 
 If you are iterating on the codebase rather than running the full stack through Docker Compose, use the sections below.
