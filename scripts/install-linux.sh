@@ -49,11 +49,8 @@ fi
 
 info "Detected package manager: $PKG_MANAGER"
 
-# ── Load .env for database defaults ──────────────────────────────────────────
+# ── Load .env for database settings ──────────────────────────────────────────
 ENV_FILE="$REPO_ROOT/.env"
-POSTGRES_USER="${POSTGRES_USER:-sharpclaw}"
-POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-change-me}"
-POSTGRES_DB="${POSTGRES_DB:-sharpclaw}"
 
 if [[ -f "$ENV_FILE" ]]; then
     info "Loading database settings from $ENV_FILE"
@@ -62,9 +59,14 @@ if [[ -f "$ENV_FILE" ]]; then
     source "$ENV_FILE"
     set +o allexport
 else
-    warn ".env not found – using default database credentials (user=sharpclaw, db=sharpclaw)."
-    warn "Copy .env.example to .env and edit it before running this script to customise credentials."
+    die ".env not found at $ENV_FILE.
+Copy .env.example to .env and fill in the required values before running this script:
+  cp .env.example .env && \$EDITOR .env"
 fi
+
+[[ -n "${POSTGRES_USER:-}" ]]     || die "POSTGRES_USER is not set in $ENV_FILE."
+[[ -n "${POSTGRES_PASSWORD:-}" ]] || die "POSTGRES_PASSWORD is not set in $ENV_FILE."
+[[ -n "${POSTGRES_DB:-}" ]]       || die "POSTGRES_DB is not set in $ENV_FILE."
 
 # ── Install .NET 10 SDK ───────────────────────────────────────────────────────
 install_dotnet_apt() {
@@ -235,13 +237,10 @@ echo -e "${GREEN} SharpClaw prerequisites installed successfully${NC}"
 echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
 echo ""
 echo "Next steps:"
-echo "  1. Copy and edit the environment file if you have not already done so:"
-echo "       cp .env.example .env && \$EDITOR .env"
-echo ""
-echo "  2. Start the backend:"
+echo "  1. Start the backend:"
 echo "       ./scripts/start-backend.sh"
 echo ""
-echo "  3. Start the frontend dev server (in a separate terminal):"
+echo "  2. Start the frontend dev server (in a separate terminal):"
 echo "       ./scripts/start-frontend.sh"
 echo ""
 echo "  See the 'Running Locally on Linux' section of README.md for details."
