@@ -44,3 +44,21 @@ services:
       - "8080:80"
     depends_on:
       - sharpclaw
+
+  telegram:
+    build:
+      context: .
+      dockerfile: SharpClaw.Telegram/Dockerfile
+    container_name: sharpclaw-telegram
+    restart: unless-stopped
+    depends_on:
+      sharpclaw:
+        condition: service_healthy
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
+      - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
+      - SHARPCLAW_API_URL=http://sharpclaw:8080
+      - SHARPCLAW_DEFAULT_AGENT_ID=${SHARPCLAW_DEFAULT_AGENT_ID:-}
+    profiles:
+      - telegram
