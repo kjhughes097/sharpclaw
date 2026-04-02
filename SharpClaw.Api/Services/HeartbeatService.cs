@@ -20,6 +20,18 @@ public sealed class HeartbeatService(
             return;
         }
 
+        if (cfg.IntervalSeconds <= 0)
+        {
+            logger.LogWarning("Heartbeat IntervalSeconds must be positive. Heartbeat monitor will not start.");
+            return;
+        }
+
+        if (cfg.StuckThresholdSeconds <= 0)
+        {
+            logger.LogWarning("Heartbeat StuckThresholdSeconds must be positive. Heartbeat monitor will not start.");
+            return;
+        }
+
         var interval = TimeSpan.FromSeconds(cfg.IntervalSeconds);
         var threshold = TimeSpan.FromSeconds(cfg.StuckThresholdSeconds);
 
