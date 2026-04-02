@@ -16,7 +16,6 @@ WORKDIR /app
 
 COPY --from=build /app .
 
-ENV ASPNETCORE_URLS=http://+:8443
-EXPOSE 8443
+ENV ASPNETCORE_URLS=http://+:8080
 
 ENTRYPOINT ["dotnet", "SharpClaw.Telegram.dll"]

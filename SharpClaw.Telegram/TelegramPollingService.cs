@@ -1,0 +1,66 @@
+using Telegram.Bot;
+using Telegram.Bot.Types;
+
+namespace SharpClaw.Telegram;
+
+/// <summary>
+/// Background service that receives Telegram updates via long polling
+/// and forwards them to the update handler.
+/// </summary>
+public sealed class TelegramPollingService(
+    ITelegramBotClient botClient,
+    TelegramUpdateHandler handler,
+    ILogger<TelegramPollingService> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        logger.LogInformation("Telegram polling service started");
+
+        // Remove any previously registered webhook so polling works.
+        await botClient.DeleteWebhook(cancellationToken: stoppingToken);
+
+        int offset = 0;
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            Update[] updates;
+            try
+            {
+                updates = await botClient.GetUpdates(
+                    offset,
+                    limit: 100,
+                    timeout: 30,
+                    cancellationToken: stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Error fetching Telegram updates, retrying in 5 seconds");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                continue;
+            }
+
+            foreach (var update in updates)
+            {
+                offset = update.Id + 1;
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await handler.HandleUpdateAsync(update);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(ex, "Failed to process update {UpdateId}", update.Id);
+                    }
+                }, stoppingToken);
+            }
+        }
+
+        logger.LogInformation("Telegram polling service stopped");
+    }
+}
