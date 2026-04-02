@@ -86,6 +86,19 @@ public sealed record AgentDeleteConflictResponse(string Error, int LinkedSession
 
 public sealed record McpDeleteConflictResponse(string Error, int LinkedAgentCount, bool RequiresAgentDetach) : IApiPayload;
 
+public sealed record TelegramSettingsDto(
+    bool IsEnabled,
+    bool HasBotToken,
+    string? MaskedBotToken,
+    IReadOnlyList<long> AllowedUserIds,
+    IReadOnlyList<string> AllowedUsernames) : IApiPayload;
+
+public sealed record TelegramRuntimeSettingsDto(
+    bool IsEnabled,
+    string? BotToken,
+    IReadOnlyList<long> AllowedUserIds,
+    IReadOnlyList<string> AllowedUsernames) : IApiPayload;
+
 public sealed record CreateSessionRequest(string? AgentId);
 
 public sealed record SendMessageRequest(string? Message);
@@ -95,6 +108,13 @@ public sealed record PermissionDecision(bool Allow);
 public sealed record AgentEnabledRequest(bool IsEnabled);
 
 public sealed record McpEnabledRequest(bool IsEnabled);
+
+public sealed record UpdateTelegramSettingsRequest(
+    bool IsEnabled,
+    string? BotToken,
+    bool? ClearBotToken,
+    IReadOnlyList<long>? AllowedUserIds,
+    IReadOnlyList<string>? AllowedUsernames);
 
 public sealed record AgentDefinitionRequest(
     string? Name,

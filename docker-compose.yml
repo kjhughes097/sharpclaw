@@ -10,7 +10,11 @@ services:
     volumes:
       - /home/khughes/sharpclaw/data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required} -d ${POSTGRES_DB:?POSTGRES_DB is required}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER is required} -d ${POSTGRES_DB:?POSTGRES_DB is required}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -57,7 +61,7 @@ services:
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
       - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
-      - SHARPCLAW_API_URL=http://sharpclaw:8080
+      - SHARPCLAW_API_URL=http://sharpclaw-api:8080
       - SHARPCLAW_DEFAULT_AGENT_ID=${SHARPCLAW_DEFAULT_AGENT_ID:-}
-    profiles:
-      - telegram
+      - TELEGRAM_ALLOWED_USER_IDS=${TELEGRAM_ALLOWED_USER_IDS:-}
+      - TELEGRAM_ALLOWED_USERNAMES=${TELEGRAM_ALLOWED_USERNAMES:-}

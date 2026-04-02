@@ -12,6 +12,12 @@ public sealed class ApiKeyMiddleware(RequestDelegate next, IConfiguration config
             return;
         }
 
+        if (context.Request.Path.StartsWithSegments("/api/health", StringComparison.Ordinal))
+        {
+            await next(context);
+            return;
+        }
+
         if (context.Request.Path.Value?.EndsWith("/stream", StringComparison.Ordinal) == true &&
             HttpMethods.IsGet(context.Request.Method))
         {

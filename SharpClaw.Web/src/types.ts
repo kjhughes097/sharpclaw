@@ -67,6 +67,22 @@ export interface McpUpsertRequest {
     isEnabled: boolean;
 }
 
+export interface TelegramSettings {
+    isEnabled: boolean;
+    hasBotToken: boolean;
+    maskedBotToken: string | null;
+    allowedUserIds: number[];
+    allowedUsernames: string[];
+}
+
+export interface UpdateTelegramSettingsRequest {
+    isEnabled: boolean;
+    botToken?: string;
+    clearBotToken?: boolean;
+    allowedUserIds: number[];
+    allowedUsernames: string[];
+}
+
 export interface Session {
     sessionId: string;
     persona: string;

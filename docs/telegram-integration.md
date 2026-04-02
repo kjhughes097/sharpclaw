@@ -47,6 +47,15 @@ UI. To restrict tool access, set the relevant policy to `Deny` in the agent conf
 | `SHARPCLAW_API_KEY` | Yes | The `SHARPCLAW_API_KEY` used by the main API |
 | `SHARPCLAW_DEFAULT_AGENT_ID` | No | Slug of the agent to assign to new sessions. Defaults to the first enabled persona returned by the API. |
 | `TELEGRAM_MAPPING_STORE_PATH` | No | Path to the JSON file that persists chat-to-session mappings. Defaults to `session-mappings.json` beside the binary. |
+| `TELEGRAM_ALLOWED_USER_IDS` | No | Comma-separated Telegram user IDs allowed to use the bot. If unset (and usernames are also unset), all users are allowed. |
+| `TELEGRAM_ALLOWED_USERNAMES` | No | Comma-separated Telegram usernames (with or without `@`) allowed to use the bot. If unset (and IDs are also unset), all users are allowed. |
+
+If either allowlist variable is set, only matching senders are processed. A sender is allowed when:
+
+1. Their numeric Telegram user ID is in `TELEGRAM_ALLOWED_USER_IDS`, or
+2. Their username is in `TELEGRAM_ALLOWED_USERNAMES`.
+
+IDs are recommended because they are stable; usernames can change.
 
 ### 3. Run with Docker Compose
 

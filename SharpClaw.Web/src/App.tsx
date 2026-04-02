@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FluentProvider, webDarkTheme, webLightTheme } from '@fluentui/react-components';
 import { AgentConfigView } from './AgentConfigView';
 import { McpConfigView } from './McpConfigView';
+import { TelegramConfigView } from './TelegramConfigView';
 import { Sidebar } from './Sidebar';
 import { ChatView } from './ChatView';
 import { LoginScreen } from './LoginScreen';
@@ -23,7 +24,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
-  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'mcps'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'mcps' | 'telegram'>('chat');
   const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, send } = useChat(authed === true);
   const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 
@@ -112,6 +113,11 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
+  const handleShowTelegram = useCallback(() => {
+    setCurrentView('telegram');
+    setSidebarOpen(false);
+  }, []);
+
   const handleShowChats = useCallback(() => {
     setCurrentView('chat');
     setSidebarOpen(false);
@@ -142,6 +148,7 @@ export function App() {
           onNewSession={handleNewSession}
           onShowAgents={handleShowAgents}
           onShowMcps={handleShowMcps}
+          onShowTelegram={handleShowTelegram}
           theme={theme}
           onToggleTheme={toggleTheme}
           isOpen={sidebarOpen}
@@ -152,6 +159,8 @@ export function App() {
           <AgentConfigView onMenuClick={() => setSidebarOpen(true)} />
         ) : currentView === 'mcps' ? (
           <McpConfigView onMenuClick={() => setSidebarOpen(true)} />
+        ) : currentView === 'telegram' ? (
+          <TelegramConfigView onMenuClick={() => setSidebarOpen(true)} />
         ) : active ? (
           <ChatView
             state={active}
@@ -191,6 +200,12 @@ export function App() {
               onClick={handleShowMcps}
             >
               MCPs
+            </button>
+            <button
+              className={`mobile-tabbar-btn ${currentView === 'telegram' ? 'active' : ''}`}
+              onClick={handleShowTelegram}
+            >
+              Telegram
             </button>
           </nav>
         )}

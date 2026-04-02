@@ -1,4 +1,4 @@
-import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest } from './types';
+import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, UpdateTelegramSettingsRequest } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -126,6 +126,22 @@ export async function deleteMcp(slug: string, detachAgents = false): Promise<{ s
         headers: headers(),
     });
     if (!res.ok) throw new Error(await readError(res, `DELETE /mcps/${slug}: ${res.status}`));
+    return res.json();
+}
+
+export async function fetchTelegramSettings(): Promise<TelegramSettings> {
+    const res = await fetch(`${BASE}/integrations/telegram`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /integrations/telegram: ${res.status}`));
+    return res.json();
+}
+
+export async function updateTelegramSettings(payload: UpdateTelegramSettingsRequest): Promise<TelegramSettings> {
+    const res = await fetch(`${BASE}/integrations/telegram`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readError(res, `PUT /integrations/telegram: ${res.status}`));
     return res.json();
 }
 

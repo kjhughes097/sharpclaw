@@ -12,6 +12,10 @@ public sealed class TelegramUpdateHandler(
     IConfiguration configuration,
     ILogger<TelegramUpdateHandler> logger) : IUpdateHandler
 {
+    private readonly bool isEnabled = LoadIsEnabled(configuration);
+    private readonly HashSet<long> allowedUserIds = LoadAllowedUserIds(configuration);
+    private readonly HashSet<string> allowedUsernames = LoadAllowedUsernames(configuration);
+
     public async Task HandleUpdateAsync(ITelegramBotClient client, Update update, CancellationToken cancellationToken)
     {
         try
@@ -38,6 +42,16 @@ public sealed class TelegramUpdateHandler(
 
         if (string.IsNullOrWhiteSpace(text))
             return;
+
+        if (!isEnabled)
+            return;
+
+        if (!IsAllowedUser(message, out var deniedReason))
+        {
+            logger.LogInformation("Ignoring message from unauthorized Telegram user in chat {ChatId}. Reason: {Reason}",
+                chatId, deniedReason);
+            return;
+        }
 
         // Apply a per-message timeout linked to the host shutdown token.
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
@@ -170,5 +184,91 @@ public sealed class TelegramUpdateHandler(
         {
             logger.LogWarning(ex, "Failed to send error message to chat {ChatId}", chatId);
         }
+    }
+
+    private bool IsAllowedUser(Message message, out string deniedReason)
+    {
+        deniedReason = string.Empty;
+
+        if (allowedUserIds.Count == 0 && allowedUsernames.Count == 0)
+            return true;
+
+        var fromUser = message.From;
+        if (fromUser is null)
+        {
+            deniedReason = "message has no sender";
+            return false;
+        }
+
+        if (allowedUserIds.Contains(fromUser.Id))
+            return true;
+
+        var normalizedUsername = NormalizeUsername(fromUser.Username);
+        if (normalizedUsername is not null && allowedUsernames.Contains(normalizedUsername))
+            return true;
+
+        deniedReason = $"sender id {fromUser.Id} / username '{fromUser.Username ?? "(none)"}' not allowed";
+        return false;
+    }
+
+    private static HashSet<long> LoadAllowedUserIds(IConfiguration configuration)
+    {
+        var values = configuration.GetSection("Telegram:AllowedUserIds").Get<string[]>()
+            ?? SplitCsv(Environment.GetEnvironmentVariable("TELEGRAM_ALLOWED_USER_IDS"));
+
+        var allowedIds = new HashSet<long>();
+        foreach (var rawValue in values)
+        {
+            if (!long.TryParse(rawValue, out var userId))
+                continue;
+
+            allowedIds.Add(userId);
+        }
+
+        return allowedIds;
+    }
+
+    private static bool LoadIsEnabled(IConfiguration configuration)
+    {
+        var configured = configuration["Telegram:IsEnabled"]
+            ?? Environment.GetEnvironmentVariable("TELEGRAM_ENABLED");
+
+        if (string.IsNullOrWhiteSpace(configured))
+            return true;
+
+        return bool.TryParse(configured, out var parsed) ? parsed : true;
+    }
+
+    private static HashSet<string> LoadAllowedUsernames(IConfiguration configuration)
+    {
+        var values = configuration.GetSection("Telegram:AllowedUsernames").Get<string[]>()
+            ?? SplitCsv(Environment.GetEnvironmentVariable("TELEGRAM_ALLOWED_USERNAMES"));
+
+        var usernames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawValue in values)
+        {
+            var normalized = NormalizeUsername(rawValue);
+            if (normalized is not null)
+                usernames.Add(normalized);
+        }
+
+        return usernames;
+    }
+
+    private static string[] SplitCsv(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return [];
+
+        return value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private static string? NormalizeUsername(string? username)
+    {
+        if (string.IsNullOrWhiteSpace(username))
+            return null;
+
+        var normalized = username.Trim();
+        return normalized.TrimStart('@');
     }
 }
