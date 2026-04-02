@@ -5,4 +5,5 @@
   <Project Path="SharpClaw.OpenAI/SharpClaw.OpenAI.csproj" />
   <Project Path="SharpClaw.OpenRouter/SharpClaw.OpenRouter.csproj" />
   <Project Path="SharpClaw.RebuildHook/SharpClaw.RebuildHook.csproj" />
+  <Project Path="SharpClaw.Telegram/SharpClaw.Telegram.csproj" />
 </Solution>
