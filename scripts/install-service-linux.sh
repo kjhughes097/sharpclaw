@@ -10,11 +10,13 @@
 #   1. Validates prerequisites (.NET 10 SDK, Node.js 18+, npm, PostgreSQL)
 #   2. Creates a dedicated system user 'sharpclaw'
 #   3. Publishes the .NET API to /opt/sharpclaw/api
-#   4. Builds the React frontend and deploys it to /var/www/sharpclaw
-#   5. Installs and configures nginx to serve the frontend and proxy /api/
-#   6. Writes /etc/sharpclaw/env from your .env values
-#   7. Installs and enables sharpclaw-api.service
-#   8. Enables and restarts nginx
+#   4. Publishes the Telegram worker to /opt/sharpclaw/telegram
+#   5. Builds the React frontend and deploys it to /var/www/sharpclaw
+#   6. Installs and configures nginx to serve the frontend and proxy /api/
+#   7. Writes /etc/sharpclaw/env from your .env values
+#   8. Installs and enables sharpclaw-api.service
+#   9. Optionally installs and enables sharpclaw-telegram.service
+#  10. Enables and restarts nginx
 #
 # Supported distributions:
 #   - Debian / Ubuntu (apt)
@@ -40,11 +42,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # ── Install paths ─────────────────────────────────────────────────────────────
 INSTALL_USER="sharpclaw"
 API_INSTALL_DIR="/opt/sharpclaw/api"
+TELEGRAM_INSTALL_DIR="/opt/sharpclaw/telegram"
 WEB_INSTALL_DIR="/var/www/sharpclaw"
 ENV_DIR="/etc/sharpclaw"
 ENV_FILE="$ENV_DIR/env"
 SERVICE_NAME="sharpclaw-api"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+TELEGRAM_SERVICE_NAME="sharpclaw-telegram"
+TELEGRAM_SERVICE_FILE="/etc/systemd/system/${TELEGRAM_SERVICE_NAME}.service"
 
 # ── Colour helpers ────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -180,9 +185,14 @@ if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
     systemctl stop "$SERVICE_NAME"
 fi
 
+if systemctl is-active --quiet "$TELEGRAM_SERVICE_NAME" 2>/dev/null; then
+    info "Stopping existing $TELEGRAM_SERVICE_NAME service for update..."
+    systemctl stop "$TELEGRAM_SERVICE_NAME"
+fi
+
 # ── Create directories ────────────────────────────────────────────────────────
 info "Creating install directories..."
-mkdir -p "$API_INSTALL_DIR" "$WEB_INSTALL_DIR" "$ENV_DIR"
+mkdir -p "$API_INSTALL_DIR" "$TELEGRAM_INSTALL_DIR" "$WEB_INSTALL_DIR" "$ENV_DIR"
 
 # ── Publish the .NET API ──────────────────────────────────────────────────────
 info "Publishing SharpClaw API to $API_INSTALL_DIR ..."
@@ -192,6 +202,15 @@ info "Publishing SharpClaw API to $API_INSTALL_DIR ..."
     -o "$API_INSTALL_DIR" \
     --nologo
 info "API published."
+
+# ── Publish the Telegram worker ──────────────────────────────────────────────
+info "Publishing SharpClaw Telegram worker to $TELEGRAM_INSTALL_DIR ..."
+"$DOTNET_BIN" publish \
+    "$REPO_ROOT/SharpClaw.Telegram/SharpClaw.Telegram.csproj" \
+    -c Release \
+    -o "$TELEGRAM_INSTALL_DIR" \
+    --nologo
+info "Telegram worker published."
 
 # ── Build the frontend ────────────────────────────────────────────────────────
 WEB_DIR="$REPO_ROOT/SharpClaw.Web"
@@ -209,6 +228,7 @@ info "Frontend deployed."
 # ── Set ownership and permissions ─────────────────────────────────────────────
 info "Setting file ownership..."
 chown -R "$INSTALL_USER":"$INSTALL_USER" "$API_INSTALL_DIR"
+chown -R "$INSTALL_USER":"$INSTALL_USER" "$TELEGRAM_INSTALL_DIR"
 chown -R www-data:www-data "$WEB_INSTALL_DIR" 2>/dev/null \
     || chown -R nginx:nginx "$WEB_INSTALL_DIR" 2>/dev/null \
     || chown -R "$INSTALL_USER":"$INSTALL_USER" "$WEB_INSTALL_DIR"
@@ -238,6 +258,16 @@ info "Writing environment file to $ENV_FILE ..."
     echo "SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY:-}"
     echo "SHARPCLAW_WORKSPACE=${SHARPCLAW_WORKSPACE:-/opt/sharpclaw/workspace}"
 
+    # Telegram worker service integration
+    echo "SHARPCLAW_ENABLE_TELEGRAM_SERVICE=${SHARPCLAW_ENABLE_TELEGRAM_SERVICE:-}"
+    echo "TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-}"
+    echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}"
+    echo "SHARPCLAW_API_URL=${SHARPCLAW_API_URL:-http://127.0.0.1:5000}"
+    echo "SHARPCLAW_DEFAULT_AGENT_ID=${SHARPCLAW_DEFAULT_AGENT_ID:-}"
+    echo "TELEGRAM_MAPPING_STORE_PATH=${TELEGRAM_MAPPING_STORE_PATH:-/var/lib/sharpclaw/telegram-session-mappings.json}"
+    echo "TELEGRAM_ALLOWED_USER_IDS=${TELEGRAM_ALLOWED_USER_IDS:-}"
+    echo "TELEGRAM_ALLOWED_USERNAMES=${TELEGRAM_ALLOWED_USERNAMES:-}"
+
     # ASP.NET Core
     echo "ASPNETCORE_URLS=http://127.0.0.1:5000"
     echo "DOTNET_ROOT=${DOTNET_ROOT}"
@@ -252,6 +282,27 @@ WORKSPACE_DIR="${SHARPCLAW_WORKSPACE:-/opt/sharpclaw/workspace}"
 mkdir -p "$WORKSPACE_DIR"
 chown "$INSTALL_USER":"$INSTALL_USER" "$WORKSPACE_DIR"
 info "Workspace directory: $WORKSPACE_DIR"
+
+TELEGRAM_MAPPING_FILE="${TELEGRAM_MAPPING_STORE_PATH:-/var/lib/sharpclaw/telegram-session-mappings.json}"
+TELEGRAM_MAPPING_DIR="$(dirname "$TELEGRAM_MAPPING_FILE")"
+mkdir -p "$TELEGRAM_MAPPING_DIR"
+chown "$INSTALL_USER":"$INSTALL_USER" "$TELEGRAM_MAPPING_DIR"
+info "Telegram mapping directory: $TELEGRAM_MAPPING_DIR"
+
+ENABLE_TELEGRAM_SERVICE="false"
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+    ENABLE_TELEGRAM_SERVICE="true"
+fi
+
+case "${SHARPCLAW_ENABLE_TELEGRAM_SERVICE:-}" in
+    1|true|TRUE|yes|YES)
+        ENABLE_TELEGRAM_SERVICE="true"
+        ;;
+esac
+
+if [[ "$ENABLE_TELEGRAM_SERVICE" == "true" && -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+    die "Telegram service enabled but TELEGRAM_BOT_TOKEN is empty. Set TELEGRAM_BOT_TOKEN in .env."
+fi
 
 # ── Write nginx site configuration ────────────────────────────────────────────
 info "Writing nginx site configuration..."
@@ -345,6 +396,46 @@ ProtectHome=yes
 WantedBy=multi-user.target
 EOF
 
+if [[ "$ENABLE_TELEGRAM_SERVICE" == "true" ]]; then
+    info "Writing Telegram systemd unit file to $TELEGRAM_SERVICE_FILE ..."
+    cat > "$TELEGRAM_SERVICE_FILE" <<EOF
+[Unit]
+Description=SharpClaw Telegram Worker
+Documentation=https://github.com/kjhughes097/sharpclaw
+After=network.target ${SERVICE_NAME}.service
+Wants=${SERVICE_NAME}.service
+
+[Service]
+Type=simple
+User=${INSTALL_USER}
+WorkingDirectory=${TELEGRAM_INSTALL_DIR}
+ExecStart=${DOTNET_BIN} ${TELEGRAM_INSTALL_DIR}/SharpClaw.Telegram.dll
+EnvironmentFile=${ENV_FILE}
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+SyslogIdentifier=sharpclaw-telegram
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
+EOF
+else
+    if systemctl is-enabled --quiet "$TELEGRAM_SERVICE_NAME" 2>/dev/null; then
+        info "Disabling previously enabled $TELEGRAM_SERVICE_NAME service..."
+        systemctl disable "$TELEGRAM_SERVICE_NAME" || true
+    fi
+
+    if [[ -f "$TELEGRAM_SERVICE_FILE" ]]; then
+        info "Removing stale Telegram unit file at $TELEGRAM_SERVICE_FILE ..."
+        rm -f "$TELEGRAM_SERVICE_FILE"
+    fi
+fi
+
 # ── Enable and start services ─────────────────────────────────────────────────
 info "Reloading systemd daemon..."
 systemctl daemon-reload
@@ -354,6 +445,14 @@ systemctl enable "$SERVICE_NAME"
 
 info "Starting $SERVICE_NAME..."
 systemctl start "$SERVICE_NAME"
+
+if [[ "$ENABLE_TELEGRAM_SERVICE" == "true" ]]; then
+    info "Enabling $TELEGRAM_SERVICE_NAME..."
+    systemctl enable "$TELEGRAM_SERVICE_NAME"
+
+    info "Starting $TELEGRAM_SERVICE_NAME..."
+    systemctl start "$TELEGRAM_SERVICE_NAME"
+fi
 
 info "Enabling and restarting nginx..."
 systemctl enable nginx
@@ -374,6 +473,16 @@ else
     warn "nginx did not start. Check logs with: journalctl -u nginx -n 50"
 fi
 
+if [[ "$ENABLE_TELEGRAM_SERVICE" == "true" ]]; then
+    if systemctl is-active --quiet "$TELEGRAM_SERVICE_NAME"; then
+        echo -e "${GREEN}[service-install]${NC} $TELEGRAM_SERVICE_NAME is running."
+    else
+        warn "$TELEGRAM_SERVICE_NAME did not start. Check logs with: journalctl -u $TELEGRAM_SERVICE_NAME -n 50"
+    fi
+else
+    warn "Telegram service not enabled (set TELEGRAM_BOT_TOKEN or SHARPCLAW_ENABLE_TELEGRAM_SERVICE=true to enable)."
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
@@ -382,9 +491,13 @@ echo -e "${GREEN}═════════════════════
 echo ""
 echo "Installed paths:"
 echo "  API binary         : $API_INSTALL_DIR"
+echo "  Telegram binary    : $TELEGRAM_INSTALL_DIR"
 echo "  Frontend           : $WEB_INSTALL_DIR"
 echo "  Environment file   : $ENV_FILE"
 echo "  Systemd unit       : $SERVICE_FILE"
+if [[ "$ENABLE_TELEGRAM_SERVICE" == "true" ]]; then
+echo "  Telegram unit      : $TELEGRAM_SERVICE_FILE"
+fi
 echo "  nginx site config  : $NGINX_CONF_FILE"
 echo "  Workspace          : $WORKSPACE_DIR"
 echo ""
@@ -393,6 +506,11 @@ echo "  sudo systemctl status  $SERVICE_NAME"
 echo "  sudo systemctl restart $SERVICE_NAME"
 echo "  sudo systemctl stop    $SERVICE_NAME"
 echo "  sudo journalctl -u     $SERVICE_NAME -f"
+echo ""
+echo "  sudo systemctl status  $TELEGRAM_SERVICE_NAME"
+echo "  sudo systemctl restart $TELEGRAM_SERVICE_NAME"
+echo "  sudo systemctl stop    $TELEGRAM_SERVICE_NAME"
+echo "  sudo journalctl -u     $TELEGRAM_SERVICE_NAME -f"
 echo ""
 echo "  sudo systemctl status  nginx"
 echo "  sudo systemctl restart nginx"

@@ -198,6 +198,13 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 | `SHARPCLAW_DB_CONNECTION` | Required for non-Docker API runs unless `ConnectionStrings:DefaultConnection` is supplied another way |
 | `SHARPCLAW_WORKSPACE` | Workspace path used by the backend and filesystem MCP tooling |
 | `MCP_ALLOWED_DIRS` | Colon-delimited allowed directories for filesystem MCP access when `SHARPCLAW_WORKSPACE` is not set |
+| `SHARPCLAW_ENABLE_TELEGRAM_SERVICE` | Optional Linux service-install toggle (`true`/`1`) to force enabling `sharpclaw-telegram` |
+| `TELEGRAM_BOT_TOKEN` | Required to run the Telegram worker service |
+| `TELEGRAM_ENABLED` | Optional Telegram worker toggle; defaults to enabled when unset |
+| `SHARPCLAW_DEFAULT_AGENT_ID` | Optional default agent slug used for new Telegram sessions |
+| `TELEGRAM_MAPPING_STORE_PATH` | Optional path to Telegram chat-to-session mapping JSON file |
+| `TELEGRAM_ALLOWED_USER_IDS` | Optional comma-separated Telegram user ID allowlist |
+| `TELEGRAM_ALLOWED_USERNAMES` | Optional comma-separated Telegram username allowlist |
 
 ### Example `.env`
 
@@ -308,7 +315,8 @@ The script:
    - Proxies `/api/` to the backend with SSE streaming support
 7. Writes `/etc/sharpclaw/env` from your `.env` values (owned `root:sharpclaw`, mode `640`)
 8. Writes `/etc/systemd/system/sharpclaw-api.service`
-9. Enables and starts `sharpclaw-api.service` and `nginx`
+9. Optionally writes `/etc/systemd/system/sharpclaw-telegram.service` when Telegram is enabled
+10. Enables and starts `sharpclaw-api.service` (and `sharpclaw-telegram.service` when configured) plus `nginx`
 
 > **Note:** Run the script again at any time to redeploy after a code change.  The script stops the running service, republishes, redeploys, and restarts.
 
@@ -317,9 +325,11 @@ The script:
 | Path | Contents |
 |---|---|
 | `/opt/sharpclaw/api` | Published .NET API binary |
+| `/opt/sharpclaw/telegram` | Published Telegram worker binary |
 | `/var/www/sharpclaw` | Compiled React frontend |
 | `/etc/sharpclaw/env` | Environment file (secrets, API keys, DB connection) |
 | `/etc/systemd/system/sharpclaw-api.service` | API systemd unit |
+| `/etc/systemd/system/sharpclaw-telegram.service` | Telegram worker systemd unit (optional) |
 | `/etc/nginx/sites-available/sharpclaw` (Debian/Ubuntu) | nginx site config |
 | `/etc/nginx/conf.d/sharpclaw.conf` (RHEL/Fedora) | nginx site config |
 | `/opt/sharpclaw/workspace` | Default filesystem MCP workspace |
@@ -339,6 +349,12 @@ sudo systemctl restart sharpclaw-api
 sudo systemctl stop    sharpclaw-api
 sudo journalctl -u     sharpclaw-api -f
 
+# Telegram worker service (if enabled)
+sudo systemctl status  sharpclaw-telegram
+sudo systemctl restart sharpclaw-telegram
+sudo systemctl stop    sharpclaw-telegram
+sudo journalctl -u     sharpclaw-telegram -f
+
 # nginx (frontend + proxy)
 sudo systemctl status  nginx
 sudo systemctl restart nginx
@@ -352,6 +368,29 @@ The environment file at `/etc/sharpclaw/env` holds all secrets and configuration
 ```bash
 sudo $EDITOR /etc/sharpclaw/env
 sudo systemctl restart sharpclaw-api
+sudo systemctl restart sharpclaw-telegram
+```
+
+### Telegram Service (Optional)
+
+`scripts/install-service-linux.sh` can install and manage `sharpclaw-telegram` as a systemd service.
+
+The Telegram service is enabled when either:
+
+- `TELEGRAM_BOT_TOKEN` is set in `.env`, or
+- `SHARPCLAW_ENABLE_TELEGRAM_SERVICE=true` (or `1`) is set in `.env`
+
+If Telegram is enabled without `TELEGRAM_BOT_TOKEN`, the installer exits with an error.
+
+Minimal `.env` settings for Telegram service installs:
+
+```dotenv
+TELEGRAM_BOT_TOKEN=<token-from-botfather>
+SHARPCLAW_API_KEY=<same-api-key-used-by-sharpclaw-api>
+SHARPCLAW_API_URL=http://127.0.0.1:5000
+# Optional
+TELEGRAM_ALLOWED_USER_IDS=12345,67890
+TELEGRAM_ALLOWED_USERNAMES=alice,@bob
 ```
 
 ---
