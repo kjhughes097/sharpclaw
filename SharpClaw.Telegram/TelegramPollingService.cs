@@ -20,6 +20,7 @@ public sealed class TelegramPollingService(
         await botClient.DeleteWebhook(cancellationToken: stoppingToken);
 
         int offset = 0;
+        var pending = new List<Task>();
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -43,11 +44,14 @@ public sealed class TelegramPollingService(
                 continue;
             }
 
+            // Remove completed tasks before adding new ones.
+            pending.RemoveAll(t => t.IsCompleted);
+
             foreach (var update in updates)
             {
                 offset = update.Id + 1;
 
-                _ = Task.Run(async () =>
+                pending.Add(Task.Run(async () =>
                 {
                     try
                     {
@@ -57,8 +61,15 @@ public sealed class TelegramPollingService(
                     {
                         logger.LogError(ex, "Failed to process update {UpdateId}", update.Id);
                     }
-                }, stoppingToken);
+                }, CancellationToken.None));
             }
+        }
+
+        // Wait for in-flight updates to finish before shutting down.
+        if (pending.Count > 0)
+        {
+            logger.LogInformation("Waiting for {Count} in-flight update(s) to complete", pending.Count);
+            await Task.WhenAll(pending);
         }
 
         logger.LogInformation("Telegram polling service stopped");
