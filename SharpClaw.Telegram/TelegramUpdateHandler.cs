@@ -1,4 +1,5 @@
 using Telegram.Bot;
+using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
@@ -9,14 +10,14 @@ public sealed class TelegramUpdateHandler(
     SharpClawApiClient sharpClawClient,
     SessionMappingStore sessionStore,
     IConfiguration configuration,
-    ILogger<TelegramUpdateHandler> logger)
+    ILogger<TelegramUpdateHandler> logger) : IUpdateHandler
 {
-    public async Task HandleUpdateAsync(Update update)
+    public async Task HandleUpdateAsync(ITelegramBotClient client, Update update, CancellationToken cancellationToken)
     {
         try
         {
             if (update.Message is { } message)
-                await HandleMessageAsync(message);
+                await HandleMessageAsync(message, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -24,7 +25,13 @@ public sealed class TelegramUpdateHandler(
         }
     }
 
-    private async Task HandleMessageAsync(Message message)
+    public Task HandleErrorAsync(ITelegramBotClient client, Exception exception, HandleErrorSource source, CancellationToken cancellationToken)
+    {
+        logger.LogWarning(exception, "Telegram polling error from {Source}", source);
+        return Task.CompletedTask;
+    }
+
+    private async Task HandleMessageAsync(Message message, CancellationToken ct)
     {
         var chatId = message.Chat.Id;
         var text = message.Text;
@@ -32,59 +39,61 @@ public sealed class TelegramUpdateHandler(
         if (string.IsNullOrWhiteSpace(text))
             return;
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
-        var ct = cts.Token;
+        // Apply a per-message timeout linked to the host shutdown token.
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+        var messageCt = linkedCts.Token;
 
         if (text.Equals("/start", StringComparison.OrdinalIgnoreCase) ||
             text.Equals("/new", StringComparison.OrdinalIgnoreCase))
         {
-            await StartNewSessionAsync(chatId, ct);
+            await StartNewSessionAsync(chatId, messageCt);
             return;
         }
 
-        var sessionId = await EnsureSessionAsync(chatId, ct);
+        var sessionId = await EnsureSessionAsync(chatId, messageCt);
         if (sessionId is null)
         {
-            await SendErrorAsync(chatId, "Could not connect to SharpClaw. Please try again later.", ct);
+            await SendErrorAsync(chatId, "Could not connect to SharpClaw. Please try again later.", messageCt);
             return;
         }
 
         try
         {
-            await botClient.SendChatAction(chatId, ChatAction.Typing, cancellationToken: ct);
+            await botClient.SendChatAction(chatId, ChatAction.Typing, cancellationToken: messageCt);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to send typing indicator to chat {ChatId}", chatId);
         }
 
-        var messageId = await sharpClawClient.SendMessageAsync(sessionId, text, ct);
+        var messageId = await sharpClawClient.SendMessageAsync(sessionId, text, messageCt);
         if (messageId is null)
         {
-            await SendErrorAsync(chatId, "Failed to send your message to the agent. Please try again.", ct);
+            await SendErrorAsync(chatId, "Failed to send your message to the agent. Please try again.", messageCt);
             return;
         }
 
         string responseContent;
         try
         {
-            responseContent = await sharpClawClient.ConsumeStreamAsync(sessionId, messageId, ct);
+            responseContent = await sharpClawClient.ConsumeStreamAsync(sessionId, messageId, messageCt);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to stream response for session '{SessionId}', message '{MessageId}'",
                 sessionId, messageId);
-            await SendErrorAsync(chatId, "The agent encountered an error. Please try again.", ct);
+            await SendErrorAsync(chatId, "The agent encountered an error. Please try again.", messageCt);
             return;
         }
 
         if (string.IsNullOrWhiteSpace(responseContent))
         {
-            await SendErrorAsync(chatId, "The agent returned an empty response.", ct);
+            await SendErrorAsync(chatId, "The agent returned an empty response.", messageCt);
             return;
         }
 
-        await SendResponseAsync(chatId, responseContent, ct);
+        await SendResponseAsync(chatId, responseContent, messageCt);
     }
 
     private async Task<string?> EnsureSessionAsync(long chatId, CancellationToken ct)

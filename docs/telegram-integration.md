@@ -1,16 +1,20 @@
 # Telegram Integration
 
-The `SharpClaw.Telegram` service bridges Telegram and SharpClaw, letting users send messages
-to a Telegram bot and receive agent responses directly in the chat.
+The `SharpClaw.Telegram` service bridges a Telegram bot and SharpClaw, letting users send
+messages to a Telegram bot and receive agent responses directly in the chat.
 
 ## Architecture
 
-`SharpClaw.Telegram` is a standalone ASP.NET Core service that:
+`SharpClaw.Telegram` is a .NET Worker Service that uses the Telegram.Bot library's built-in
+long-polling mechanism. It:
 
-1. Exposes a webhook endpoint (`POST /telegram/webhook`) for Telegram to push updates to.
+1. Connects to the Telegram Bot API on startup and polls for new messages automatically.
 2. Maps each Telegram chat ID to a SharpClaw session, persisting the mapping across restarts.
 3. Forwards incoming text messages to the SharpClaw API and streams back the agent response.
 4. Supports `/start` and `/new` commands to begin a fresh session at any time.
+
+No webhook URL or public HTTPS endpoint is required — the service reaches out to Telegram
+rather than waiting for Telegram to push updates inbound.
 
 The service communicates with the SharpClaw API over HTTP and does not connect to the
 PostgreSQL database directly.
@@ -41,29 +45,10 @@ UI. To restrict tool access, set the relevant policy to `Deny` in the agent conf
 | `TELEGRAM_BOT_TOKEN` | Yes | Bot token from BotFather |
 | `SHARPCLAW_API_URL` | Yes | URL of the SharpClaw API (e.g. `http://localhost:8080`) |
 | `SHARPCLAW_API_KEY` | Yes | The `SHARPCLAW_API_KEY` used by the main API |
-| `TELEGRAM_WEBHOOK_SECRET` | Recommended | Secret string added to the Telegram webhook — Telegram sends it as `X-Telegram-Bot-Api-Secret-Token` |
 | `SHARPCLAW_DEFAULT_AGENT_ID` | No | Slug of the agent to assign to new sessions. Defaults to the first enabled persona returned by the API. |
 | `TELEGRAM_MAPPING_STORE_PATH` | No | Path to the JSON file that persists chat-to-session mappings. Defaults to `session-mappings.json` beside the binary. |
 
-### 3. Register the webhook with Telegram
-
-Telegram requires the webhook URL to be publicly reachable over HTTPS. After the service is
-running (e.g. behind an nginx reverse-proxy with a TLS certificate), register the webhook once:
-
-```bash
-curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://your-domain.example.com/telegram/webhook",
-    "secret_token": "<YOUR_WEBHOOK_SECRET>"
-  }'
-```
-
-Telegram supports ports 80, 88, 443, and 8443 for webhooks. Self-signed certificates are
-allowed but require the public key to be uploaded via the `certificate` field (see the
-[Telegram webhook guide](https://core.telegram.org/bots/webhooks)).
-
-### 4. Run with Docker Compose
+### 3. Run with Docker Compose
 
 The Telegram service is included in `docker-compose.yml` under the `telegram` profile so it
 does not start unless explicitly enabled:
@@ -71,37 +56,23 @@ does not start unless explicitly enabled:
 ```bash
 # Copy and fill in the Telegram-specific variables
 cp .env.example .env
-# edit TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, SHARPCLAW_DEFAULT_AGENT_ID
+# edit TELEGRAM_BOT_TOKEN and (optionally) SHARPCLAW_DEFAULT_AGENT_ID
 
 docker compose --profile telegram up -d
 ```
 
-### 5. Run standalone (development)
+### 4. Run standalone (development)
 
 ```bash
 export TELEGRAM_BOT_TOKEN=<token>
-export TELEGRAM_WEBHOOK_SECRET=<secret>
 export SHARPCLAW_API_URL=http://localhost:8080
 export SHARPCLAW_API_KEY=<your-api-key>
 
 dotnet run --project SharpClaw.Telegram
 ```
 
-The service listens on port `8443` by default. Use a tool like
-[ngrok](https://ngrok.com/) to expose it during local development:
-
-```bash
-ngrok http 8443
-# Then register the resulting https URL as the webhook
-```
-
-## Health check
-
-```
-GET /health
-```
-
-Returns `{"status":"ok"}` when the service is running.
+The service connects to the Telegram Bot API directly. No inbound port or public URL is
+required during development.
 
 ## Supported commands
 
