@@ -19,6 +19,9 @@ builder.Services.AddSingleton(new SessionStore(connectionString));
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<BackendModelService>();
 builder.Services.AddSingleton<SessionRuntimeService>();
+builder.Services.Configure<HeartbeatOptions>(
+    builder.Configuration.GetSection(HeartbeatOptions.SectionName));
+builder.Services.AddHostedService<HeartbeatService>();
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
