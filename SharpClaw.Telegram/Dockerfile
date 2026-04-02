@@ -11,7 +11,7 @@ COPY SharpClaw.Telegram/ SharpClaw.Telegram/
 RUN dotnet publish SharpClaw.Telegram/SharpClaw.Telegram.csproj -c Release -o /app --no-restore
 
 # ── Runtime image ─────────────────────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
 COPY --from=build /app .

@@ -1280,6 +1280,23 @@ body {
   height: 18px;
 }
 
+.telegram-token-state {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
+}
+
+.telegram-token-state-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.telegram-clear-token {
+  justify-content: flex-start;
+}
+
 .agent-permissions-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);

@@ -19,11 +19,12 @@ interface SidebarProps {
   onNewSession: () => void;
   onShowAgents: () => void;
   onShowMcps: () => void;
+  onShowTelegram: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
-  currentView: 'chat' | 'agents' | 'mcps';
+  currentView: 'chat' | 'agents' | 'mcps' | 'telegram';
 }
 
 function plainTextPreview(text: string | undefined, maxLength: number): string {
@@ -154,7 +155,7 @@ function sessionAge(lastActivityAt: string): string {
   return `${years}y ago`;
 }
 
-export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewSession, onShowAgents, onShowMcps, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
+export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewSession, onShowAgents, onShowMcps, onShowTelegram, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
   const handleDeleteClick = async (
     event: MouseEvent<HTMLButtonElement>,
     sessionId: string,
@@ -267,6 +268,12 @@ export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewS
           onClick={onShowMcps}
         >
           MCPs
+        </button>
+        <button
+          className={`sidebar-nav-item ${currentView === 'telegram' ? 'active' : ''}`}
+          onClick={onShowTelegram}
+        >
+          Telegram
         </button>
       </div>
     </aside>

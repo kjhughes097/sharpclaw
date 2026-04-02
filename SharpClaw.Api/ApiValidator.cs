@@ -41,4 +41,12 @@ internal static class ApiValidator
 
         return null;
     }
+
+    internal static string? ValidateTelegramSettingsRequest(UpdateTelegramSettingsRequest req)
+    {
+        if (req.AllowedUserIds is not null && req.AllowedUserIds.Any(id => id <= 0))
+            return "allowedUserIds entries must be positive Telegram user IDs.";
+
+        return null;
+    }
 }

@@ -20,12 +20,17 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
 
             var json = await response.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
+            var payload = GetPayloadOrRoot(doc.RootElement);
 
-            if (doc.RootElement.TryGetProperty("payload", out var payload) &&
-                payload.ValueKind == JsonValueKind.Array &&
+            if (payload.ValueKind == JsonValueKind.Array &&
                 payload.GetArrayLength() > 0)
             {
-                return payload[0].GetProperty("id").GetString();
+                var first = payload[0];
+                if (first.ValueKind == JsonValueKind.Object &&
+                    first.TryGetProperty("id", out var idEl))
+                {
+                    return idEl.GetString();
+                }
             }
         }
         catch (Exception ex)
@@ -40,20 +45,23 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
     {
         try
         {
-            var payload = JsonSerializer.Serialize(new { agentId }, JsonOptions);
-            using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var requestBody = JsonSerializer.Serialize(new { agentId }, JsonOptions);
+            using var content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
 
             var response = await httpClient.PostAsync("api/sessions", content, ct);
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
+            var payload = GetPayloadOrRoot(doc.RootElement);
 
-            if (doc.RootElement.TryGetProperty("payload", out var p) &&
-                p.TryGetProperty("sessionId", out var sessionIdEl))
+            if (payload.ValueKind == JsonValueKind.Object &&
+                payload.TryGetProperty("sessionId", out var sessionIdEl))
             {
                 return sessionIdEl.GetString();
             }
+
+            logger.LogWarning("Unexpected create-session response shape: {Body}", json);
         }
         catch (Exception ex)
         {
@@ -67,20 +75,24 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
     {
         try
         {
-            var payload = JsonSerializer.Serialize(new { message }, JsonOptions);
-            using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var requestBody = JsonSerializer.Serialize(new { message }, JsonOptions);
+            using var content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
 
             var response = await httpClient.PostAsync($"api/sessions/{sessionId}/messages", content, ct);
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync(ct);
             using var doc = JsonDocument.Parse(json);
+            var payload = GetPayloadOrRoot(doc.RootElement);
 
-            if (doc.RootElement.TryGetProperty("payload", out var p) &&
-                p.TryGetProperty("messageId", out var messageIdEl))
+            if (payload.ValueKind == JsonValueKind.Object &&
+                payload.TryGetProperty("messageId", out var messageIdEl))
             {
                 return messageIdEl.GetString();
             }
+
+            logger.LogWarning("Unexpected send-message response shape for session '{SessionId}': {Body}",
+                sessionId, json);
         }
         catch (Exception ex)
         {
@@ -175,5 +187,16 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
             logger.LogWarning(ex, "Failed to approve permission '{RequestId}' for session '{SessionId}'",
                 requestId, sessionId);
         }
+    }
+
+    private static JsonElement GetPayloadOrRoot(JsonElement root)
+    {
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("payload", out var payload))
+        {
+            return payload;
+        }
+
+        return root;
     }
 }

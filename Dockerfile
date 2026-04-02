@@ -5,6 +5,8 @@ WORKDIR /src
 COPY SharpClaw.slnx .
 COPY SharpClaw.Core/SharpClaw.Core.csproj SharpClaw.Core/
 COPY SharpClaw.Copilot/SharpClaw.Copilot.csproj SharpClaw.Copilot/
+COPY SharpClaw.OpenAI/SharpClaw.OpenAI.csproj SharpClaw.OpenAI/
+COPY SharpClaw.OpenRouter/SharpClaw.OpenRouter.csproj SharpClaw.OpenRouter/
 COPY SharpClaw.Api/SharpClaw.Api.csproj SharpClaw.Api/
 RUN dotnet restore SharpClaw.Api/SharpClaw.Api.csproj
 

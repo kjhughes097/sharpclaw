@@ -89,6 +89,15 @@ public sealed class SessionStore : IDisposable
                 FOREIGN KEY (session_id) REFERENCES sessions(session_id)
             );
 
+            CREATE TABLE IF NOT EXISTS integration_settings (
+                integration TEXT NOT NULL PRIMARY KEY,
+                is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                bot_token TEXT NULL,
+                allowed_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+                allowed_usernames JSONB NOT NULL DEFAULT '[]'::jsonb,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
             DO $$
             BEGIN
                 IF EXISTS (
@@ -129,6 +138,11 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
             ALTER TABLE mcps ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
             ALTER TABLE mcps ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+            ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+            ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS bot_token TEXT NULL;
+            ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS allowed_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+            ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS allowed_usernames JSONB NOT NULL DEFAULT '[]'::jsonb;
+            ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             """;
         cmd.ExecuteNonQuery();
 
@@ -684,6 +698,52 @@ public sealed class SessionStore : IDisposable
         return GetAgentCountsByMcp().GetValueOrDefault(slug, 0);
     }
 
+    public TelegramIntegrationSettings GetTelegramIntegrationSettings()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT is_enabled, bot_token, allowed_user_ids::text, allowed_usernames::text
+            FROM integration_settings
+            WHERE integration = 'telegram'
+            """;
+
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+            return new TelegramIntegrationSettings(false, null, [], []);
+
+        var allowedUserIds = JsonSerializer.Deserialize<List<long>>(reader.GetString(2), JsonOpts) ?? [];
+        var allowedUsernames = JsonSerializer.Deserialize<List<string>>(reader.GetString(3), JsonOpts) ?? [];
+        var token = reader.IsDBNull(1) ? null : NormalizeOptionalString(reader.GetString(1));
+
+        return new TelegramIntegrationSettings(
+            IsEnabled: reader.GetBoolean(0),
+            BotToken: token,
+            AllowedUserIds: allowedUserIds,
+            AllowedUsernames: allowedUsernames);
+    }
+
+    public void UpsertTelegramIntegrationSettings(TelegramIntegrationSettings settings)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO integration_settings (integration, is_enabled, bot_token, allowed_user_ids, allowed_usernames, updated_at)
+            VALUES ('telegram', @is_enabled, @bot_token, @allowed_user_ids, @allowed_usernames, NOW())
+            ON CONFLICT (integration) DO UPDATE
+            SET is_enabled = EXCLUDED.is_enabled,
+                bot_token = EXCLUDED.bot_token,
+                allowed_user_ids = EXCLUDED.allowed_user_ids,
+                allowed_usernames = EXCLUDED.allowed_usernames,
+                updated_at = NOW()
+            """;
+        cmd.Parameters.AddWithValue("is_enabled", settings.IsEnabled);
+        cmd.Parameters.AddWithValue("bot_token", (object?)NormalizeOptionalString(settings.BotToken) ?? DBNull.Value);
+        cmd.Parameters.Add("allowed_user_ids", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(settings.AllowedUserIds, JsonOpts);
+        cmd.Parameters.Add("allowed_usernames", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(settings.AllowedUsernames, JsonOpts);
+        cmd.ExecuteNonQuery();
+    }
+
     public int DetachMcpFromAgents(string slug)
     {
         var detachedAgents = 0;
@@ -883,6 +943,14 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("command", mcp.Command);
         cmd.Parameters.Add("args", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(mcp.Args, JsonOpts);
         cmd.Parameters.AddWithValue("is_enabled", mcp.IsEnabled);
+    }
+
+    private static string? NormalizeOptionalString(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return value.Trim();
     }
 
     /// <summary>

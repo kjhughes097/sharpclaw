@@ -41,6 +41,37 @@ internal static class ApiMapper
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToList();
 
+    internal static List<string> NormalizeTelegramUsernames(IEnumerable<string>? values)
+    {
+        return NormalizeStringList(values)
+            .Select(value => value.TrimStart('@'))
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    internal static string? MaskToken(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return null;
+
+        var trimmed = token.Trim();
+        if (trimmed.Length <= 8)
+            return new string('*', trimmed.Length);
+
+        return $"{trimmed[..4]}...{trimmed[^4..]}";
+    }
+
+    internal static TelegramSettingsDto ToTelegramSettingsDto(TelegramIntegrationSettings settings)
+    {
+        return new TelegramSettingsDto(
+            IsEnabled: settings.IsEnabled,
+            HasBotToken: !string.IsNullOrWhiteSpace(settings.BotToken),
+            MaskedBotToken: MaskToken(settings.BotToken),
+            AllowedUserIds: settings.AllowedUserIds,
+            AllowedUsernames: settings.AllowedUsernames);
+    }
+
     internal static PersonaDto ToPersonaDto(AgentRecord agent) =>
         new(
             agent.Slug,
