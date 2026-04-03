@@ -268,15 +268,13 @@ info "Writing environment file to $ENV_FILE ..."
     # Database
     echo "SHARPCLAW_DB_CONNECTION=${SHARPCLAW_DB_CONNECTION:-}"
 
-    # AI keys (write even if empty so the file is a complete reference)
-    echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}"
-    echo "OPENAI_API_KEY=${OPENAI_API_KEY:-}"
-    echo "OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}"
-    echo "GITHUB_COPILOT_TOKEN=${GITHUB_COPILOT_TOKEN:-}"
+    # MCP / integration credentials
+    echo "GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN:-}"
 
     # Auth / workspace
     echo "SHARPCLAW_JWT_SECRET=${SHARPCLAW_JWT_SECRET:-}"
     echo "SHARPCLAW_WORKSPACE=${SHARPCLAW_WORKSPACE:-/opt/sharpclaw/workspace}"
+    echo "SHARPCLAW_KNOWLEDGE_BASE=${SHARPCLAW_KNOWLEDGE_BASE:-/var/lib/sharpclaw/knowledge}"
 
     # Telegram worker service integration
     echo "SHARPCLAW_API_URL=${SHARPCLAW_API_URL:-http://127.0.0.1:5000}"
@@ -296,6 +294,11 @@ WORKSPACE_DIR="${SHARPCLAW_WORKSPACE:-/opt/sharpclaw/workspace}"
 mkdir -p "$WORKSPACE_DIR"
 chown "$INSTALL_USER":"$INSTALL_USER" "$WORKSPACE_DIR"
 info "Workspace directory: $WORKSPACE_DIR"
+
+KNOWLEDGE_DIR="${SHARPCLAW_KNOWLEDGE_BASE:-/var/lib/sharpclaw/knowledge}"
+mkdir -p "$KNOWLEDGE_DIR"
+chown "$INSTALL_USER":"$INSTALL_USER" "$KNOWLEDGE_DIR"
+info "Knowledge base directory: $KNOWLEDGE_DIR"
 
 TELEGRAM_MAPPING_FILE="${TELEGRAM__MAPPINGSTOREPATH:-/var/lib/sharpclaw/telegram-session-mappings.json}"
 TELEGRAM_MAPPING_DIR="/var/lib/sharpclaw"

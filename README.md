@@ -110,6 +110,11 @@ SharpClaw now stores MCP definitions in PostgreSQL and resolves them at runtime 
 - `filesystem`
 - `sqlite`
 - `github`
+- `knowledge-base`
+
+The seeded `github` MCP starts disabled by default. It requires `GITHUB_PERSONAL_ACCESS_TOKEN` in the API runtime environment before you enable it.
+
+The seeded `knowledge-base` MCP also starts disabled by default. It resolves to `~/knowledge` for non-Docker runs, `/knowledge` in Docker Compose, and `/var/lib/sharpclaw/knowledge` for systemd service installs.
 
 The filesystem MCP server is constrained to the workspace path, resolved from:
 
@@ -208,6 +213,7 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 | `POSTGRES_DB` | Required PostgreSQL database name for the Docker Compose stack |
 | `POSTGRES_USER` | Required PostgreSQL username for the Docker Compose stack and API container |
 | `POSTGRES_PASSWORD` | Required PostgreSQL password for the Docker Compose stack and API container |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | Optional GitHub personal access token used by the GitHub MCP server when that MCP is enabled |
 | `SHARPCLAW_JWT_SECRET` | Required JWT signing secret used for API authentication |
 | `SHARPCLAW_DB_CONNECTION` | Required for non-Docker API runs unless `ConnectionStrings:DefaultConnection` is supplied another way |
 | `SHARPCLAW_WORKSPACE` | Host-side path mounted into the Docker container as `/workspace` (Docker Compose and service installs only; not read by the API directly) |
@@ -223,6 +229,7 @@ POSTGRES_DB=sharpclaw
 POSTGRES_USER=sharpclaw
 POSTGRES_PASSWORD=change-me
 SHARPCLAW_JWT_SECRET=replace-with-a-random-secret-at-least-32-characters-long
+GITHUB_PERSONAL_ACCESS_TOKEN=
 ```
 
 Notes:
@@ -230,6 +237,8 @@ Notes:
 - `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are required for Docker Compose runs and are used to configure both the PostgreSQL container and the API container's default connection string
 - Direct `dotnet run` execution also requires a database connection via `SHARPCLAW_DB_CONNECTION` or `ConnectionStrings:DefaultConnection`; the API no longer falls back to a hard-coded local database credential set
 - `SHARPCLAW_JWT_SECRET` is required whenever the API runs; use a random string with at least 32 characters
+- `GITHUB_PERSONAL_ACCESS_TOKEN` is only needed if you want to enable the seeded GitHub MCP
+- Docker Compose mounts `${HOME}/knowledge` into the API container at `/knowledge` for the seeded `knowledge-base` MCP
 - LLM provider API keys are managed in `Configure > Backends` and stored in PostgreSQL
 - Telegram settings (enabled, bot token, allowlists) are managed in `Configure > Telegram` and stored in PostgreSQL
 - `SHARPCLAW_WORKSPACE` is only used by Docker Compose and the service install script to set up the workspace directory; the workspace path exposed to the filesystem MCP server is configured in `Configure > Settings` at runtime
@@ -440,10 +449,13 @@ Key variables for a local run (see [Environment Variables](#environment-variable
 | `POSTGRES_USER` | PostgreSQL role name |
 | `POSTGRES_PASSWORD` | PostgreSQL role password |
 | `SHARPCLAW_DB_CONNECTION` | Full connection string – the backend script constructs this automatically from `POSTGRES_*` if it is not set |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | Needed only if you want to enable the seeded GitHub MCP |
 | `SHARPCLAW_WORKSPACE` | Host-side path mounted as the default workspace directory (service install only; workspace is configured at runtime via `Configure > Settings`) |
+| `SHARPCLAW_KNOWLEDGE_BASE` | Optional override for the seeded `knowledge-base` MCP path; service installs default this to `/var/lib/sharpclaw/knowledge` |
 | `SHARPCLAW_JWT_SECRET` | Required JWT signing secret for API authentication |
 
 After startup, configure backend provider keys in `Configure > Backends`.
+The generated service env file only carries runtime and MCP-level environment values; backend provider credentials are no longer written there.
 
 ### Starting the Backend
 

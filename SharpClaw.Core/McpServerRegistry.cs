@@ -8,7 +8,9 @@ namespace SharpClaw.Core;
 /// </summary>
 public static class McpServerRegistry
 {
-    private const string AllowedDirsPlaceholder = "${SHARPCLAW_ALLOWED_DIRS}";
+    private const string WorkspacePathPlaceholder = "${WORKSPACE_PATH}";
+    private const string LegacyAllowedDirsPlaceholder = "${SHARPCLAW_ALLOWED_DIRS}";
+    private const string KnowledgeBasePlaceholder = "${SHARPCLAW_KNOWLEDGE_BASE}";
     private static readonly Regex EnvVarPattern = new(@"\$\{(?<name>[A-Z0-9_]+)\}", RegexOptions.Compiled);
 
     private static string[] ResolveAllowedDirs(string? workspacePath)
@@ -17,6 +19,22 @@ public static class McpServerRegistry
             return [workspacePath.Trim()];
 
         return [Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)];
+    }
+
+    private static string ResolveKnowledgeBaseDir()
+    {
+        var configuredPath = Environment.GetEnvironmentVariable("SHARPCLAW_KNOWLEDGE_BASE");
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+            return configuredPath.Trim();
+
+        if (Directory.Exists("/knowledge"))
+            return "/knowledge";
+
+        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(homeDir))
+            return Path.Combine(homeDir, "knowledge");
+
+        return Path.Combine(Environment.CurrentDirectory, "knowledge");
     }
 
     /// <summary>
@@ -41,9 +59,16 @@ public static class McpServerRegistry
 
         foreach (var arg in rawArgs)
         {
-            if (string.Equals(arg, AllowedDirsPlaceholder, StringComparison.Ordinal))
+            if (string.Equals(arg, WorkspacePathPlaceholder, StringComparison.Ordinal)
+                || string.Equals(arg, LegacyAllowedDirsPlaceholder, StringComparison.Ordinal))
             {
                 expanded.AddRange(ResolveAllowedDirs(workspacePath));
+                continue;
+            }
+
+            if (string.Equals(arg, KnowledgeBasePlaceholder, StringComparison.Ordinal))
+            {
+                expanded.Add(ResolveKnowledgeBaseDir());
                 continue;
             }
 

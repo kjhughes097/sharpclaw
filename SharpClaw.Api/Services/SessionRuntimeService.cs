@@ -61,6 +61,14 @@ public sealed class SessionRuntimeService(
             store.DeleteSession(sessionId);
             return new ApiResponse<IApiPayload>(StatusCodes.Status409Conflict, new ErrorResponse(ex.Message));
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to initialize session runner for agent '{AgentId}'", agentRecord.Slug);
+            store.DeleteSession(sessionId);
+            return new ApiResponse<IApiPayload>(
+                StatusCodes.Status500InternalServerError,
+                new ErrorResponse($"Failed to initialize agent '{agentRecord.Slug}'. Check MCP configuration and runtime dependencies."));
+        }
 
         return new ApiResponse<IApiPayload>(
             StatusCodes.Status200OK,
@@ -134,6 +142,13 @@ public sealed class SessionRuntimeService(
             catch (InvalidOperationException ex)
             {
                 return new ApiResponse<IApiPayload>(StatusCodes.Status409Conflict, new ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to initialize session runner for agent '{AgentId}'", agentRecord.Slug);
+                return new ApiResponse<IApiPayload>(
+                    StatusCodes.Status500InternalServerError,
+                    new ErrorResponse($"Failed to initialize agent '{agentRecord.Slug}'. Check MCP configuration and runtime dependencies."));
             }
 
             _runners[sessionId] = runner;
