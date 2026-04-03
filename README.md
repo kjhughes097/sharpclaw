@@ -145,6 +145,7 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 ├── docker-compose.yml
 ├── README.md
 ├── SharpClaw.slnx
+├── SharpClaw.Anthropic/
 ├── SharpClaw.Api/
 ├── SharpClaw.Copilot/
 ├── SharpClaw.Core/
@@ -160,6 +161,8 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 - `SharpClaw.Api/`
 	- Minimal API backend
 	- Serves health, session, streaming, permissions, and agent-management endpoints
+- `SharpClaw.Anthropic/`
+	- Anthropic backend integration via the `Anthropic` NuGet package
 - `SharpClaw.Core/`
 	- `AgentRunner`
 	- `SessionStore`
@@ -862,6 +865,7 @@ These seeds are inserted safely and do not overwrite user-edited definitions.
 
 ### Anthropic Backend
 
+- Implemented in `SharpClaw.Anthropic/`
 - Uses the configured model from the stored agent definition
 - Requires `ANTHROPIC_API_KEY`
 
@@ -872,6 +876,14 @@ These seeds are inserted safely and do not overwrite user-edited definitions.
 - Supports streaming and tool use
 - Default model: `gpt-4o-mini`
 - Available models are surfaced via `GET /api/backends/openai/models`
+
+### OpenRouter Backend
+
+- Uses the OpenAI-compatible Chat Completions API at `https://openrouter.ai/api/v1`
+- Requires `OPENROUTER_API_KEY`
+- Supports streaming and tool use
+- Default model: `openai/gpt-4o-mini`
+- Available models are surfaced via `GET /api/backends/openrouter/models`
 
 ### Copilot Backend
 

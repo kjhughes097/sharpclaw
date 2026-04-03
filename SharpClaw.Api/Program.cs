@@ -1,7 +1,11 @@
 using Scalar.AspNetCore;
 using SharpClaw.Api.Middleware;
 using SharpClaw.Api.Services;
+using SharpClaw.Anthropic;
+using SharpClaw.Copilot;
 using SharpClaw.Core;
+using SharpClaw.OpenAI;
+using SharpClaw.OpenRouter;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +21,11 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddSingleton(new SessionStore(connectionString));
 builder.Services.AddHttpClient();
+builder.Services.AddSingleton<IAgentBackendProvider, AnthropicBackendProvider>();
+builder.Services.AddSingleton<IAgentBackendProvider, CopilotBackendProvider>();
+builder.Services.AddSingleton<IAgentBackendProvider, OpenAIBackendProvider>();
+builder.Services.AddSingleton<IAgentBackendProvider, OpenRouterBackendProvider>();
+builder.Services.AddSingleton<BackendRegistry>();
 builder.Services.AddSingleton<BackendModelService>();
 builder.Services.AddSingleton<SessionRuntimeService>();
 builder.Services.AddControllers();

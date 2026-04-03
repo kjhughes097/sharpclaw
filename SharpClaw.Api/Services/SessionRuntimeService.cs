@@ -2,17 +2,16 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
-using Anthropic;
-using Anthropic.Core;
 using SharpClaw.Api.Models;
-using SharpClaw.Copilot;
+using SharpClaw.Anthropic;
 using SharpClaw.Core;
-using SharpClaw.OpenAI;
-using SharpClaw.OpenRouter;
 
 namespace SharpClaw.Api.Services;
 
-public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRuntimeService> logger)
+public sealed class SessionRuntimeService(
+    SessionStore store,
+    BackendRegistry backendRegistry,
+    ILogger<SessionRuntimeService> logger)
 {
     private readonly ConcurrentDictionary<string, AgentRunner> _runners = new();
     private readonly ConcurrentDictionary<string, Channel<AgentEvent>> _messageStreams = new();
@@ -177,25 +176,13 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
         return new AgentRunner(persona, mcps, CreateBackend);
     }
 
-    private IAgentBackend CreateBackend(AgentPersona persona, PermissionGate gate) => persona.Backend switch
+    private IAgentBackend CreateBackend(AgentPersona persona, PermissionGate gate)
     {
-        "anthropic" => new AnthropicBackend(new AnthropicClient(new ClientOptions
-        {
-            ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
-                ?? throw new InvalidOperationException("ANTHROPIC_API_KEY is not set."),
-        }), string.IsNullOrWhiteSpace(persona.Model) ? "claude-haiku-4-5-20251001" : persona.Model),
-        "copilot" => new CopilotBackend(gate,
-            Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE") ?? Environment.CurrentDirectory),
-        "openai" => new OpenAIBackend(
-            Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-                ?? throw new InvalidOperationException("OPENAI_API_KEY is not set."),
-            string.IsNullOrWhiteSpace(persona.Model) ? "gpt-4o-mini" : persona.Model),
-        "openrouter" => new OpenRouterBackend(
-            Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")
-                ?? throw new InvalidOperationException("OPENROUTER_API_KEY is not set."),
-            string.IsNullOrWhiteSpace(persona.Model) ? "openai/gpt-4o-mini" : persona.Model),
-        _ => throw new InvalidOperationException($"Unknown backend '{persona.Backend}'."),
-    };
+        if (!backendRegistry.TryGet(persona.Backend, out var provider))
+            throw new InvalidOperationException($"Unknown backend '{persona.Backend}'.");
+
+        return provider.CreateBackend(persona, gate);
+    }
 
     private async Task RunMessageTurnAsync(
         string sessionId,
@@ -282,11 +269,7 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
                     messageId);
 
                 var routingAgent = new RoutingAgent(
-                    new AnthropicBackend(new AnthropicClient(
-                        new ClientOptions
-                        {
-                            ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!
-                        })),
+                    AnthropicBackendProvider.CreateBackend(),
                     adeRecord.ToPersona());
 
                 var decision = await routingAgent.RouteAsync(message, availableAgents);

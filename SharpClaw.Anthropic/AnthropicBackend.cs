@@ -1,11 +1,13 @@
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
-using Anthropic;
+using SharpClaw.Core;
+using global::Anthropic;
+using AnthropicMessages = global::Anthropic.Models.Messages;
 using McpContentBlock = ModelContextProtocol.Protocol.ContentBlock;
 using McpTextContentBlock = ModelContextProtocol.Protocol.TextContentBlock;
 
-namespace SharpClaw.Core;
+namespace SharpClaw.Anthropic;
 
 /// <summary>
 /// <see cref="IAgentBackend"/> implementation that uses the Anthropic Messages API.
@@ -16,9 +18,7 @@ public sealed class AnthropicBackend : IAgentBackend
     private readonly AnthropicClient _anthropic;
     private readonly string _model;
 
-    // Cached JsonElement representing the JSON string "object" — used as the
-    // default InputSchema type when the MCP tool schema omits the "type" field.
-    private static readonly JsonElement _objectTypeElement =
+    private static readonly JsonElement ObjectTypeElement =
         JsonDocument.Parse("\"object\"").RootElement.Clone();
 
     public AnthropicBackend(AnthropicClient anthropic, string model = "claude-haiku-4-5-20251001")
@@ -37,26 +37,25 @@ public sealed class AnthropicBackend : IAgentBackend
     {
         var anthropicTools = tools.Select(ToAnthropicTool).ToList();
 
-        // Seed conversation from the caller-supplied history.
-        var messages = new List<Anthropic.Models.Messages.MessageParam>();
+        var messages = new List<AnthropicMessages.MessageParam>();
         foreach (var msg in history)
         {
-            messages.Add(new Anthropic.Models.Messages.MessageParam
+            messages.Add(new AnthropicMessages.MessageParam
             {
                 Role = msg.Role == ChatRole.User
-                    ? Anthropic.Models.Messages.Role.User
-                    : Anthropic.Models.Messages.Role.Assistant,
-                Content = new Anthropic.Models.Messages.MessageParamContent(msg.Content),
+                    ? AnthropicMessages.Role.User
+                    : AnthropicMessages.Role.Assistant,
+                Content = new AnthropicMessages.MessageParamContent(msg.Content),
             });
         }
 
         var iteration = 0;
         while (true)
         {
-            onProgress?.Invoke(iteration == 0 ? "Thinking…" : "Processing tool results…");
+            onProgress?.Invoke(iteration == 0 ? "Thinking..." : "Processing tool results...");
 
             var response = await _anthropic.Messages.Create(
-                new Anthropic.Models.Messages.MessageCreateParams
+                new AnthropicMessages.MessageCreateParams
                 {
                     Model = _model,
                     MaxTokens = 4096,
@@ -66,51 +65,50 @@ public sealed class AnthropicBackend : IAgentBackend
                 },
                 cancellationToken);
 
-            // Append the assistant turn to the conversation history.
             var assistantBlocks = ResponseBlocksToParams(response.Content);
-            messages.Add(new Anthropic.Models.Messages.MessageParam
+            messages.Add(new AnthropicMessages.MessageParam
             {
-                Role = Anthropic.Models.Messages.Role.Assistant,
-                Content = new Anthropic.Models.Messages.MessageParamContent(assistantBlocks),
+                Role = AnthropicMessages.Role.Assistant,
+                Content = new AnthropicMessages.MessageParamContent(assistantBlocks),
             });
 
-            if (response.StopReason?.Value() != Anthropic.Models.Messages.StopReason.ToolUse)
+            if (response.StopReason?.Value() != AnthropicMessages.StopReason.ToolUse)
             {
                 foreach (var block in response.Content)
                 {
                     if (block.TryPickText(out var textBlock))
                         return textBlock.Text;
                 }
+
                 return string.Empty;
             }
 
-            // Execute every tool call the model requested.
-            var toolResults = new List<Anthropic.Models.Messages.ContentBlockParam>();
+            var toolResults = new List<AnthropicMessages.ContentBlockParam>();
 
             foreach (var block in response.Content)
             {
                 if (!block.TryPickToolUse(out var toolUse))
                     continue;
 
-                onProgress?.Invoke($"  ↳ {toolUse.Name}");
+                onProgress?.Invoke($"  -> {toolUse.Name}");
 
                 var args = new JsonElementArgs(toolUse.Input);
                 var call = new ToolCall(toolUse.Name, args);
                 var result = await toolDispatcher(call, cancellationToken);
 
-                toolResults.Add(new Anthropic.Models.Messages.ContentBlockParam(
-                    new Anthropic.Models.Messages.ToolResultBlockParam(toolUse.ID)
+                toolResults.Add(new AnthropicMessages.ContentBlockParam(
+                    new AnthropicMessages.ToolResultBlockParam(toolUse.ID)
                     {
-                        Content = new Anthropic.Models.Messages.ToolResultBlockParamContent(result.Content),
+                        Content = new AnthropicMessages.ToolResultBlockParamContent(result.Content),
                         IsError = result.IsError,
                     },
                     element: null));
             }
 
-            messages.Add(new Anthropic.Models.Messages.MessageParam
+            messages.Add(new AnthropicMessages.MessageParam
             {
-                Role = Anthropic.Models.Messages.Role.User,
-                Content = new Anthropic.Models.Messages.MessageParamContent(toolResults),
+                Role = AnthropicMessages.Role.User,
+                Content = new AnthropicMessages.MessageParamContent(toolResults),
             });
 
             iteration++;
@@ -126,15 +124,15 @@ public sealed class AnthropicBackend : IAgentBackend
     {
         var anthropicTools = tools.Select(ToAnthropicTool).ToList();
 
-        var messages = new List<Anthropic.Models.Messages.MessageParam>();
+        var messages = new List<AnthropicMessages.MessageParam>();
         foreach (var msg in history)
         {
-            messages.Add(new Anthropic.Models.Messages.MessageParam
+            messages.Add(new AnthropicMessages.MessageParam
             {
                 Role = msg.Role == ChatRole.User
-                    ? Anthropic.Models.Messages.Role.User
-                    : Anthropic.Models.Messages.Role.Assistant,
-                Content = new Anthropic.Models.Messages.MessageParamContent(msg.Content),
+                    ? AnthropicMessages.Role.User
+                    : AnthropicMessages.Role.Assistant,
+                Content = new AnthropicMessages.MessageParamContent(msg.Content),
             });
         }
 
@@ -144,7 +142,7 @@ public sealed class AnthropicBackend : IAgentBackend
         while (true)
         {
             var stream = _anthropic.Messages.CreateStreaming(
-                new Anthropic.Models.Messages.MessageCreateParams
+                new AnthropicMessages.MessageCreateParams
                 {
                     Model = _model,
                     MaxTokens = 4096,
@@ -154,9 +152,8 @@ public sealed class AnthropicBackend : IAgentBackend
                 },
                 cancellationToken);
 
-            // Accumulate the full response for the conversation history / tool-use loop.
             var fullText = new StringBuilder();
-            var assistantBlocks = new List<Anthropic.Models.Messages.ContentBlockParam>();
+            var assistantBlocks = new List<AnthropicMessages.ContentBlockParam>();
             var pendingTools = new List<(string Id, string Name, string InputJson)>();
             StringBuilder? curTextBlock = null;
             string? curToolId = null;
@@ -219,14 +216,13 @@ public sealed class AnthropicBackend : IAgentBackend
                         var inputJson = curToolInput.ToString();
                         pendingTools.Add((curToolId, curToolName!, inputJson));
 
-                        // Build the assistant-side ToolUseBlockParam for the conversation history.
                         var parsedInput = string.IsNullOrEmpty(inputJson)
                             ? new Dictionary<string, JsonElement>()
                             : JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(inputJson)
                               ?? new Dictionary<string, JsonElement>();
 
-                        assistantBlocks.Add(new Anthropic.Models.Messages.ContentBlockParam(
-                            new Anthropic.Models.Messages.ToolUseBlockParam
+                        assistantBlocks.Add(new AnthropicMessages.ContentBlockParam(
+                            new AnthropicMessages.ToolUseBlockParam
                             {
                                 ID = curToolId,
                                 Name = curToolName!,
@@ -242,9 +238,8 @@ public sealed class AnthropicBackend : IAgentBackend
                     {
                         if (curTextBlock.Length > 0)
                         {
-                            // Text block finished — add only this block to the assistant history.
-                            assistantBlocks.Add(new Anthropic.Models.Messages.ContentBlockParam(
-                                new Anthropic.Models.Messages.TextBlockParam(curTextBlock.ToString()),
+                            assistantBlocks.Add(new AnthropicMessages.ContentBlockParam(
+                                new AnthropicMessages.TextBlockParam(curTextBlock.ToString()),
                                 element: null));
                         }
 
@@ -256,13 +251,12 @@ public sealed class AnthropicBackend : IAgentBackend
             totalInputTokens += iterationInputTokens;
             totalOutputTokens += iterationOutputTokens;
 
-            // Append the assistant turn to the conversation.
             if (assistantBlocks.Count > 0)
             {
-                messages.Add(new Anthropic.Models.Messages.MessageParam
+                messages.Add(new AnthropicMessages.MessageParam
                 {
-                    Role = Anthropic.Models.Messages.Role.Assistant,
-                    Content = new Anthropic.Models.Messages.MessageParamContent(assistantBlocks),
+                    Role = AnthropicMessages.Role.Assistant,
+                    Content = new AnthropicMessages.MessageParamContent(assistantBlocks),
                 });
             }
 
@@ -273,8 +267,7 @@ public sealed class AnthropicBackend : IAgentBackend
                 yield break;
             }
 
-            // Execute all pending tool calls and build the user turn.
-            var toolResults = new List<Anthropic.Models.Messages.ContentBlockParam>();
+            var toolResults = new List<AnthropicMessages.ContentBlockParam>();
             foreach (var (id, name, inputJson) in pendingTools)
             {
                 var parsedArgs = string.IsNullOrEmpty(inputJson)
@@ -289,46 +282,42 @@ public sealed class AnthropicBackend : IAgentBackend
                 var result = await toolDispatcher(call, cancellationToken);
                 yield return new ToolResultEvent(name, result.Content, result.IsError);
 
-                toolResults.Add(new Anthropic.Models.Messages.ContentBlockParam(
-                    new Anthropic.Models.Messages.ToolResultBlockParam(id)
+                toolResults.Add(new AnthropicMessages.ContentBlockParam(
+                    new AnthropicMessages.ToolResultBlockParam(id)
                     {
-                        Content = new Anthropic.Models.Messages.ToolResultBlockParamContent(result.Content),
+                        Content = new AnthropicMessages.ToolResultBlockParamContent(result.Content),
                         IsError = result.IsError,
                     },
                     element: null));
             }
 
-            messages.Add(new Anthropic.Models.Messages.MessageParam
+            messages.Add(new AnthropicMessages.MessageParam
             {
-                Role = Anthropic.Models.Messages.Role.User,
-                Content = new Anthropic.Models.Messages.MessageParamContent(toolResults),
+                Role = AnthropicMessages.Role.User,
+                Content = new AnthropicMessages.MessageParamContent(toolResults),
             });
-
-            // Loop back to stream the model's next response.
         }
     }
 
     public ValueTask DisposeAsync() => default;
 
-    // ─── Helpers ────────────────────────────────────────────────────────────
-
-    private static List<Anthropic.Models.Messages.ContentBlockParam> ResponseBlocksToParams(
-        IReadOnlyList<Anthropic.Models.Messages.ContentBlock> blocks)
+    private static List<AnthropicMessages.ContentBlockParam> ResponseBlocksToParams(
+        IReadOnlyList<AnthropicMessages.ContentBlock> blocks)
     {
-        var result = new List<Anthropic.Models.Messages.ContentBlockParam>(blocks.Count);
+        var result = new List<AnthropicMessages.ContentBlockParam>(blocks.Count);
 
         foreach (var block in blocks)
         {
             if (block.TryPickText(out var textBlock))
             {
-                result.Add(new Anthropic.Models.Messages.ContentBlockParam(
-                    new Anthropic.Models.Messages.TextBlockParam(textBlock.Text),
+                result.Add(new AnthropicMessages.ContentBlockParam(
+                    new AnthropicMessages.TextBlockParam(textBlock.Text),
                     element: null));
             }
             else if (block.TryPickToolUse(out var toolUse))
             {
-                result.Add(new Anthropic.Models.Messages.ContentBlockParam(
-                    new Anthropic.Models.Messages.ToolUseBlockParam
+                result.Add(new AnthropicMessages.ContentBlockParam(
+                    new AnthropicMessages.ToolUseBlockParam
                     {
                         ID = toolUse.ID,
                         Name = toolUse.Name,
@@ -349,11 +338,11 @@ public sealed class AnthropicBackend : IAgentBackend
         return string.Join("\n", parts);
     }
 
-    private static Anthropic.Models.Messages.ToolUnion ToAnthropicTool(ToolSchema schema)
+    private static AnthropicMessages.ToolUnion ToAnthropicTool(ToolSchema schema)
     {
         var typeEl = schema.InputSchema.TryGetProperty("type", out var t)
             ? t
-            : _objectTypeElement;
+            : ObjectTypeElement;
 
         Dictionary<string, JsonElement>? propsDict = null;
         if (schema.InputSchema.TryGetProperty("properties", out var propsEl))
@@ -363,45 +352,18 @@ public sealed class AnthropicBackend : IAgentBackend
         if (schema.InputSchema.TryGetProperty("required", out var reqEl))
             requiredList = reqEl.EnumerateArray().Select(e => e.GetString()!).ToList();
 
-        var inputSchema = new Anthropic.Models.Messages.InputSchema
+        var inputSchema = new AnthropicMessages.InputSchema
         {
             Type = typeEl,
             Properties = propsDict,
             Required = requiredList,
         };
 
-        return new Anthropic.Models.Messages.ToolUnion(new Anthropic.Models.Messages.Tool
+        return new AnthropicMessages.ToolUnion(new AnthropicMessages.Tool
         {
             Name = schema.Name,
             Description = schema.Description,
             InputSchema = inputSchema,
         });
     }
-}
-
-/// <summary>
-/// Adapts <see cref="IReadOnlyDictionary{String, JsonElement}"/> to
-/// <see cref="IReadOnlyDictionary{String, Object}"/> without copying entries.
-/// </summary>
-internal sealed class JsonElementArgs : IReadOnlyDictionary<string, object?>
-{
-    private readonly IReadOnlyDictionary<string, JsonElement> _inner;
-
-    internal JsonElementArgs(IReadOnlyDictionary<string, JsonElement> inner) =>
-        _inner = inner;
-
-    public object? this[string key] => _inner[key];
-    public IEnumerable<string> Keys => _inner.Keys;
-    public IEnumerable<object?> Values => _inner.Values.Cast<object?>();
-    public int Count => _inner.Count;
-    public bool ContainsKey(string key) => _inner.ContainsKey(key);
-    public bool TryGetValue(string key, out object? value)
-    {
-        if (_inner.TryGetValue(key, out var el)) { value = el; return true; }
-        value = null;
-        return false;
-    }
-    public IEnumerator<KeyValuePair<string, object?>> GetEnumerator() =>
-        _inner.Select(kvp => KeyValuePair.Create(kvp.Key, (object?)kvp.Value)).GetEnumerator();
-    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 }
