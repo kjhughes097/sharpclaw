@@ -26,14 +26,18 @@ builder.Services.AddSingleton<IAgentBackendProvider, CopilotBackendProvider>();
 builder.Services.AddSingleton<IAgentBackendProvider, OpenAIBackendProvider>();
 builder.Services.AddSingleton<IAgentBackendProvider, OpenRouterBackendProvider>();
 builder.Services.AddSingleton<BackendRegistry>();
+builder.Services.AddSingleton<BackendSettingsService>();
 builder.Services.AddSingleton<BackendModelService>();
 builder.Services.AddSingleton<SessionRuntimeService>();
+builder.Services.AddSingleton<PasswordHashService>();
+builder.Services.AddSingleton<JwtTokenService>();
+builder.Services.AddSingleton<AuthService>();
 builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-app.UseMiddleware<ApiKeyMiddleware>();
+app.UseMiddleware<JwtAuthMiddleware>();
 
 app.MapOpenApi();
 app.MapScalarApiReference();

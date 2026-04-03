@@ -13,6 +13,14 @@ public sealed record ProblemResponse(string Title, string Detail) : IApiPayload;
 
 public sealed record HealthResponse(string Status, string Service) : IApiPayload;
 
+public sealed record AuthStatusResponse(bool IsConfigured) : IApiPayload;
+
+public sealed record AuthUserResponse(string Username) : IApiPayload;
+
+public sealed record LoginResponse(string Username, string Token) : IApiPayload;
+
+public sealed record LogoutResponse(bool LoggedOut) : IApiPayload;
+
 public sealed record PersonaDto(
     string Id,
     string Name,
@@ -53,6 +61,14 @@ public sealed record BackendModelsResponse(
     DateTimeOffset? CachedAt,
     string? Warning) : IApiPayload;
 
+public sealed record BackendSettingsDto(
+    string Backend,
+    bool IsEnabled,
+    bool HasApiKey,
+    string? MaskedApiKey,
+    bool RequiresApiKey,
+    DateTimeOffset? UpdatedAt) : IApiPayload;
+
 public sealed record MessageDto(string Role, string Content);
 
 public sealed record StoredEventLogItemDto(AgentEvent Event, ToolResultEvent? Result);
@@ -91,13 +107,21 @@ public sealed record TelegramSettingsDto(
     bool HasBotToken,
     string? MaskedBotToken,
     IReadOnlyList<long> AllowedUserIds,
-    IReadOnlyList<string> AllowedUsernames) : IApiPayload;
+    IReadOnlyList<string> AllowedUsernames,
+    string MappingStorePath) : IApiPayload;
 
 public sealed record TelegramRuntimeSettingsDto(
     bool IsEnabled,
     string? BotToken,
     IReadOnlyList<long> AllowedUserIds,
-    IReadOnlyList<string> AllowedUsernames) : IApiPayload;
+    IReadOnlyList<string> AllowedUsernames,
+    string MappingStorePath) : IApiPayload;
+
+public sealed record TelegramWorkerTokenDto(
+    string Token,
+    DateTimeOffset ExpiresAt) : IApiPayload;
+
+public sealed record AppSettingsDto(string WorkspacePath) : IApiPayload;
 
 public sealed record CreateSessionRequest(string? AgentId);
 
@@ -114,7 +138,27 @@ public sealed record UpdateTelegramSettingsRequest(
     string? BotToken,
     bool? ClearBotToken,
     IReadOnlyList<long>? AllowedUserIds,
-    IReadOnlyList<string>? AllowedUsernames);
+    IReadOnlyList<string>? AllowedUsernames,
+    string? MappingStorePath,
+    bool? ClearMappingStorePath);
+
+public sealed record UpdateBackendSettingsRequest(
+    bool IsEnabled,
+    string? ApiKey,
+    bool? ClearApiKey);
+
+public sealed record UpdateAppSettingsRequest(
+    string? WorkspacePath,
+    bool? ClearWorkspacePath);
+
+public sealed record SetupAuthRequest(
+    string? Username,
+    string? Password,
+    string? ConfirmPassword);
+
+public sealed record LoginRequest(
+    string? Username,
+    string? Password);
 
 public sealed record AgentDefinitionRequest(
     string? Name,

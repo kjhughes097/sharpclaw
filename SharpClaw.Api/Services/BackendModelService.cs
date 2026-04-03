@@ -4,7 +4,9 @@ using SharpClaw.Core;
 
 namespace SharpClaw.Api.Services;
 
-public sealed class BackendModelService(BackendRegistry backendRegistry)
+public sealed class BackendModelService(
+    BackendRegistry backendRegistry,
+    BackendSettingsService backendSettingsService)
 {
     private readonly ConcurrentDictionary<string, (DateTimeOffset CachedAt, IReadOnlyList<BackendModelInfo> Models)> _backendModelCache =
         new(StringComparer.OrdinalIgnoreCase);
@@ -21,6 +23,7 @@ public sealed class BackendModelService(BackendRegistry backendRegistry)
 
         try
         {
+            backendSettingsService.EnsureBackendConfigured(normalizedBackend);
             var models = await provider.ListModelsAsync(cancellationToken);
 
             _backendModelCache[normalizedBackend] = (DateTimeOffset.UtcNow, models);

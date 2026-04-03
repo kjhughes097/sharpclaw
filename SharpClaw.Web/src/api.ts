@@ -1,29 +1,45 @@
-import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, UpdateTelegramSettingsRequest } from './types';
+import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
 function headers(): HeadersInit {
-    const h: HeadersInit = { 'Content-Type': 'application/json' };
-    const key = localStorage.getItem('sharpclaw-api-key');
-    if (key) h['X-Api-Key'] = key;
-    return h;
+    return { 'Content-Type': 'application/json' };
 }
 
-export function setApiKey(key: string) {
-    localStorage.setItem('sharpclaw-api-key', key);
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+    const res = await fetch(`${BASE}/auth/status`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /auth/status: ${res.status}`));
+    return res.json();
 }
 
-export function clearApiKey() {
-    localStorage.removeItem('sharpclaw-api-key');
+export async function setupAuth(payload: SetupAuthRequest): Promise<void> {
+    const res = await fetch(`${BASE}/auth/setup`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readError(res, `POST /auth/setup: ${res.status}`));
 }
 
-export function hasApiKey(): boolean {
-    return !!localStorage.getItem('sharpclaw-api-key');
+export async function login(payload: LoginRequest): Promise<void> {
+    const res = await fetch(`${BASE}/auth/login`, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readError(res, `POST /auth/login: ${res.status}`));
 }
 
-/** Verify the stored key by hitting a lightweight endpoint. Returns true if valid. */
+export async function logout(): Promise<void> {
+    await fetch(`${BASE}/auth/logout`, {
+        method: 'POST',
+        headers: headers(),
+    });
+}
+
+/** Verify the current auth cookie by hitting a lightweight endpoint. */
 export async function checkAuth(): Promise<boolean> {
-    const res = await fetch(`${BASE}/personas`, { headers: headers() });
+    const res = await fetch(`${BASE}/auth/me`, { headers: headers() });
     return res.ok;
 }
 
@@ -42,6 +58,38 @@ export async function fetchAgents(): Promise<AgentDefinition[]> {
 export async function fetchBackendModels(backend: string): Promise<BackendModelListResponse> {
     const res = await fetch(`${BASE}/backends/${encodeURIComponent(backend)}/models`, { headers: headers() });
     if (!res.ok) throw new Error(await readError(res, `GET /backends/${backend}/models: ${res.status}`));
+    return res.json();
+}
+
+export async function fetchBackendSettings(): Promise<BackendSettings[]> {
+    const res = await fetch(`${BASE}/backends/settings`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /backends/settings: ${res.status}`));
+    return res.json();
+}
+
+export async function updateBackendSettings(backend: string, payload: UpdateBackendSettingsRequest): Promise<BackendSettings> {
+    const res = await fetch(`${BASE}/backends/settings/${encodeURIComponent(backend)}`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readError(res, `PUT /backends/settings/${backend}: ${res.status}`));
+    return res.json();
+}
+
+export async function fetchAppSettings(): Promise<AppSettings> {
+    const res = await fetch(`${BASE}/settings/app`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /settings/app: ${res.status}`));
+    return res.json();
+}
+
+export async function updateAppSettings(payload: UpdateAppSettingsRequest): Promise<AppSettings> {
+    const res = await fetch(`${BASE}/settings/app`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readError(res, `PUT /settings/app: ${res.status}`));
     return res.json();
 }
 
@@ -142,6 +190,15 @@ export async function updateTelegramSettings(payload: UpdateTelegramSettingsRequ
         body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(await readError(res, `PUT /integrations/telegram: ${res.status}`));
+    return res.json();
+}
+
+export async function createTelegramWorkerToken(): Promise<TelegramWorkerToken> {
+    const res = await fetch(`${BASE}/integrations/telegram/worker-token`, {
+        method: 'POST',
+        headers: headers(),
+    });
+    if (!res.ok) throw new Error(await readError(res, `POST /integrations/telegram/worker-token: ${res.status}`));
     return res.json();
 }
 

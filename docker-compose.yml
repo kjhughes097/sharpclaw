@@ -35,7 +35,7 @@ services:
       start_period: 30s
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
+      - SHARPCLAW_JWT_SECRET=${SHARPCLAW_JWT_SECRET:?SHARPCLAW_JWT_SECRET is required}
       - GITHUB_COPILOT_TOKEN=${GITHUB_COPILOT_TOKEN}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ConnectionStrings__DefaultConnection=Host=postgres;Database=${POSTGRES_DB:?POSTGRES_DB is required};Username=${POSTGRES_USER:?POSTGRES_USER is required};Password=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -59,9 +59,5 @@ services:
       sharpclaw:
         condition: service_healthy
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}
-      - SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY}
       - SHARPCLAW_API_URL=http://sharpclaw-api:8080
-      - SHARPCLAW_DEFAULT_AGENT_ID=${SHARPCLAW_DEFAULT_AGENT_ID:-}
-      - TELEGRAM_ALLOWED_USER_IDS=${TELEGRAM_ALLOWED_USER_IDS:-}
-      - TELEGRAM_ALLOWED_USERNAMES=${TELEGRAM_ALLOWED_USERNAMES:-}
+      - SHARPCLAW_API_TOKEN=${SHARPCLAW_API_TOKEN}

@@ -48,6 +48,49 @@ export interface BackendModelListResponse {
     warning?: string | null;
 }
 
+export interface BackendSettings {
+    backend: string;
+    isEnabled: boolean;
+    hasApiKey: boolean;
+    maskedApiKey: string | null;
+    requiresApiKey: boolean;
+    updatedAt: string | null;
+}
+
+export interface UpdateBackendSettingsRequest {
+    isEnabled: boolean;
+    apiKey?: string;
+    clearApiKey?: boolean;
+}
+
+export interface AppSettings {
+    workspacePath: string;
+}
+
+export interface UpdateAppSettingsRequest {
+    workspacePath?: string;
+    clearWorkspacePath?: boolean;
+}
+
+export interface AuthStatus {
+    isConfigured: boolean;
+}
+
+export interface AuthUser {
+    username: string;
+}
+
+export interface SetupAuthRequest {
+    username: string;
+    password: string;
+    confirmPassword: string;
+}
+
+export interface LoginRequest {
+    username: string;
+    password: string;
+}
+
 export interface McpDefinition {
     slug: string;
     name: string;
@@ -73,6 +116,12 @@ export interface TelegramSettings {
     maskedBotToken: string | null;
     allowedUserIds: number[];
     allowedUsernames: string[];
+    mappingStorePath: string;
+}
+
+export interface TelegramWorkerToken {
+    token: string;
+    expiresAt: string;
 }
 
 export interface UpdateTelegramSettingsRequest {
@@ -81,6 +130,8 @@ export interface UpdateTelegramSettingsRequest {
     clearBotToken?: boolean;
     allowedUserIds: number[];
     allowedUsernames: string[];
+    mappingStorePath?: string;
+    clearMappingStorePath?: boolean;
 }
 
 export interface Session {

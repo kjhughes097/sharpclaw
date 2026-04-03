@@ -18,13 +18,15 @@ interface SidebarProps {
   onDeleteSession: (sessionId: string) => Promise<void>;
   onNewSession: () => void;
   onShowAgents: () => void;
+  onShowBackends: () => void;
   onShowMcps: () => void;
   onShowTelegram: () => void;
+  onShowApp: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
-  currentView: 'chat' | 'agents' | 'mcps' | 'telegram';
+  currentView: 'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app';
 }
 
 function plainTextPreview(text: string | undefined, maxLength: number): string {
@@ -155,7 +157,7 @@ function sessionAge(lastActivityAt: string): string {
   return `${years}y ago`;
 }
 
-export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewSession, onShowAgents, onShowMcps, onShowTelegram, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
+export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewSession, onShowAgents, onShowBackends, onShowMcps, onShowTelegram, onShowApp, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
   const handleDeleteClick = async (
     event: MouseEvent<HTMLButtonElement>,
     sessionId: string,
@@ -264,6 +266,12 @@ export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewS
           Agents
         </button>
         <button
+          className={`sidebar-nav-item ${currentView === 'backends' ? 'active' : ''}`}
+          onClick={onShowBackends}
+        >
+          Backends
+        </button>
+        <button
           className={`sidebar-nav-item ${currentView === 'mcps' ? 'active' : ''}`}
           onClick={onShowMcps}
         >
@@ -274,6 +282,12 @@ export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewS
           onClick={onShowTelegram}
         >
           Telegram
+        </button>
+        <button
+          className={`sidebar-nav-item ${currentView === 'app' ? 'active' : ''}`}
+          onClick={onShowApp}
+        >
+          App
         </button>
       </div>
     </aside>

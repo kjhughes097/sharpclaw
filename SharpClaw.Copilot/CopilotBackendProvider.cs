@@ -3,10 +3,9 @@ using SharpClaw.Core;
 
 namespace SharpClaw.Copilot;
 
-public sealed class CopilotBackendProvider : IAgentBackendProvider
+public sealed class CopilotBackendProvider(SessionStore store) : IAgentBackendProvider
 {
     public const string Name = "copilot";
-    public const string WorkspaceEnvVar = "SHARPCLAW_WORKSPACE";
     public const string GitHubTokenEnvVar = "GITHUB_TOKEN";
     public const string CopilotTokenEnvVar = "GITHUB_COPILOT_TOKEN";
 
@@ -16,12 +15,12 @@ public sealed class CopilotBackendProvider : IAgentBackendProvider
     {
         return new CopilotBackend(
             permissionGate,
-            Environment.GetEnvironmentVariable(WorkspaceEnvVar) ?? Environment.CurrentDirectory);
+            store.GetWorkspacePath());
     }
 
     public async Task<IReadOnlyList<BackendModelInfo>> ListModelsAsync(CancellationToken cancellationToken)
     {
-        await using var client = CreateCopilotClient();
+        await using var client = CreateCopilotClient(store.GetWorkspacePath());
         await client.StartAsync(cancellationToken);
 
         var response = await client.ListModelsAsync(cancellationToken);
@@ -33,47 +32,15 @@ public sealed class CopilotBackendProvider : IAgentBackendProvider
             .ToList();
     }
 
-    private static CopilotClient CreateCopilotClient()
+    private static CopilotClient CreateCopilotClient(string workspacePath)
     {
         var options = new CopilotClientOptions
         {
-            Cwd = Environment.GetEnvironmentVariable(WorkspaceEnvVar) ?? Environment.CurrentDirectory,
+            Cwd = workspacePath,
         };
 
-        var token = Environment.GetEnvironmentVariable(GitHubTokenEnvVar);
-        if (string.IsNullOrWhiteSpace(token))
-            token = Environment.GetEnvironmentVariable(CopilotTokenEnvVar);
-        if (string.IsNullOrWhiteSpace(token))
-            token = TryGetGhToken();
-
-        if (!string.IsNullOrWhiteSpace(token))
-            options.GitHubToken = token;
+        options.GitHubToken = BackendProviderUtilities.GetRequiredEnvironmentVariable(GitHubTokenEnvVar);
 
         return new CopilotClient(options);
-    }
-
-    private static string? TryGetGhToken()
-    {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo("gh", "auth token")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-
-            using var proc = System.Diagnostics.Process.Start(psi);
-            if (proc is null)
-                return null;
-
-            var output = proc.StandardOutput.ReadToEnd().Trim();
-            proc.WaitForExit(5000);
-            return proc.ExitCode == 0 && output.StartsWith("gho_") ? output : null;
-        }
-        catch
-        {
-            return null;
-        }
     }
 }

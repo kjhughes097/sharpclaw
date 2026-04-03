@@ -1,13 +1,17 @@
 using Microsoft.AspNetCore.Mvc;
 using SharpClaw.Api.Models;
+using SharpClaw.Api.Services;
 using SharpClaw.Core;
+using System.Security.Claims;
 
 namespace SharpClaw.Api.Controllers;
 
 [ApiController]
 [Route("api/integrations/telegram")]
-public sealed class TelegramSettingsController(SessionStore store) : ControllerBase
+public sealed class TelegramSettingsController(SessionStore store, JwtTokenService jwtTokenService) : ControllerBase
 {
+    private static readonly TimeSpan WorkerTokenLifetime = TimeSpan.FromDays(180);
+
     [HttpGet]
     [ProducesResponseType<TelegramSettingsDto>(StatusCodes.Status200OK)]
     public IActionResult GetTelegramSettings()
@@ -25,7 +29,8 @@ public sealed class TelegramSettingsController(SessionStore store) : ControllerB
             IsEnabled: settings.IsEnabled,
             BotToken: settings.BotToken,
             AllowedUserIds: settings.AllowedUserIds,
-            AllowedUsernames: settings.AllowedUsernames));
+            AllowedUsernames: settings.AllowedUsernames,
+            MappingStorePath: settings.MappingStorePath ?? SessionStore.DefaultTelegramMappingStorePath()));
     }
 
     [HttpPut]
@@ -51,14 +56,40 @@ public sealed class TelegramSettingsController(SessionStore store) : ControllerB
             ? existing.AllowedUsernames.ToList()
             : ApiMapper.NormalizeTelegramUsernames(req.AllowedUsernames);
 
+        var requestedMappingPath = string.IsNullOrWhiteSpace(req.MappingStorePath)
+            ? null
+            : req.MappingStorePath.Trim();
+
+        var mappingStorePath = req.ClearMappingStorePath == true
+            ? SessionStore.DefaultTelegramMappingStorePath()
+            : requestedMappingPath ?? existing.MappingStorePath ?? SessionStore.DefaultTelegramMappingStorePath();
+
         var updated = new TelegramIntegrationSettings(
             IsEnabled: req.IsEnabled,
             BotToken: token,
             AllowedUserIds: allowedUserIds,
-            AllowedUsernames: allowedUsernames);
+            AllowedUsernames: allowedUsernames,
+            MappingStorePath: mappingStorePath);
 
         store.UpsertTelegramIntegrationSettings(updated);
 
         return Ok(ApiMapper.ToTelegramSettingsDto(updated));
+    }
+
+    [HttpPost("worker-token")]
+    [ProducesResponseType<TelegramWorkerTokenDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public IActionResult CreateWorkerToken()
+    {
+        var username = User.Identity?.Name;
+        if (string.IsNullOrWhiteSpace(username))
+            return Unauthorized(new ErrorResponse("Not authenticated."));
+
+        var (token, expiresAt) = jwtTokenService.IssueTokenWithLifetime(
+            username,
+            WorkerTokenLifetime,
+            [new Claim("scope", "telegram_worker")]);
+
+        return Ok(new TelegramWorkerTokenDto(token, expiresAt));
     }
 }

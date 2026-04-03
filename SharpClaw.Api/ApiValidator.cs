@@ -22,6 +22,9 @@ internal static class ApiValidator
         var backend = req.Backend.Trim().ToLowerInvariant();
         if (!backendNames.Contains(backend, StringComparer.OrdinalIgnoreCase))
         {
+            if (backendNames.Count == 0)
+                return "No backends are enabled. Configure at least one backend first.";
+
             var formattedNames = string.Join(", ", backendNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).Select(name => $"'{name}'"));
             return $"backend must be {formattedNames}.";
         }
@@ -52,6 +55,53 @@ internal static class ApiValidator
     {
         if (req.AllowedUserIds is not null && req.AllowedUserIds.Any(id => id <= 0))
             return "allowedUserIds entries must be positive Telegram user IDs.";
+
+        if (req.ClearMappingStorePath == true && !string.IsNullOrWhiteSpace(req.MappingStorePath))
+            return "mappingStorePath and clearMappingStorePath cannot be set together.";
+
+        return null;
+    }
+
+    internal static string? ValidateBackendSettingsRequest(UpdateBackendSettingsRequest req)
+    {
+        if (req.ClearApiKey == true && !string.IsNullOrWhiteSpace(req.ApiKey))
+            return "apiKey and clearApiKey cannot be set together.";
+
+        return null;
+    }
+
+    internal static string? ValidateAppSettingsRequest(UpdateAppSettingsRequest req)
+    {
+        if (req.ClearWorkspacePath == true && !string.IsNullOrWhiteSpace(req.WorkspacePath))
+            return "workspacePath and clearWorkspacePath cannot be set together.";
+
+        return null;
+    }
+
+    internal static string? ValidateSetupAuthRequest(SetupAuthRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Username))
+            return "username is required.";
+
+        if (string.IsNullOrWhiteSpace(req.Password))
+            return "password is required.";
+
+        if (req.Password.Length < 10)
+            return "password must be at least 10 characters.";
+
+        if (!string.Equals(req.Password, req.ConfirmPassword, StringComparison.Ordinal))
+            return "password and confirmPassword must match.";
+
+        return null;
+    }
+
+    internal static string? ValidateLoginRequest(LoginRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Username))
+            return "username is required.";
+
+        if (string.IsNullOrWhiteSpace(req.Password))
+            return "password is required.";
 
         return null;
     }

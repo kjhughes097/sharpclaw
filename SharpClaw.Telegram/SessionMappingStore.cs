@@ -14,8 +14,7 @@ public sealed class SessionMappingStore
     {
         _logger = logger;
         _persistencePath = configuration["Telegram:MappingStorePath"]
-            ?? Environment.GetEnvironmentVariable("TELEGRAM_MAPPING_STORE_PATH")
-            ?? Path.Combine(AppContext.BaseDirectory, "session-mappings.json");
+            ?? DefaultMappingStorePath();
 
         Load();
     }
@@ -33,6 +32,15 @@ public sealed class SessionMappingStore
     {
         _chatSessions.TryRemove(chatId, out _);
         Save();
+    }
+
+    private static string DefaultMappingStorePath()
+    {
+        var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(baseDir))
+            baseDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        return Path.Combine(baseDir, "sharpclaw", "telegram-session-mappings.json");
     }
 
     private void Load()

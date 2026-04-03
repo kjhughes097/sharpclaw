@@ -1,14 +1,25 @@
 using System.Text.Json;
+using System.Collections.Concurrent;
 
 namespace SharpClaw.Core;
 
 public static class BackendProviderUtilities
 {
+    private static readonly ConcurrentDictionary<string, string> ConfiguredValues =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    public static void SetConfiguredValue(string key, string value)
+    {
+        ConfiguredValues[key] = value;
+    }
+
     public static string GetRequiredEnvironmentVariable(string variableName)
     {
-        var value = Environment.GetEnvironmentVariable(variableName);
-        if (string.IsNullOrWhiteSpace(value))
-            throw new InvalidOperationException($"{variableName} is not set.");
+        if (!ConfiguredValues.TryGetValue(variableName, out var value) || string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"{variableName} is not configured. Configure the backend API key in Configure > Backends.");
+        }
 
         return value;
     }

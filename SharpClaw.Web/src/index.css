@@ -1237,6 +1237,11 @@ body {
   color: var(--text-dim);
 }
 
+.field-hint {
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
 .agent-form input,
 .agent-form select,
 .agent-form textarea {
@@ -1295,6 +1300,51 @@ body {
 
 .telegram-clear-token {
   justify-content: flex-start;
+}
+
+.backend-settings-grid {
+  padding: 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.backend-settings-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sidebar);
+  box-shadow: var(--shadow-card);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backend-settings-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.backend-settings-top h3 {
+  font-size: 16px;
+  text-transform: capitalize;
+}
+
+.backend-enabled-checkbox {
+  justify-content: space-between;
+}
+
+.backend-token-state {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  background: var(--bg-input);
+}
+
+.backend-settings-actions {
+  justify-content: flex-end;
 }
 
 .agent-permissions-panel {

@@ -130,17 +130,11 @@ public sealed class TelegramUpdateHandler(
 
     private async Task<string?> CreateSessionForChatAsync(long chatId, CancellationToken ct)
     {
-        var agentId = configuration["SharpClaw:DefaultAgentId"]
-            ?? Environment.GetEnvironmentVariable("SHARPCLAW_DEFAULT_AGENT_ID");
-
+        var agentId = await sharpClawClient.GetDefaultAgentIdAsync(ct);
         if (string.IsNullOrWhiteSpace(agentId))
         {
-            agentId = await sharpClawClient.GetDefaultAgentIdAsync(ct);
-            if (string.IsNullOrWhiteSpace(agentId))
-            {
-                logger.LogWarning("No available agents found in SharpClaw for chat {ChatId}", chatId);
-                return null;
-            }
+            logger.LogWarning("No available agents found in SharpClaw for chat {ChatId}", chatId);
+            return null;
         }
 
         var sessionId = await sharpClawClient.CreateSessionAsync(agentId, ct);
@@ -213,8 +207,7 @@ public sealed class TelegramUpdateHandler(
 
     private static HashSet<long> LoadAllowedUserIds(IConfiguration configuration)
     {
-        var values = configuration.GetSection("Telegram:AllowedUserIds").Get<string[]>()
-            ?? SplitCsv(Environment.GetEnvironmentVariable("TELEGRAM_ALLOWED_USER_IDS"));
+        var values = configuration.GetSection("Telegram:AllowedUserIds").Get<string[]>() ?? [];
 
         var allowedIds = new HashSet<long>();
         foreach (var rawValue in values)
@@ -230,8 +223,7 @@ public sealed class TelegramUpdateHandler(
 
     private static bool LoadIsEnabled(IConfiguration configuration)
     {
-        var configured = configuration["Telegram:IsEnabled"]
-            ?? Environment.GetEnvironmentVariable("TELEGRAM_ENABLED");
+        var configured = configuration["Telegram:IsEnabled"];
 
         if (string.IsNullOrWhiteSpace(configured))
             return true;
@@ -241,8 +233,7 @@ public sealed class TelegramUpdateHandler(
 
     private static HashSet<string> LoadAllowedUsernames(IConfiguration configuration)
     {
-        var values = configuration.GetSection("Telegram:AllowedUsernames").Get<string[]>()
-            ?? SplitCsv(Environment.GetEnvironmentVariable("TELEGRAM_ALLOWED_USERNAMES"));
+        var values = configuration.GetSection("Telegram:AllowedUsernames").Get<string[]>() ?? [];
 
         var usernames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var rawValue in values)
@@ -253,14 +244,6 @@ public sealed class TelegramUpdateHandler(
         }
 
         return usernames;
-    }
-
-    private static string[] SplitCsv(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return [];
-
-        return value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
     }
 
     private static string? NormalizeUsername(string? username)

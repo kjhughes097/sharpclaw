@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { createAgent, deleteAgent, fetchAgents, fetchBackendModels, fetchMcps, setAgentEnabled, updateAgent } from './api';
-import type { AgentDefinition, AgentUpsertRequest, BackendModelListResponse, BackendModelOption, McpDefinition } from './types';
+import { createAgent, deleteAgent, fetchAgents, fetchBackendModels, fetchBackendSettings, fetchMcps, setAgentEnabled, updateAgent } from './api';
+import type { AgentDefinition, AgentUpsertRequest, BackendModelListResponse, BackendModelOption, BackendSettings, McpDefinition } from './types';
 
 interface AgentConfigViewProps {
   onMenuClick: () => void;
@@ -131,11 +131,11 @@ function normalizeStringList(values: string[]): string[] {
   return normalized;
 }
 
-function blankAgent(): AgentUpsertRequest {
+function blankAgent(defaultBackend = 'anthropic'): AgentUpsertRequest {
   return {
     name: '',
     description: '',
-    backend: 'anthropic',
+    backend: defaultBackend,
     model: '',
     mcpServers: [],
     permissionPolicy: { ...PERMISSION_TEMPLATES['workspace-editor'] },
@@ -288,6 +288,7 @@ function isAdeAgent(agent: Pick<AgentDefinition, 'id' | 'name'>): boolean {
 export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [mcps, setMcps] = useState<McpDefinition[]>([]);
+  const [backendSettings, setBackendSettings] = useState<BackendSettings[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [mode, setMode] = useState<'list' | 'edit'>('list');
   const [form, setForm] = useState<AgentUpsertRequest>(blankAgent);
@@ -328,6 +329,19 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     [form.model, modelOptions],
   );
 
+  const enabledBackends = useMemo(
+    () => backendSettings.filter(setting => setting.isEnabled).map(setting => setting.backend),
+    [backendSettings],
+  );
+
+  const backendSelectOptions = useMemo(() => {
+    const options = [...enabledBackends];
+    if (form.backend && !options.includes(form.backend))
+      options.push(form.backend);
+
+    return options.sort((left, right) => left.localeCompare(right));
+  }, [enabledBackends, form.backend]);
+
   useEffect(() => {
     void loadData();
   }, []);
@@ -341,6 +355,15 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   useEffect(() => {
     let isCancelled = false;
     const backend = form.backend;
+
+    if (!enabledBackends.includes(backend)) {
+      setModelOptions([]);
+      setModelsLoading(false);
+      setModelsError(`Backend '${backend}' is disabled. Enable it in Configure > Backends.`);
+      return () => {
+        isCancelled = true;
+      };
+    }
 
     async function loadModels() {
       setModelsLoading(true);
@@ -389,15 +412,16 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     return () => {
       isCancelled = true;
     };
-  }, [form.backend]);
+  }, [enabledBackends, form.backend]);
 
   async function loadData(preferredSelection?: string | null) {
     setLoading(true);
     setError(null);
     try {
-      const [agentResult, mcpResult] = await Promise.all([fetchAgents(), fetchMcps()]);
+      const [agentResult, mcpResult, backendResult] = await Promise.all([fetchAgents(), fetchMcps(), fetchBackendSettings()]);
       setAgents(agentResult);
       setMcps(mcpResult);
+      setBackendSettings(backendResult);
 
       const nextSelection = preferredSelection
         ?? (selectedAgentId && agentResult.some(agent => agent.id === selectedAgentId) ? selectedAgentId : agentResult[0]?.id ?? null);
@@ -405,8 +429,9 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
       setSelectedAgentId(nextSelection);
 
       if (!nextSelection) {
-        setForm(blankAgent());
-        setPermissionRows(toPermissionRows(blankAgent().permissionPolicy));
+        const defaultBackend = backendResult.find(setting => setting.isEnabled)?.backend ?? 'anthropic';
+        setForm(blankAgent(defaultBackend));
+        setPermissionRows(toPermissionRows(blankAgent(defaultBackend).permissionPolicy));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -418,8 +443,9 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
   function beginCreate() {
     setSelectedAgentId(null);
     setMode('edit');
-    setForm(blankAgent());
-    setPermissionRows(toPermissionRows(blankAgent().permissionPolicy));
+    const defaultBackend = backendSettings.find(setting => setting.isEnabled)?.backend ?? 'anthropic';
+    setForm(blankAgent(defaultBackend));
+    setPermissionRows(toPermissionRows(blankAgent(defaultBackend).permissionPolicy));
     setDeleteTarget(null);
     setDeleteConfirmation('');
     setPurgeLinkedSessions(false);
@@ -507,6 +533,12 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
     setSaving(true);
     setError(null);
     setStatus(null);
+
+    if (enabledBackends.length === 0) {
+      setError('No backends are enabled. Configure at least one backend first.');
+      setSaving(false);
+      return;
+    }
 
     const payload: AgentUpsertRequest = {
       ...form,
@@ -691,11 +723,13 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                   value={form.backend}
                   onChange={event => handleBackendChange(event.target.value)}
                 >
-                  <option value="anthropic">anthropic</option>
-                  <option value="copilot">copilot</option>
-                  <option value="openai">openai</option>
-                  <option value="openrouter">openrouter</option>
+                  {backendSelectOptions.map(backend => (
+                    <option key={backend} value={backend}>{backend}</option>
+                  ))}
                 </select>
+                {enabledBackends.length === 0 && (
+                  <small className="field-hint">No backends are currently enabled. Go to Configure &gt; Backends first.</small>
+                )}
               </label>
             </div>
 
