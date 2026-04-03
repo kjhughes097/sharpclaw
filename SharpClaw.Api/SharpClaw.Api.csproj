@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <ProjectReference Include="..\SharpClaw.Anthropic\SharpClaw.Anthropic.csproj" />
     <ProjectReference Include="..\SharpClaw.Core\SharpClaw.Core.csproj" />
     <ProjectReference Include="..\SharpClaw.Copilot\SharpClaw.Copilot.csproj" />
     <ProjectReference Include="..\SharpClaw.OpenAI\SharpClaw.OpenAI.csproj" />

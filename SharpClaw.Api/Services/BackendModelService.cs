@@ -1,36 +1,27 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
-using Anthropic.Core;
-using GitHub.Copilot.SDK;
 using SharpClaw.Api.Models;
+using SharpClaw.Core;
 
 namespace SharpClaw.Api.Services;
 
-public sealed class BackendModelService(IHttpClientFactory httpClientFactory)
+public sealed class BackendModelService(BackendRegistry backendRegistry)
 {
-    private readonly ConcurrentDictionary<string, (DateTimeOffset CachedAt, IReadOnlyList<(string Id, string DisplayName)> Models)> _backendModelCache =
+    private readonly ConcurrentDictionary<string, (DateTimeOffset CachedAt, IReadOnlyList<BackendModelInfo> Models)> _backendModelCache =
         new(StringComparer.OrdinalIgnoreCase);
 
     public async Task<ApiResponse<IApiPayload>> GetModelsAsync(string backend, CancellationToken cancellationToken)
     {
         var normalizedBackend = backend.Trim().ToLowerInvariant();
-        if (normalizedBackend is not ("anthropic" or "copilot" or "openai" or "openrouter"))
+        if (!backendRegistry.TryGet(normalizedBackend, out var provider))
         {
             return new ApiResponse<IApiPayload>(
                 StatusCodes.Status400BadRequest,
-                new ErrorResponse("backend must be 'anthropic', 'copilot', 'openai', or 'openrouter'."));
+                new ErrorResponse(backendRegistry.BuildSupportedBackendsMessage()));
         }
 
         try
         {
-            var models = normalizedBackend switch
-            {
-                "anthropic" => await ListAnthropicModelsAsync(cancellationToken),
-                "copilot" => await ListCopilotModelsAsync(cancellationToken),
-                "openai" => await ListOpenAiModelsAsync(cancellationToken),
-                "openrouter" => await ListOpenRouterModelsAsync(cancellationToken),
-                _ => [],
-            };
+            var models = await provider.ListModelsAsync(cancellationToken);
 
             _backendModelCache[normalizedBackend] = (DateTimeOffset.UtcNow, models);
 
@@ -66,193 +57,5 @@ public sealed class BackendModelService(IHttpClientFactory httpClientFactory)
                     $"Failed to load models for backend '{normalizedBackend}'.",
                     ex.Message));
         }
-    }
-
-    private static CopilotClient CreateCopilotClient()
-    {
-        var opts = new CopilotClientOptions
-        {
-            Cwd = Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE") ?? Environment.CurrentDirectory,
-        };
-
-        var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
-        if (string.IsNullOrWhiteSpace(token))
-            token = Environment.GetEnvironmentVariable("GITHUB_COPILOT_TOKEN");
-        if (string.IsNullOrWhiteSpace(token))
-            token = TryGetGhToken();
-
-        if (!string.IsNullOrWhiteSpace(token))
-            opts.GitHubToken = token;
-
-        return new CopilotClient(opts);
-    }
-
-    private static string? TryGetGhToken()
-    {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo("gh", "auth token")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-
-            using var proc = System.Diagnostics.Process.Start(psi);
-            if (proc is null)
-                return null;
-
-            var output = proc.StandardOutput.ReadToEnd().Trim();
-            proc.WaitForExit(5000);
-            return proc.ExitCode == 0 && output.StartsWith("gho_") ? output : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static async Task<IReadOnlyList<(string Id, string DisplayName)>> ListCopilotModelsAsync(CancellationToken cancellationToken)
-    {
-        await using var client = CreateCopilotClient();
-        await client.StartAsync(cancellationToken);
-
-        var response = await client.ListModelsAsync(cancellationToken);
-        return response
-            .Where(model => !string.IsNullOrWhiteSpace(model.Id))
-            .Select(model => (
-                model.Id,
-                string.IsNullOrWhiteSpace(model.Name) ? model.Id : model.Name))
-            .ToList();
-    }
-
-    private async Task<IReadOnlyList<(string Id, string DisplayName)>> ListAnthropicModelsAsync(CancellationToken cancellationToken)
-    {
-        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("ANTHROPIC_API_KEY is not set.");
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.anthropic.com/v1/models");
-        request.Headers.Add("x-api-key", apiKey);
-        request.Headers.Add("anthropic-version", "2023-06-01");
-
-        using var httpClient = httpClientFactory.CreateClient();
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                $"Anthropic model list request failed with {(int)response.StatusCode}: {responseBody}");
-        }
-
-        using var document = JsonDocument.Parse(responseBody);
-        if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            return [];
-
-        var models = new List<(string Id, string DisplayName)>();
-        foreach (var item in data.EnumerateArray())
-        {
-            if (!item.TryGetProperty("id", out var idElement))
-                continue;
-
-            var id = idElement.GetString();
-            if (string.IsNullOrWhiteSpace(id))
-                continue;
-
-            var displayName = item.TryGetProperty("display_name", out var nameElement)
-                ? nameElement.GetString()
-                : null;
-
-            models.Add((id, string.IsNullOrWhiteSpace(displayName) ? id : displayName));
-        }
-
-        return models;
-    }
-
-    private async Task<IReadOnlyList<(string Id, string DisplayName)>> ListOpenAiModelsAsync(CancellationToken cancellationToken)
-    {
-        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("OPENAI_API_KEY is not set.");
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.openai.com/v1/models");
-        request.Headers.Add("Authorization", $"Bearer {apiKey}");
-
-        using var httpClient = httpClientFactory.CreateClient();
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                $"OpenAI model list request failed with {(int)response.StatusCode}: {responseBody}");
-        }
-
-        using var document = JsonDocument.Parse(responseBody);
-        if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            return [];
-
-        var models = new List<(string Id, string DisplayName)>();
-        foreach (var item in data.EnumerateArray())
-        {
-            if (!item.TryGetProperty("id", out var idElement))
-                continue;
-
-            var id = idElement.GetString();
-            if (string.IsNullOrWhiteSpace(id))
-                continue;
-
-            // Only surface chat-capable models: gpt-* series and o-series (o1, o2, o3, … oN).
-            if (!id.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase) &&
-                !(id.Length > 1 && id[0] is 'o' or 'O' && char.IsDigit(id[1])))
-                continue;
-
-            models.Add((id, id));
-        }
-
-        models.Sort((a, b) => string.Compare(a.Id, b.Id, StringComparison.OrdinalIgnoreCase));
-        return models;
-    }
-
-    private async Task<IReadOnlyList<(string Id, string DisplayName)>> ListOpenRouterModelsAsync(CancellationToken cancellationToken)
-    {
-        var apiKey = Environment.GetEnvironmentVariable("OPENROUTER_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("OPENROUTER_API_KEY is not set.");
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, "https://openrouter.ai/api/v1/models");
-        request.Headers.Add("Authorization", $"Bearer {apiKey}");
-
-        using var httpClient = httpClientFactory.CreateClient();
-        using var response = await httpClient.SendAsync(request, cancellationToken);
-        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new InvalidOperationException(
-                $"OpenRouter model list request failed with {(int)response.StatusCode}: {responseBody}");
-        }
-
-        using var document = JsonDocument.Parse(responseBody);
-        if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            return [];
-
-        var models = new List<(string Id, string DisplayName)>();
-        foreach (var item in data.EnumerateArray())
-        {
-            if (!item.TryGetProperty("id", out var idElement))
-                continue;
-
-            var id = idElement.GetString();
-            if (string.IsNullOrWhiteSpace(id))
-                continue;
-
-            var displayName = item.TryGetProperty("name", out var nameElement)
-                ? nameElement.GetString()
-                : null;
-
-            models.Add((id, string.IsNullOrWhiteSpace(displayName) ? id : displayName));
-        }
-
-        models.Sort((a, b) => string.Compare(a.Id, b.Id, StringComparison.OrdinalIgnoreCase));
-        return models;
     }
 }

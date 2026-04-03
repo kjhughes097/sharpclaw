@@ -5,7 +5,10 @@ namespace SharpClaw.Api;
 
 internal static class ApiValidator
 {
-    internal static string? ValidateAgentRequest(SessionStore store, AgentDefinitionRequest req)
+    internal static string? ValidateAgentRequest(
+        SessionStore store,
+        IReadOnlyCollection<string> backendNames,
+        AgentDefinitionRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.Name))
             return "name is required.";
@@ -17,8 +20,11 @@ internal static class ApiValidator
             return "systemPrompt is required.";
 
         var backend = req.Backend.Trim().ToLowerInvariant();
-        if (backend is not ("anthropic" or "copilot" or "openai" or "openrouter"))
-            return "backend must be 'anthropic', 'copilot', 'openai', or 'openrouter'.";
+        if (!backendNames.Contains(backend, StringComparer.OrdinalIgnoreCase))
+        {
+            var formattedNames = string.Join(", ", backendNames.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).Select(name => $"'{name}'"));
+            return $"backend must be {formattedNames}.";
+        }
 
         var unknownMcp = ApiMapper.NormalizeStringList(req.McpServers)
             .FirstOrDefault(slug => store.GetMcp(slug) is null);

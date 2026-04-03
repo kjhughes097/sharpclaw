@@ -108,7 +108,7 @@ internal static class ApiMapper
             linkedAgentCount);
 
     internal static BackendModelsResponse ToBackendModelsDto(
-        IReadOnlyList<(string Id, string DisplayName)> models,
+        IReadOnlyList<BackendModelInfo> models,
         string source,
         DateTimeOffset? cachedAt = null,
         string? warning = null) =>

@@ -9,6 +9,7 @@ namespace SharpClaw.Api.Controllers;
 [Route("api")]
 public sealed class AgentsController(
     SessionStore store,
+    BackendRegistry backendRegistry,
     BackendModelService backendModelService,
     SessionRuntimeService runtimeService) : ControllerBase
 {
@@ -51,7 +52,7 @@ public sealed class AgentsController(
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status409Conflict)]
     public IActionResult CreateAgent([FromBody] AgentDefinitionRequest req)
     {
-        var error = ApiValidator.ValidateAgentRequest(store, req);
+        var error = ApiValidator.ValidateAgentRequest(store, backendRegistry.BackendNames, req);
         if (error is not null)
             return BadRequest(new ErrorResponse(error));
 
@@ -71,7 +72,7 @@ public sealed class AgentsController(
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
     public IActionResult UpdateAgent(string slug, [FromBody] AgentDefinitionRequest req)
     {
-        var error = ApiValidator.ValidateAgentRequest(store, req);
+        var error = ApiValidator.ValidateAgentRequest(store, backendRegistry.BackendNames, req);
         if (error is not null)
             return BadRequest(new ErrorResponse(error));
 

@@ -1,4 +1,3 @@
-using Anthropic;
 using ModelContextProtocol.Client;
 
 namespace SharpClaw.Core;
@@ -161,22 +160,8 @@ public sealed class AgentRunner : IAsyncDisposable
         if (_backendFactory is not null)
             return _backendFactory(persona, permissionGate);
 
-        return persona.Backend switch
-        {
-            "anthropic" => CreateAnthropicBackend(persona.Model),
-            _ => throw new InvalidOperationException(
-                $"Unknown backend '{persona.Backend}'. Register a backendFactory to support it."),
-        };
-    }
-
-    private static AnthropicBackend CreateAnthropicBackend(string model)
-    {
-        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("ANTHROPIC_API_KEY environment variable is not set.");
-
-        var anthropic = new AnthropicClient(new Anthropic.Core.ClientOptions { ApiKey = apiKey });
-        return new AnthropicBackend(anthropic, string.IsNullOrWhiteSpace(model) ? "claude-haiku-4-5-20251001" : model);
+        throw new InvalidOperationException(
+            $"Unknown backend '{persona.Backend}'. Register a backendFactory to support it.");
     }
 
     private static string CreateToolName(string mcpSlug, string rawToolName) => $"{mcpSlug}.{rawToolName}";
