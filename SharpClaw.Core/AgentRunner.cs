@@ -167,7 +167,7 @@ public sealed class AgentRunner : IAsyncDisposable
             $"Unknown backend '{persona.Backend}'. Register a backendFactory to support it.");
     }
 
-    private static string CreateToolName(string mcpSlug, string rawToolName) => $"{mcpSlug}.{rawToolName}";
+    private static string CreateToolName(string mcpSlug, string rawToolName) => $"{mcpSlug}-{rawToolName}";
 
     public async ValueTask DisposeAsync()
     {

@@ -467,7 +467,7 @@ public sealed class SessionStore : IDisposable
             Name: "Filesystem",
             Description: "Read and write files from allowed workspace directories.",
             Command: "npx",
-            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${SHARPCLAW_ALLOWED_DIRS}"],
+            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${WORKSPACE_PATH}"],
             IsEnabled: true),
 
         new McpServerRecord(
@@ -484,15 +484,15 @@ public sealed class SessionStore : IDisposable
             Description: "Interact with GitHub repositories, issues, and pull requests.",
             Command: "npx",
             Args: ["-y", "@modelcontextprotocol/server-github"],
-            IsEnabled: true),
+            IsEnabled: false),
 
         new McpServerRecord(
             Slug: "knowledge-base",
             Name: "Knowledge Base",
-            Description: "Read and write journal entries, daily notes, meeting notes, and personal notes in ~/knowledge.",
+            Description: "Read and write journal entries, daily notes, meeting notes, and personal notes in the configured knowledge base directory.",
             Command: "npx",
-            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${HOME}/knowledge"],
-            IsEnabled: true),
+            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${SHARPCLAW_KNOWLEDGE_BASE}"],
+            IsEnabled: false),
     ];
 
     private static readonly IReadOnlyList<AgentRecord> BuiltInAgents =
