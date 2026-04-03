@@ -14,6 +14,7 @@ public sealed class AgentRunner : IAsyncDisposable
     private readonly AgentPersona _persona;
     private readonly IReadOnlyList<McpServerRecord> _mcpServers;
     private readonly Func<AgentPersona, PermissionGate, IAgentBackend>? _backendFactory;
+    private readonly string? _workspacePath;
     private readonly List<McpClient> _mcpClients = [];
     private readonly List<ToolSchema> _toolSchemas = [];
     private readonly Dictionary<string, ResolvedTool> _toolClientMap = [];
@@ -25,11 +26,13 @@ public sealed class AgentRunner : IAsyncDisposable
     public AgentRunner(
         AgentPersona persona,
         IReadOnlyList<McpServerRecord>? mcpServers = null,
-        Func<AgentPersona, PermissionGate, IAgentBackend>? backendFactory = null)
+        Func<AgentPersona, PermissionGate, IAgentBackend>? backendFactory = null,
+        string? workspacePath = null)
     {
         _persona = persona;
         _mcpServers = mcpServers ?? [];
         _backendFactory = backendFactory;
+        _workspacePath = workspacePath;
     }
 
     public AgentPersona Persona => _persona;
@@ -50,7 +53,7 @@ public sealed class AgentRunner : IAsyncDisposable
 
         foreach (var server in _mcpServers)
         {
-            var transport = McpServerRegistry.Resolve(server);
+            var transport = McpServerRegistry.Resolve(server, _workspacePath);
             var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
             _mcpClients.Add(client);
 

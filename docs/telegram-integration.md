@@ -38,44 +38,44 @@ UI. To restrict tool access, set the relevant policy to `Deny` in the agent conf
 1. Talk to [@BotFather](https://t.me/botfather) on Telegram and run `/newbot`.
 2. Copy the bot token it gives you.
 
-### 2. Set required environment variables
+### 2. Configure Telegram settings in SharpClaw
+
+Configure Telegram in the web UI under `Configure > Telegram`:
+
+- Enabled state
+- Bot token from BotFather
+- Optional allowlists (user IDs and usernames)
+- Generate a long-lived worker API token (used for `SHARPCLAW_API_TOKEN`)
+
+These settings are persisted in PostgreSQL and exposed to the Telegram worker at runtime via the API.
+
+### 3. Set required worker environment variables
 
 | Variable | Required | Description |
 |---|---|---|
-| `TELEGRAM_BOT_TOKEN` | Yes | Bot token from BotFather |
 | `SHARPCLAW_API_URL` | Yes | URL of the SharpClaw API (e.g. `http://localhost:8080`) |
-| `SHARPCLAW_API_KEY` | Yes | The `SHARPCLAW_API_KEY` used by the main API |
-| `SHARPCLAW_DEFAULT_AGENT_ID` | No | Slug of the agent to assign to new sessions. Defaults to the first enabled persona returned by the API. |
-| `TELEGRAM_MAPPING_STORE_PATH` | No | Path to the JSON file that persists chat-to-session mappings. Defaults to `session-mappings.json` beside the binary. |
-| `TELEGRAM_ALLOWED_USER_IDS` | No | Comma-separated Telegram user IDs allowed to use the bot. If unset (and usernames are also unset), all users are allowed. |
-| `TELEGRAM_ALLOWED_USERNAMES` | No | Comma-separated Telegram usernames (with or without `@`) allowed to use the bot. If unset (and IDs are also unset), all users are allowed. |
+| `SHARPCLAW_API_TOKEN` | Yes | Bearer token used by the Telegram worker to call SharpClaw API |
 
-If either allowlist variable is set, only matching senders are processed. A sender is allowed when:
+Generate this token from `Configure > Telegram` using **Generate Worker API Token**, then copy it into `SHARPCLAW_API_TOKEN`.
 
-1. Their numeric Telegram user ID is in `TELEGRAM_ALLOWED_USER_IDS`, or
-2. Their username is in `TELEGRAM_ALLOWED_USERNAMES`.
+**Note:** The mapping store path is now database-backed and configurable via the web UI under `Configure > Telegram`. It defaults to a sensible platform-specific location (`%LOCALAPPDATA%/sharpclaw` on Windows, user profile home on other systems).
 
-IDs are recommended because they are stable; usernames can change.
+### 4. Run with Docker Compose
 
-### 3. Run with Docker Compose
-
-The Telegram service is included in `docker-compose.yml` under the `telegram` profile so it
-does not start unless explicitly enabled:
+The Telegram service is defined in `docker-compose.yml` and can run once API connectivity is configured:
 
 ```bash
-# Copy and fill in the Telegram-specific variables
 cp .env.example .env
-# edit TELEGRAM_BOT_TOKEN and (optionally) SHARPCLAW_DEFAULT_AGENT_ID
+# set SHARPCLAW_API_TOKEN for the Telegram worker
 
-docker compose --profile telegram up -d
+docker compose up -d telegram
 ```
 
-### 4. Run standalone (development)
+### 5. Run standalone (development)
 
 ```bash
-export TELEGRAM_BOT_TOKEN=<token>
 export SHARPCLAW_API_URL=http://localhost:8080
-export SHARPCLAW_API_KEY=<your-api-key>
+export SHARPCLAW_API_TOKEN=<jwt-bearer-token>
 
 dotnet run --project SharpClaw.Telegram
 ```

@@ -11,26 +11,18 @@ public static class McpServerRegistry
     private const string AllowedDirsPlaceholder = "${SHARPCLAW_ALLOWED_DIRS}";
     private static readonly Regex EnvVarPattern = new(@"\$\{(?<name>[A-Z0-9_]+)\}", RegexOptions.Compiled);
 
-    private static string[] AllowedDirs
+    private static string[] ResolveAllowedDirs(string? workspacePath)
     {
-        get
-        {
-            var workspace = Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE");
-            if (!string.IsNullOrEmpty(workspace))
-                return [workspace];
+        if (!string.IsNullOrWhiteSpace(workspacePath))
+            return [workspacePath.Trim()];
 
-            var mcpDirs = Environment.GetEnvironmentVariable("MCP_ALLOWED_DIRS");
-            if (!string.IsNullOrEmpty(mcpDirs))
-                return mcpDirs.Split(':', StringSplitOptions.RemoveEmptyEntries);
-
-            return [Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)];
-        }
+        return [Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)];
     }
 
     /// <summary>
     /// Returns an <see cref="IClientTransport"/> for a stored MCP server definition.
     /// </summary>
-    public static IClientTransport Resolve(McpServerRecord server)
+    public static IClientTransport Resolve(McpServerRecord server, string? workspacePath = null)
     {
         if (string.IsNullOrWhiteSpace(server.Command))
             throw new ArgumentException($"MCP '{server.Slug}' has no command configured.");
@@ -38,12 +30,12 @@ public static class McpServerRegistry
         return new StdioClientTransport(new StdioClientTransportOptions
         {
             Command = server.Command,
-            Arguments = ExpandArguments(server.Args),
+            Arguments = ExpandArguments(server.Args, workspacePath),
             Name = server.Slug,
         });
     }
 
-    private static List<string> ExpandArguments(IReadOnlyList<string> rawArgs)
+    private static List<string> ExpandArguments(IReadOnlyList<string> rawArgs, string? workspacePath)
     {
         var expanded = new List<string>();
 
@@ -51,7 +43,7 @@ public static class McpServerRegistry
         {
             if (string.Equals(arg, AllowedDirsPlaceholder, StringComparison.Ordinal))
             {
-                expanded.AddRange(AllowedDirs);
+                expanded.AddRange(ResolveAllowedDirs(workspacePath));
                 continue;
             }
 

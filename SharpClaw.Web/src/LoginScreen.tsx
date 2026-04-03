@@ -2,17 +2,35 @@ import { useState, type FormEvent } from 'react';
 import clawIcon from './sharpclaw-pincer-detailed.svg';
 
 interface Props {
-  onLogin: (key: string) => void;
+  isConfigured: boolean;
+  onSetup: (username: string, password: string, confirmPassword: string) => void;
+  onLogin: (username: string, password: string) => void;
   error?: string;
 }
 
-export function LoginScreen({ onLogin, error }: Props) {
-  const [key, setKey] = useState('');
+export function LoginScreen({ isConfigured, onSetup, onLogin, error }: Props) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (key.trim()) onLogin(key.trim());
+
+    if (!username.trim() || !password.trim())
+      return;
+
+    if (isConfigured) {
+      onLogin(username.trim(), password);
+      return;
+    }
+
+    if (confirmPassword.trim())
+      onSetup(username.trim(), password, confirmPassword);
   };
+
+  const canSubmit = isConfigured
+    ? username.trim().length > 0 && password.trim().length > 0
+    : username.trim().length > 0 && password.trim().length > 0 && confirmPassword.trim().length > 0;
 
   return (
     <div className="login-backdrop">
@@ -21,18 +39,36 @@ export function LoginScreen({ onLogin, error }: Props) {
           <img className="brand-mark-image" src={clawIcon} alt="" />
         </div>
         <h1 className="login-title">SharpClaw</h1>
-        <p className="login-subtitle">Enter your API key to continue</p>
+        <p className="login-subtitle">
+          {isConfigured ? 'Sign in to continue' : 'Create your single admin login'}
+        </p>
         {error && <div className="login-error">{error}</div>}
         <input
           className="login-input"
-          type="password"
-          placeholder="API Key"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
           autoFocus
         />
-        <button className="login-btn" type="submit" disabled={!key.trim()}>
-          Sign in
+        <input
+          className="login-input"
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        {!isConfigured && (
+          <input
+            className="login-input"
+            type="password"
+            placeholder="Confirm password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+          />
+        )}
+        <button className="login-btn" type="submit" disabled={!canSubmit}>
+          {isConfigured ? 'Sign in' : 'Create login'}
         </button>
       </form>
     </div>

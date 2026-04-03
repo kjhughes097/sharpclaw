@@ -29,12 +29,28 @@
 #
 # Usage:
 #   chmod +x scripts/install-service-linux.sh
-#   sudo ./scripts/install-service-linux.sh
+#   sudo ./scripts/install-service-linux.sh [--no-telegram]
+#
+# Options:
+#   --no-telegram   Skip installing the Telegram worker service
 #
 # To update an already-installed deployment, run the script again.  It stops
 # the service, republishes, redeploys, and restarts.
 
 set -euo pipefail
+
+# ── Parse arguments ───────────────────────────────────────────────────────────
+ENABLE_TELEGRAM_SERVICE="true"
+for arg in "$@"; do
+    case "$arg" in
+        --no-telegram)
+            ENABLE_TELEGRAM_SERVICE="false"
+            ;;
+        *)
+            die "Unknown argument: $arg"
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -204,13 +220,17 @@ info "Publishing SharpClaw API to $API_INSTALL_DIR ..."
 info "API published."
 
 # ── Publish the Telegram worker ──────────────────────────────────────────────
-info "Publishing SharpClaw Telegram worker to $TELEGRAM_INSTALL_DIR ..."
-"$DOTNET_BIN" publish \
-    "$REPO_ROOT/SharpClaw.Telegram/SharpClaw.Telegram.csproj" \
-    -c Release \
-    -o "$TELEGRAM_INSTALL_DIR" \
-    --nologo
-info "Telegram worker published."
+if [[ "$ENABLE_TELEGRAM_SERVICE" == "true" ]]; then
+    info "Publishing SharpClaw Telegram worker to $TELEGRAM_INSTALL_DIR ..."
+    "$DOTNET_BIN" publish \
+        "$REPO_ROOT/SharpClaw.Telegram/SharpClaw.Telegram.csproj" \
+        -c Release \
+        -o "$TELEGRAM_INSTALL_DIR" \
+        --nologo
+    info "Telegram worker published."
+else
+    info "Skipping Telegram worker publish (--no-telegram)."
+fi
 
 # ── Build the frontend ────────────────────────────────────────────────────────
 WEB_DIR="$REPO_ROOT/SharpClaw.Web"
@@ -254,19 +274,13 @@ info "Writing environment file to $ENV_FILE ..."
     echo "OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}"
     echo "GITHUB_COPILOT_TOKEN=${GITHUB_COPILOT_TOKEN:-}"
 
-    # Optional auth / workspace
-    echo "SHARPCLAW_API_KEY=${SHARPCLAW_API_KEY:-}"
+    # Auth / workspace
+    echo "SHARPCLAW_JWT_SECRET=${SHARPCLAW_JWT_SECRET:-}"
     echo "SHARPCLAW_WORKSPACE=${SHARPCLAW_WORKSPACE:-/opt/sharpclaw/workspace}"
 
     # Telegram worker service integration
-    echo "SHARPCLAW_ENABLE_TELEGRAM_SERVICE=${SHARPCLAW_ENABLE_TELEGRAM_SERVICE:-}"
-    echo "TELEGRAM_ENABLED=${TELEGRAM_ENABLED:-}"
-    echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}"
     echo "SHARPCLAW_API_URL=${SHARPCLAW_API_URL:-http://127.0.0.1:5000}"
-    echo "SHARPCLAW_DEFAULT_AGENT_ID=${SHARPCLAW_DEFAULT_AGENT_ID:-}"
-    echo "TELEGRAM_MAPPING_STORE_PATH=${TELEGRAM_MAPPING_STORE_PATH:-/var/lib/sharpclaw/telegram-session-mappings.json}"
-    echo "TELEGRAM_ALLOWED_USER_IDS=${TELEGRAM_ALLOWED_USER_IDS:-}"
-    echo "TELEGRAM_ALLOWED_USERNAMES=${TELEGRAM_ALLOWED_USERNAMES:-}"
+    echo "SHARPCLAW_API_TOKEN=${SHARPCLAW_API_TOKEN:-}"
 
     # ASP.NET Core
     echo "ASPNETCORE_URLS=http://127.0.0.1:5000"
@@ -283,26 +297,11 @@ mkdir -p "$WORKSPACE_DIR"
 chown "$INSTALL_USER":"$INSTALL_USER" "$WORKSPACE_DIR"
 info "Workspace directory: $WORKSPACE_DIR"
 
-TELEGRAM_MAPPING_FILE="${TELEGRAM_MAPPING_STORE_PATH:-/var/lib/sharpclaw/telegram-session-mappings.json}"
-TELEGRAM_MAPPING_DIR="$(dirname "$TELEGRAM_MAPPING_FILE")"
+TELEGRAM_MAPPING_FILE="${TELEGRAM__MAPPINGSTOREPATH:-/var/lib/sharpclaw/telegram-session-mappings.json}"
+TELEGRAM_MAPPING_DIR="/var/lib/sharpclaw"
 mkdir -p "$TELEGRAM_MAPPING_DIR"
 chown "$INSTALL_USER":"$INSTALL_USER" "$TELEGRAM_MAPPING_DIR"
 info "Telegram mapping directory: $TELEGRAM_MAPPING_DIR"
-
-ENABLE_TELEGRAM_SERVICE="false"
-if [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-    ENABLE_TELEGRAM_SERVICE="true"
-fi
-
-case "${SHARPCLAW_ENABLE_TELEGRAM_SERVICE:-}" in
-    1|true|TRUE|yes|YES)
-        ENABLE_TELEGRAM_SERVICE="true"
-        ;;
-esac
-
-if [[ "$ENABLE_TELEGRAM_SERVICE" == "true" && -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
-    die "Telegram service enabled but TELEGRAM_BOT_TOKEN is empty. Set TELEGRAM_BOT_TOKEN in .env."
-fi
 
 # ── Write nginx site configuration ────────────────────────────────────────────
 info "Writing nginx site configuration..."
@@ -480,7 +479,7 @@ if [[ "$ENABLE_TELEGRAM_SERVICE" == "true" ]]; then
         warn "$TELEGRAM_SERVICE_NAME did not start. Check logs with: journalctl -u $TELEGRAM_SERVICE_NAME -n 50"
     fi
 else
-    warn "Telegram service not enabled (set TELEGRAM_BOT_TOKEN or SHARPCLAW_ENABLE_TELEGRAM_SERVICE=true to enable)."
+    warn "Telegram service not installed. Re-run without --no-telegram to install it."
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────

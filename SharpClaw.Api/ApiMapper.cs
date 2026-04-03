@@ -69,7 +69,8 @@ internal static class ApiMapper
             HasBotToken: !string.IsNullOrWhiteSpace(settings.BotToken),
             MaskedBotToken: MaskToken(settings.BotToken),
             AllowedUserIds: settings.AllowedUserIds,
-            AllowedUsernames: settings.AllowedUsernames);
+            AllowedUsernames: settings.AllowedUsernames,
+            MappingStorePath: settings.MappingStorePath ?? SessionStore.DefaultTelegramMappingStorePath());
     }
 
     internal static PersonaDto ToPersonaDto(AgentRecord agent) =>
@@ -117,6 +118,15 @@ internal static class ApiMapper
             source,
             cachedAt,
             warning);
+
+    internal static BackendSettingsDto ToBackendSettingsDto(BackendIntegrationSettings settings, bool requiresApiKey) =>
+        new(
+            settings.Backend,
+            settings.IsEnabled,
+            !string.IsNullOrWhiteSpace(settings.ApiKey),
+            MaskToken(settings.ApiKey),
+            requiresApiKey,
+            settings.UpdatedAt);
 
     internal static SessionDto ToSessionDto(SessionStore store, StoredSession session, Dictionary<string, AgentRecord> agentsBySlug)
     {

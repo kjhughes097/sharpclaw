@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FluentProvider, webDarkTheme, webLightTheme } from '@fluentui/react-components';
 import { AgentConfigView } from './AgentConfigView';
+import { BackendsConfigView } from './BackendsConfigView';
 import { McpConfigView } from './McpConfigView';
 import { TelegramConfigView } from './TelegramConfigView';
+import { AppSettingsConfigView } from './AppSettingsConfigView';
 import { Sidebar } from './Sidebar';
 import { ChatView } from './ChatView';
 import { LoginScreen } from './LoginScreen';
 import { useChat } from './useChat';
-import { checkAuth, clearApiKey, hasApiKey, setApiKey } from './api';
+import { checkAuth, fetchAuthStatus, login, setupAuth } from './api';
 import clawIcon from './sharpclaw-pincer-detailed.svg';
 
 type Theme = 'light' | 'dark';
@@ -20,11 +22,12 @@ function getInitialTheme(): Theme {
 
 export function App() {
   const [authed, setAuthed] = useState<boolean | null>(null); // null = checking
+  const [authConfigured, setAuthConfigured] = useState<boolean>(true);
   const [loginError, setLoginError] = useState<string>();
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
-  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'mcps' | 'telegram'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app'>('chat');
   const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, send } = useChat(authed === true);
   const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 
@@ -38,13 +41,26 @@ export function App() {
     localStorage.setItem('theme', theme);
   }, [theme]);
 
-  // On mount, verify any stored key
+  // On mount, determine whether login is configured and whether current auth cookie is valid.
   useEffect(() => {
-    if (!hasApiKey()) { setAuthed(false); return; }
-    checkAuth().then(ok => {
-      if (!ok) clearApiKey();
-      setAuthed(ok);
-    });
+    const initAuth = async () => {
+      try {
+        const status = await fetchAuthStatus();
+        setAuthConfigured(status.isConfigured);
+
+        if (!status.isConfigured) {
+          setAuthed(false);
+          return;
+        }
+
+        const ok = await checkAuth();
+        setAuthed(ok);
+      } catch {
+        setAuthed(false);
+      }
+    };
+
+    void initAuth();
   }, []);
 
   useEffect(() => {
@@ -65,15 +81,32 @@ export function App() {
     return () => media.removeEventListener('change', handleChange);
   }, []);
 
-  const handleLogin = useCallback(async (key: string) => {
+  const handleSetup = useCallback(async (username: string, password: string, confirmPassword: string) => {
     setLoginError(undefined);
-    setApiKey(key);
-    const ok = await checkAuth();
-    if (ok) {
+
+    try {
+      await setupAuth({ username, password, confirmPassword });
+      setAuthConfigured(true);
       setAuthed(true);
-    } else {
-      clearApiKey();
-      setLoginError('Invalid API key');
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'Failed to set up login');
+    }
+  }, []);
+
+  const handleLogin = useCallback(async (username: string, password: string) => {
+    setLoginError(undefined);
+
+    try {
+      await login({ username, password });
+      const ok = await checkAuth();
+
+      if (ok) {
+        setAuthed(true);
+      } else {
+        setLoginError('Login failed');
+      }
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'Login failed');
     }
   }, []);
 
@@ -113,8 +146,18 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
+  const handleShowBackends = useCallback(() => {
+    setCurrentView('backends');
+    setSidebarOpen(false);
+  }, []);
+
   const handleShowTelegram = useCallback(() => {
     setCurrentView('telegram');
+    setSidebarOpen(false);
+  }, []);
+
+  const handleShowApp = useCallback(() => {
+    setCurrentView('app');
     setSidebarOpen(false);
   }, []);
 
@@ -129,7 +172,12 @@ export function App() {
   if (!authed) {
     return (
       <FluentProvider theme={fluentTheme} className="fluent-shell">
-        <LoginScreen onLogin={handleLogin} error={loginError} />
+        <LoginScreen
+          isConfigured={authConfigured}
+          onSetup={handleSetup}
+          onLogin={handleLogin}
+          error={loginError}
+        />
       </FluentProvider>
     );
   }
@@ -147,8 +195,10 @@ export function App() {
           onDeleteSession={handleDeleteSession}
           onNewSession={handleNewSession}
           onShowAgents={handleShowAgents}
+          onShowBackends={handleShowBackends}
           onShowMcps={handleShowMcps}
           onShowTelegram={handleShowTelegram}
+          onShowApp={handleShowApp}
           theme={theme}
           onToggleTheme={toggleTheme}
           isOpen={sidebarOpen}
@@ -157,10 +207,14 @@ export function App() {
         />
         {currentView === 'agents' ? (
           <AgentConfigView onMenuClick={() => setSidebarOpen(true)} />
+        ) : currentView === 'backends' ? (
+          <BackendsConfigView onMenuClick={() => setSidebarOpen(true)} />
         ) : currentView === 'mcps' ? (
           <McpConfigView onMenuClick={() => setSidebarOpen(true)} />
         ) : currentView === 'telegram' ? (
           <TelegramConfigView onMenuClick={() => setSidebarOpen(true)} />
+        ) : currentView === 'app' ? (
+          <AppSettingsConfigView onMenuClick={() => setSidebarOpen(true)} />
         ) : active ? (
           <ChatView
             state={active}
@@ -194,6 +248,12 @@ export function App() {
               onClick={handleShowAgents}
             >
               Agents
+            </button>
+            <button
+              className={`mobile-tabbar-btn ${currentView === 'backends' ? 'active' : ''}`}
+              onClick={handleShowBackends}
+            >
+              Backends
             </button>
             <button
               className={`mobile-tabbar-btn ${currentView === 'mcps' ? 'active' : ''}`}

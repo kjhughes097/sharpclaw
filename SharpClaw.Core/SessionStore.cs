@@ -25,7 +25,31 @@ public sealed class SessionStore : IDisposable
         "home-assistant.agent.md",
     ];
 
+    private const string WorkspacePathSettingKey = "workspace_path";
     private readonly NpgsqlDataSource _dataSource;
+
+    public static string DefaultWorkspacePath()
+    {
+        if (Directory.Exists("/workspace"))
+            return "/workspace";
+
+        if (Directory.Exists("/opt/sharpclaw/workspace"))
+            return "/opt/sharpclaw/workspace";
+
+        return Environment.CurrentDirectory;
+    }
+
+    public static string DefaultTelegramMappingStorePath()
+    {
+        if (Directory.Exists("/var/lib/sharpclaw"))
+            return "/var/lib/sharpclaw/telegram-session-mappings.json";
+
+        var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(baseDir))
+            baseDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        return Path.Combine(baseDir, "sharpclaw", "telegram-session-mappings.json");
+    }
 
     public SessionStore(string connectionString)
     {
@@ -98,6 +122,26 @@ public sealed class SessionStore : IDisposable
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS backend_settings (
+                backend TEXT NOT NULL PRIMARY KEY,
+                is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                api_key TEXT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS auth_users (
+                username TEXT NOT NULL PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT NOT NULL PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
             DO $$
             BEGIN
                 IF EXISTS (
@@ -142,7 +186,13 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS bot_token TEXT NULL;
             ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS allowed_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
             ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS allowed_usernames JSONB NOT NULL DEFAULT '[]'::jsonb;
+            ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS mapping_store_path TEXT NULL;
             ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+            ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS api_key TEXT NULL;
+            ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             """;
         cmd.ExecuteNonQuery();
 
@@ -435,6 +485,14 @@ public sealed class SessionStore : IDisposable
             Command: "npx",
             Args: ["-y", "@modelcontextprotocol/server-github"],
             IsEnabled: true),
+
+        new McpServerRecord(
+            Slug: "knowledge-base",
+            Name: "Knowledge Base",
+            Description: "Read and write journal entries, daily notes, meeting notes, and personal notes in ~/knowledge.",
+            Command: "npx",
+            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${HOME}/knowledge"],
+            IsEnabled: true),
     ];
 
     private static readonly IReadOnlyList<AgentRecord> BuiltInAgents =
@@ -703,24 +761,35 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT is_enabled, bot_token, allowed_user_ids::text, allowed_usernames::text
+            SELECT is_enabled, bot_token, allowed_user_ids::text, allowed_usernames::text, mapping_store_path
             FROM integration_settings
             WHERE integration = 'telegram'
             """;
 
         using var reader = cmd.ExecuteReader();
         if (!reader.Read())
-            return new TelegramIntegrationSettings(false, null, [], []);
+        {
+            return new TelegramIntegrationSettings(
+                IsEnabled: false,
+                BotToken: null,
+                AllowedUserIds: [],
+                AllowedUsernames: [],
+                MappingStorePath: DefaultTelegramMappingStorePath());
+        }
 
         var allowedUserIds = JsonSerializer.Deserialize<List<long>>(reader.GetString(2), JsonOpts) ?? [];
         var allowedUsernames = JsonSerializer.Deserialize<List<string>>(reader.GetString(3), JsonOpts) ?? [];
         var token = reader.IsDBNull(1) ? null : NormalizeOptionalString(reader.GetString(1));
+        var mappingStorePath = reader.IsDBNull(4)
+            ? DefaultTelegramMappingStorePath()
+            : NormalizeOptionalString(reader.GetString(4)) ?? DefaultTelegramMappingStorePath();
 
         return new TelegramIntegrationSettings(
             IsEnabled: reader.GetBoolean(0),
             BotToken: token,
             AllowedUserIds: allowedUserIds,
-            AllowedUsernames: allowedUsernames);
+            AllowedUsernames: allowedUsernames,
+            MappingStorePath: mappingStorePath);
     }
 
     public void UpsertTelegramIntegrationSettings(TelegramIntegrationSettings settings)
@@ -728,19 +797,152 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO integration_settings (integration, is_enabled, bot_token, allowed_user_ids, allowed_usernames, updated_at)
-            VALUES ('telegram', @is_enabled, @bot_token, @allowed_user_ids, @allowed_usernames, NOW())
+            INSERT INTO integration_settings (integration, is_enabled, bot_token, allowed_user_ids, allowed_usernames, mapping_store_path, updated_at)
+            VALUES ('telegram', @is_enabled, @bot_token, @allowed_user_ids, @allowed_usernames, @mapping_store_path, NOW())
             ON CONFLICT (integration) DO UPDATE
             SET is_enabled = EXCLUDED.is_enabled,
                 bot_token = EXCLUDED.bot_token,
                 allowed_user_ids = EXCLUDED.allowed_user_ids,
                 allowed_usernames = EXCLUDED.allowed_usernames,
+                mapping_store_path = EXCLUDED.mapping_store_path,
                 updated_at = NOW()
             """;
         cmd.Parameters.AddWithValue("is_enabled", settings.IsEnabled);
         cmd.Parameters.AddWithValue("bot_token", (object?)NormalizeOptionalString(settings.BotToken) ?? DBNull.Value);
         cmd.Parameters.Add("allowed_user_ids", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(settings.AllowedUserIds, JsonOpts);
         cmd.Parameters.Add("allowed_usernames", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(settings.AllowedUsernames, JsonOpts);
+        cmd.Parameters.AddWithValue("mapping_store_path", (object?)NormalizeOptionalString(settings.MappingStorePath) ?? DefaultTelegramMappingStorePath());
+        cmd.ExecuteNonQuery();
+    }
+
+    public string GetWorkspacePath()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT value FROM app_settings WHERE key = @key";
+        cmd.Parameters.AddWithValue("key", WorkspacePathSettingKey);
+
+        var raw = cmd.ExecuteScalar() as string;
+        var normalized = NormalizeOptionalString(raw);
+        if (!string.IsNullOrWhiteSpace(normalized))
+            return normalized;
+
+        var defaultPath = DefaultWorkspacePath();
+        UpsertWorkspacePath(defaultPath);
+        return defaultPath;
+    }
+
+    public void UpsertWorkspacePath(string workspacePath)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES (@key, @value, NOW())
+            ON CONFLICT (key) DO UPDATE
+            SET value = EXCLUDED.value,
+                updated_at = NOW()
+            """;
+        cmd.Parameters.AddWithValue("key", WorkspacePathSettingKey);
+        cmd.Parameters.AddWithValue("value", NormalizeOptionalString(workspacePath) ?? DefaultWorkspacePath());
+        cmd.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<BackendIntegrationSettings> ListBackendIntegrationSettings()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT backend, is_enabled, api_key, updated_at
+            FROM backend_settings
+            ORDER BY backend
+            """;
+
+        var settings = new List<BackendIntegrationSettings>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            settings.Add(new BackendIntegrationSettings(
+                Backend: reader.GetString(0),
+                IsEnabled: reader.GetBoolean(1),
+                ApiKey: reader.IsDBNull(2) ? null : NormalizeOptionalString(reader.GetString(2)),
+                UpdatedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3)));
+        }
+
+        return settings;
+    }
+
+    public BackendIntegrationSettings? GetBackendIntegrationSettings(string backend)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT backend, is_enabled, api_key, updated_at
+            FROM backend_settings
+            WHERE backend = @backend
+            """;
+        cmd.Parameters.AddWithValue("backend", backend);
+
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+            return null;
+
+        return new BackendIntegrationSettings(
+            Backend: reader.GetString(0),
+            IsEnabled: reader.GetBoolean(1),
+            ApiKey: reader.IsDBNull(2) ? null : NormalizeOptionalString(reader.GetString(2)),
+            UpdatedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3));
+    }
+
+    public void UpsertBackendIntegrationSettings(BackendIntegrationSettings settings)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO backend_settings (backend, is_enabled, api_key, updated_at)
+            VALUES (@backend, @is_enabled, @api_key, NOW())
+            ON CONFLICT (backend) DO UPDATE
+            SET is_enabled = EXCLUDED.is_enabled,
+                api_key = EXCLUDED.api_key,
+                updated_at = NOW()
+            """;
+        cmd.Parameters.AddWithValue("backend", settings.Backend);
+        cmd.Parameters.AddWithValue("is_enabled", settings.IsEnabled);
+        cmd.Parameters.AddWithValue("api_key", (object?)NormalizeOptionalString(settings.ApiKey) ?? DBNull.Value);
+        cmd.ExecuteNonQuery();
+    }
+
+    public bool HasAuthUsers()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT EXISTS(SELECT 1 FROM auth_users)";
+        return (bool)(cmd.ExecuteScalar() ?? false);
+    }
+
+    public (string Username, string PasswordHash)? GetSingleAuthUser()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT username, password_hash FROM auth_users ORDER BY created_at LIMIT 1";
+
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+            return null;
+
+        return (reader.GetString(0), reader.GetString(1));
+    }
+
+    public void CreateAuthUser(string username, string passwordHash)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO auth_users (username, password_hash, created_at, updated_at)
+            VALUES (@username, @password_hash, NOW(), NOW())
+            """;
+        cmd.Parameters.AddWithValue("username", username);
+        cmd.Parameters.AddWithValue("password_hash", passwordHash);
         cmd.ExecuteNonQuery();
     }
 

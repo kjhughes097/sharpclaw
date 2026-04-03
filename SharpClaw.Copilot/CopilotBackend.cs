@@ -309,40 +309,9 @@ public sealed class CopilotBackend : IAgentBackend
         if (!string.IsNullOrEmpty(_workingDirectory))
             opts.Cwd = _workingDirectory;
 
-        // Match the SDK docs first, then fall back to the project-specific variable,
-        // then extract from gh CLI (handles keyring-backed auth).
-        var token = Environment.GetEnvironmentVariable("GITHUB_TOKEN");
-        if (string.IsNullOrEmpty(token))
-            token = Environment.GetEnvironmentVariable("GITHUB_COPILOT_TOKEN");
-        if (string.IsNullOrEmpty(token))
-            token = TryGetGhToken();
-
-        if (!string.IsNullOrEmpty(token))
-            opts.GitHubToken = token;
+        opts.GitHubToken = BackendProviderUtilities.GetRequiredEnvironmentVariable(CopilotBackendProvider.GitHubTokenEnvVar);
 
         return new CopilotClient(opts);
-    }
-
-    private static string? TryGetGhToken()
-    {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo("gh", "auth token")
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            };
-            using var proc = System.Diagnostics.Process.Start(psi);
-            if (proc is null) return null;
-            var output = proc.StandardOutput.ReadToEnd().Trim();
-            proc.WaitForExit(5000);
-            return proc.ExitCode == 0 && output.StartsWith("gho_") ? output : null;
-        }
-        catch
-        {
-            return null;
-        }
     }
 }
 

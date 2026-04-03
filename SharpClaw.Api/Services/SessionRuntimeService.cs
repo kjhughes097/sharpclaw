@@ -3,7 +3,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using SharpClaw.Api.Models;
-using SharpClaw.Anthropic;
 using SharpClaw.Core;
 
 namespace SharpClaw.Api.Services;
@@ -11,6 +10,7 @@ namespace SharpClaw.Api.Services;
 public sealed class SessionRuntimeService(
     SessionStore store,
     BackendRegistry backendRegistry,
+    BackendSettingsService backendSettingsService,
     ILogger<SessionRuntimeService> logger)
 {
     private readonly ConcurrentDictionary<string, AgentRunner> _runners = new();
@@ -50,9 +50,17 @@ public sealed class SessionRuntimeService(
         var sessionId = Guid.NewGuid().ToString("N")[..12];
         store.CreateSession(sessionId, agentRecord.Slug);
 
-        var runner = CreateRunner(agentRecord);
-        await runner.InitializeAsync(ct);
-        _runners[sessionId] = runner;
+        try
+        {
+            var runner = CreateRunner(agentRecord);
+            await runner.InitializeAsync(ct);
+            _runners[sessionId] = runner;
+        }
+        catch (InvalidOperationException ex)
+        {
+            store.DeleteSession(sessionId);
+            return new ApiResponse<IApiPayload>(StatusCodes.Status409Conflict, new ErrorResponse(ex.Message));
+        }
 
         return new ApiResponse<IApiPayload>(
             StatusCodes.Status200OK,
@@ -119,7 +127,15 @@ public sealed class SessionRuntimeService(
             }
 
             runner = CreateRunner(agentRecord);
-            await runner.InitializeAsync(ct);
+            try
+            {
+                await runner.InitializeAsync(ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return new ApiResponse<IApiPayload>(StatusCodes.Status409Conflict, new ErrorResponse(ex.Message));
+            }
+
             _runners[sessionId] = runner;
         }
 
@@ -173,11 +189,13 @@ public sealed class SessionRuntimeService(
     {
         var persona = agentRecord.ToPersona();
         var mcps = store.ListMcpsBySlug(agentRecord.McpServers, includeDisabled: false);
-        return new AgentRunner(persona, mcps, CreateBackend);
+        return new AgentRunner(persona, mcps, CreateBackend, store.GetWorkspacePath());
     }
 
     private IAgentBackend CreateBackend(AgentPersona persona, PermissionGate gate)
     {
+        backendSettingsService.EnsureBackendConfigured(persona.Backend);
+
         if (!backendRegistry.TryGet(persona.Backend, out var provider))
             throw new InvalidOperationException($"Unknown backend '{persona.Backend}'.");
 
@@ -268,9 +286,11 @@ public sealed class SessionRuntimeService(
                     sessionId,
                     messageId);
 
+                var adePersona = adeRecord.ToPersona();
+
                 var routingAgent = new RoutingAgent(
-                    AnthropicBackendProvider.CreateBackend(),
-                    adeRecord.ToPersona());
+                    CreateBackend(adePersona, new PermissionGate(adePersona.PermissionPolicy)),
+                    adePersona);
 
                 var decision = await routingAgent.RouteAsync(message, availableAgents);
 

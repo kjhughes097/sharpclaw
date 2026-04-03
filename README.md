@@ -11,7 +11,7 @@ It is inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [GoClaw](
 SharpClaw provides:
 
 - A web chat interface for interacting with agents
-- API-key login flow in the web UI when backend auth is enabled
+- Username/password login flow in the web UI with JWT-based auth
 - Database-backed storage for agent definitions, sessions, and message history
 - Multiple agent backends:
 	- Anthropic
@@ -27,6 +27,10 @@ SharpClaw provides:
 	- edit agents
 	- enable/disable agents
 	- safe delete with linked-session protection
+- In-app backend management:
+	- providers start disabled by default
+	- enable/disable each provider explicitly
+	- store and rotate provider API keys in PostgreSQL
 - In-app MCP management with agent-to-MCP linking from both directions
 - Session restore and safe session deletion from the sidebar
 - Light/dark theme toggle and mobile-friendly navigation
@@ -54,7 +58,7 @@ If you want to use a `.env` file, copy `.env.example` to `.env` and fill in the 
 - If the active session uses `Ade`, the backend routes the request to the best enabled specialist agent when one is a better fit
 - Existing sessions are restored from PostgreSQL on reload
 - Sessions can be deleted from the sidebar when they are not actively streaming
-- The web client prompts for an API key when `SHARPCLAW_API_KEY` is configured on the backend
+- The web client supports one-time setup of a single admin user and then requires login
 - The web UI includes a persisted light/dark theme toggle and responsive mobile navigation
 
 ### Agent Management
@@ -77,6 +81,17 @@ The UI includes a `Configure > Agents` screen where users can:
 - Purge linked sessions when deleting an agent that is already in use
 - View linked-session counts per agent
 
+### Backend Management
+
+The UI includes a `Configure > Backends` screen where users can:
+
+- See all registered LLM backends
+- Enable or disable each backend independently
+- Save API keys directly into the database
+- Rotate or clear stored keys without editing environment variables
+
+On a fresh database, all backends start disabled with no keys stored.
+
 ### MCP Management
 
 The UI includes a `Configure > MCPs` screen where users can:
@@ -96,11 +111,12 @@ SharpClaw now stores MCP definitions in PostgreSQL and resolves them at runtime 
 - `sqlite`
 - `github`
 
-The filesystem MCP server is constrained to allowed directories resolved from:
+The filesystem MCP server is constrained to the workspace path, resolved from:
 
-1. `SHARPCLAW_WORKSPACE`
-2. `MCP_ALLOWED_DIRS`
-3. the current user's home directory
+1. **Workspace path** (database-backed, configurable via `Configure > Settings` in the UI or the `/api/settings/app` endpoint)
+2. The current user's home directory (fallback when no workspace is set)
+
+The workspace path is persisted in PostgreSQL and can be updated at runtime via the REST API without restarting the service. It defaults to `/workspace` (Docker) or `/opt/sharpclaw/workspace` (service install) on a fresh database.
 
 ## Architecture
 
@@ -192,22 +208,11 @@ Older flat permission rules are migrated on startup to MCP-scoped patterns when 
 | `POSTGRES_DB` | Required PostgreSQL database name for the Docker Compose stack |
 | `POSTGRES_USER` | Required PostgreSQL username for the Docker Compose stack and API container |
 | `POSTGRES_PASSWORD` | Required PostgreSQL password for the Docker Compose stack and API container |
-| `ANTHROPIC_API_KEY` | Required for Anthropic-backed agents |
-| `OPENAI_API_KEY` | Required for OpenAI-backed agents |
-| `OPENROUTER_API_KEY` | Required for OpenRouter-backed agents |
-| `GITHUB_COPILOT_TOKEN` | Copilot auth token used by the GitHub Copilot backend |
-| `GITHUB_TOKEN` | Alternate token source checked by the Copilot backend |
-| `SHARPCLAW_API_KEY` | Optional API key enforced on `/api/*` routes except SSE streams |
+| `SHARPCLAW_JWT_SECRET` | Required JWT signing secret used for API authentication |
 | `SHARPCLAW_DB_CONNECTION` | Required for non-Docker API runs unless `ConnectionStrings:DefaultConnection` is supplied another way |
-| `SHARPCLAW_WORKSPACE` | Workspace path used by the backend and filesystem MCP tooling |
-| `MCP_ALLOWED_DIRS` | Colon-delimited allowed directories for filesystem MCP access when `SHARPCLAW_WORKSPACE` is not set |
-| `SHARPCLAW_ENABLE_TELEGRAM_SERVICE` | Optional Linux service-install toggle (`true`/`1`) to force enabling `sharpclaw-telegram` |
-| `TELEGRAM_BOT_TOKEN` | Required to run the Telegram worker service |
-| `TELEGRAM_ENABLED` | Optional Telegram worker toggle; defaults to enabled when unset |
-| `SHARPCLAW_DEFAULT_AGENT_ID` | Optional default agent slug used for new Telegram sessions |
-| `TELEGRAM_MAPPING_STORE_PATH` | Optional path to Telegram chat-to-session mapping JSON file |
-| `TELEGRAM_ALLOWED_USER_IDS` | Optional comma-separated Telegram user ID allowlist |
-| `TELEGRAM_ALLOWED_USERNAMES` | Optional comma-separated Telegram username allowlist |
+| `SHARPCLAW_WORKSPACE` | Host-side path mounted into the Docker container as `/workspace` (Docker Compose and service installs only; not read by the API directly) |
+| `SHARPCLAW_API_URL` | Optional Telegram worker override for API base URL (defaults to `http://127.0.0.1:5000`) |
+| `SHARPCLAW_API_TOKEN` | Required Telegram worker bearer token for API authentication |
 
 ### Example `.env`
 
@@ -217,30 +222,25 @@ You can use a local `.env` file with Docker Compose:
 POSTGRES_DB=sharpclaw
 POSTGRES_USER=sharpclaw
 POSTGRES_PASSWORD=change-me
-ANTHROPIC_API_KEY=your-anthropic-key
-OPENAI_API_KEY=your-openai-key
-GITHUB_COPILOT_TOKEN=your-copilot-token
-SHARPCLAW_API_KEY=replace-me-if-you-want-api-auth
-SHARPCLAW_WORKSPACE=/absolute/path/to/your/workspace
+SHARPCLAW_JWT_SECRET=replace-with-a-random-secret-at-least-32-characters-long
 ```
 
 Notes:
 
 - `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are required for Docker Compose runs and are used to configure both the PostgreSQL container and the API container's default connection string
 - Direct `dotnet run` execution also requires a database connection via `SHARPCLAW_DB_CONNECTION` or `ConnectionStrings:DefaultConnection`; the API no longer falls back to a hard-coded local database credential set
-- `ANTHROPIC_API_KEY` is required for Anthropic-backed agents
-- `OPENAI_API_KEY` is required for OpenAI-backed agents
-- `GITHUB_COPILOT_TOKEN` or `GITHUB_TOKEN` is required for Copilot-backed agents
-- `SHARPCLAW_API_KEY` is optional, but recommended if you do not want an open local API
-- `SHARPCLAW_WORKSPACE` should point at the directory you want the filesystem MCP server to expose
+- `SHARPCLAW_JWT_SECRET` is required whenever the API runs; use a random string with at least 32 characters
+- LLM provider API keys are managed in `Configure > Backends` and stored in PostgreSQL
+- Telegram settings (enabled, bot token, allowlists) are managed in `Configure > Telegram` and stored in PostgreSQL
+- `SHARPCLAW_WORKSPACE` is only used by Docker Compose and the service install script to set up the workspace directory; the workspace path exposed to the filesystem MCP server is configured in `Configure > Settings` at runtime
 
 ### Configuration Fallbacks
 
 The API resolves configuration in this order where applicable:
 
-- API key: `ApiKey` config value, then `SHARPCLAW_API_KEY`
+- JWT secret: `Auth:JwtSecret`, then `SHARPCLAW_JWT_SECRET`
 - DB connection: `ConnectionStrings:DefaultConnection`, then `SHARPCLAW_DB_CONNECTION`
-- Workspace: `SHARPCLAW_WORKSPACE`, then current working directory
+- Workspace path: database setting (persisted in PostgreSQL, configurable via the UI or API at runtime)
 
 ## Running the Project
 
@@ -330,7 +330,7 @@ The script:
 | `/opt/sharpclaw/api` | Published .NET API binary |
 | `/opt/sharpclaw/telegram` | Published Telegram worker binary |
 | `/var/www/sharpclaw` | Compiled React frontend |
-| `/etc/sharpclaw/env` | Environment file (secrets, API keys, DB connection) |
+| `/etc/sharpclaw/env` | Environment file (secrets, auth settings, DB connection) |
 | `/etc/systemd/system/sharpclaw-api.service` | API systemd unit |
 | `/etc/systemd/system/sharpclaw-telegram.service` | Telegram worker systemd unit (optional) |
 | `/etc/nginx/sites-available/sharpclaw` (Debian/Ubuntu) | nginx site config |
@@ -376,24 +376,19 @@ sudo systemctl restart sharpclaw-telegram
 
 ### Telegram Service (Optional)
 
-`scripts/install-service-linux.sh` can install and manage `sharpclaw-telegram` as a systemd service.
+`scripts/install-service-linux.sh` installs and manages `sharpclaw-telegram` as a systemd service by default. Pass `--no-telegram` to skip it:
 
-The Telegram service is enabled when either:
+```bash
+sudo ./scripts/install-service-linux.sh --no-telegram
+```
 
-- `TELEGRAM_BOT_TOKEN` is set in `.env`, or
-- `SHARPCLAW_ENABLE_TELEGRAM_SERVICE=true` (or `1`) is set in `.env`
+Telegram bot settings (enabled state, bot token, allowlists) are loaded from the SharpClaw API runtime settings endpoint, which reads from PostgreSQL.
 
-If Telegram is enabled without `TELEGRAM_BOT_TOKEN`, the installer exits with an error.
-
-Minimal `.env` settings for Telegram service installs:
+Minimal `.env` settings when using the Telegram service:
 
 ```dotenv
-TELEGRAM_BOT_TOKEN=<token-from-botfather>
-SHARPCLAW_API_KEY=<same-api-key-used-by-sharpclaw-api>
 SHARPCLAW_API_URL=http://127.0.0.1:5000
-# Optional
-TELEGRAM_ALLOWED_USER_IDS=12345,67890
-TELEGRAM_ALLOWED_USERNAMES=alice,@bob
+SHARPCLAW_API_TOKEN=<telegram-worker-bearer-token>
 ```
 
 ---
@@ -445,12 +440,10 @@ Key variables for a local run (see [Environment Variables](#environment-variable
 | `POSTGRES_USER` | PostgreSQL role name |
 | `POSTGRES_PASSWORD` | PostgreSQL role password |
 | `SHARPCLAW_DB_CONNECTION` | Full connection string – the backend script constructs this automatically from `POSTGRES_*` if it is not set |
-| `SHARPCLAW_WORKSPACE` | Absolute path to the directory exposed to the filesystem MCP server |
-| `ANTHROPIC_API_KEY` | Required for Anthropic-backed agents |
-| `OPENAI_API_KEY` | Required for OpenAI-backed agents |
-| `OPENROUTER_API_KEY` | Required for OpenRouter-backed agents |
-| `GITHUB_COPILOT_TOKEN` | Required for Copilot-backed agents |
-| `SHARPCLAW_API_KEY` | Optional; restricts access to the `/api/*` routes |
+| `SHARPCLAW_WORKSPACE` | Host-side path mounted as the default workspace directory (service install only; workspace is configured at runtime via `Configure > Settings`) |
+| `SHARPCLAW_JWT_SECRET` | Required JWT signing secret for API authentication |
+
+After startup, configure backend provider keys in `Configure > Backends`.
 
 ### Starting the Backend
 
@@ -849,9 +842,10 @@ Example request:
 
 ## Authentication Behavior
 
-- If `SHARPCLAW_API_KEY` is not set, API routes are effectively open
-- If it is set, clients must send `X-Api-Key`
-- SSE stream endpoints are exempt because browser `EventSource` cannot send custom headers
+- `/api/auth/setup` is available until the first user is created
+- After setup, all API routes except auth status/login/logout require authentication
+- Browser clients authenticate with an HttpOnly JWT cookie set by `/api/auth/login`
+- Non-browser clients can authenticate with a `Bearer` token obtained from `/api/auth/login`
 
 ## Built-In Agents
 
@@ -867,12 +861,12 @@ These seeds are inserted safely and do not overwrite user-edited definitions.
 
 - Implemented in `SharpClaw.Anthropic/`
 - Uses the configured model from the stored agent definition
-- Requires `ANTHROPIC_API_KEY`
+- Requires an API key stored in `Configure > Backends`
 
 ### OpenAI Backend
 
 - Uses the `OpenAI` NuGet package (`OpenAI` 2.x) to call the Chat Completions API
-- Requires `OPENAI_API_KEY`
+- Requires an API key stored in `Configure > Backends`
 - Supports streaming and tool use
 - Default model: `gpt-4o-mini`
 - Available models are surfaced via `GET /api/backends/openai/models`
@@ -880,7 +874,7 @@ These seeds are inserted safely and do not overwrite user-edited definitions.
 ### OpenRouter Backend
 
 - Uses the OpenAI-compatible Chat Completions API at `https://openrouter.ai/api/v1`
-- Requires `OPENROUTER_API_KEY`
+- Requires an API key stored in `Configure > Backends`
 - Supports streaming and tool use
 - Default model: `openai/gpt-4o-mini`
 - Available models are surfaced via `GET /api/backends/openrouter/models`
@@ -888,7 +882,7 @@ These seeds are inserted safely and do not overwrite user-edited definitions.
 ### Copilot Backend
 
 - Uses `GitHub.Copilot.SDK`
-- Checks `GITHUB_TOKEN` first, then `GITHUB_COPILOT_TOKEN`
+- Requires a GitHub token stored in `Configure > Backends`
 - Uses the configured workspace directory for tool context
 - The stored `model` field is currently persisted and shown in the UI, but Copilot model selection is not yet enforced explicitly by the runtime
 
@@ -912,19 +906,13 @@ This project is licensed under the MIT License. See [LICENSE](/home/khughes/proj
 ## Known Limitations
 
 - Copilot-backed agent model selection is stored but not fully enforced at runtime
-- SSE authentication is intentionally relaxed due to browser limitations around custom headers
 - MCP process arguments are stored as JSON arrays and must remain string-only because they are passed directly to stdio transports
 
 ## Still To Do (not prioritized)
 
-- [#7 Add OpenAI backend support](https://github.com/kjhughes097/sharpclaw/issues/7)
-- [#8 Add OpenRouter backend support](https://github.com/kjhughes097/sharpclaw/issues/8)
 - [#9 Refactor multi-class source files into one class per file](https://github.com/kjhughes097/sharpclaw/issues/9)
 - [#10 Define a file storage hierarchy for generated artifacts](https://github.com/kjhughes097/sharpclaw/issues/10)
-- [#11 Add Telegram channel integration](https://github.com/kjhughes097/sharpclaw/issues/11)
 - [#12 Add a heartbeat agent or scheduled stuck-session monitor](https://github.com/kjhughes097/sharpclaw/issues/12)
 - [#13 Add sample agent definitions and an importable starter set](https://github.com/kjhughes097/sharpclaw/issues/13)
 - [#14 Refactor the permission system to reduce complexity](https://github.com/kjhughes097/sharpclaw/issues/14)
-- [#15 Design a blue-green deployment strategy with automatic rollback](https://github.com/kjhughes097/sharpclaw/issues/15) — [design document](docs/blue-green-deployment.md)
-- [#16 Add scripts for local installation and non-Docker startup](https://github.com/kjhughes097/sharpclaw/issues/16)
 - [#17 Create a sandbox API Docker image with additional development tools](https://github.com/kjhughes097/sharpclaw/issues/17)

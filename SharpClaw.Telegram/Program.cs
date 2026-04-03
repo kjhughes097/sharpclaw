@@ -13,49 +13,45 @@ var sharpClawApiUrl = Normalize(builder.Configuration["SharpClaw:ApiUrl"])
     ?? throw new InvalidOperationException(
         "SharpClaw API URL is not configured. Set SharpClaw:ApiUrl or SHARPCLAW_API_URL.");
 
-var sharpClawApiKey = Normalize(builder.Configuration["SharpClaw:ApiKey"])
-    ?? Normalize(Environment.GetEnvironmentVariable("SHARPCLAW_API_KEY"))
+var sharpClawApiToken = Normalize(builder.Configuration["SharpClaw:ApiToken"])
+    ?? Normalize(Environment.GetEnvironmentVariable("SHARPCLAW_API_TOKEN"))
     ?? throw new InvalidOperationException(
-        "SharpClaw API key is not configured. Set SharpClaw:ApiKey or SHARPCLAW_API_KEY.");
+        "SharpClaw API token is not configured. Set SharpClaw:ApiToken or SHARPCLAW_API_TOKEN.");
 
-var runtimeSettings = await TryLoadRuntimeSettingsAsync(sharpClawApiUrl, sharpClawApiKey);
+var tokenProvider = new SharpClawAuthTokenProvider(sharpClawApiUrl, sharpClawApiToken);
 
-if (string.IsNullOrWhiteSpace(builder.Configuration["Telegram:IsEnabled"]) &&
-    string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TELEGRAM_ENABLED")) &&
-    runtimeSettings is not null)
+var runtimeSettings = await TryLoadRuntimeSettingsAsync(sharpClawApiUrl, tokenProvider);
+
+if (runtimeSettings is not null)
 {
-    Environment.SetEnvironmentVariable("TELEGRAM_ENABLED", runtimeSettings.IsEnabled.ToString());
+    var runtimeOverrides = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Telegram:IsEnabled"] = runtimeSettings.IsEnabled.ToString(),
+        ["Telegram:MappingStorePath"] = runtimeSettings.MappingStorePath,
+    };
+
+    for (var i = 0; i < runtimeSettings.AllowedUserIds.Count; i++)
+        runtimeOverrides[$"Telegram:AllowedUserIds:{i}"] = runtimeSettings.AllowedUserIds[i].ToString();
+
+    for (var i = 0; i < runtimeSettings.AllowedUsernames.Count; i++)
+        runtimeOverrides[$"Telegram:AllowedUsernames:{i}"] = runtimeSettings.AllowedUsernames[i];
+
+    builder.Configuration.AddInMemoryCollection(runtimeOverrides);
 }
 
-if (string.IsNullOrWhiteSpace(builder.Configuration["Telegram:AllowedUserIds"]) &&
-    string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TELEGRAM_ALLOWED_USER_IDS")) &&
-    runtimeSettings is not null &&
-    runtimeSettings.AllowedUserIds.Count > 0)
-{
-    Environment.SetEnvironmentVariable("TELEGRAM_ALLOWED_USER_IDS", string.Join(',', runtimeSettings.AllowedUserIds));
-}
-
-if (string.IsNullOrWhiteSpace(builder.Configuration["Telegram:AllowedUsernames"]) &&
-    string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("TELEGRAM_ALLOWED_USERNAMES")) &&
-    runtimeSettings is not null &&
-    runtimeSettings.AllowedUsernames.Count > 0)
-{
-    Environment.SetEnvironmentVariable("TELEGRAM_ALLOWED_USERNAMES", string.Join(',', runtimeSettings.AllowedUsernames));
-}
-
-var botToken = Normalize(builder.Configuration["Telegram:BotToken"])
-    ?? Normalize(Environment.GetEnvironmentVariable("TELEGRAM_BOT_TOKEN"))
-    ?? Normalize(runtimeSettings?.BotToken)
+var botToken = Normalize(runtimeSettings?.BotToken)
     ?? throw new InvalidOperationException(
-        "Telegram bot token is not configured. Set Telegram:BotToken, TELEGRAM_BOT_TOKEN, or configure it in /api/integrations/telegram.");
+        "Telegram bot token is not configured in SharpClaw runtime settings. Configure it in /api/integrations/telegram.");
 
 builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(botToken));
+builder.Services.AddSingleton(tokenProvider);
+builder.Services.AddTransient<SharpClawAuthHandler>();
 builder.Services.AddHttpClient<SharpClawApiClient>(client =>
 {
     client.BaseAddress = new Uri(sharpClawApiUrl.TrimEnd('/') + "/");
-    client.DefaultRequestHeaders.Add("X-Api-Key", sharpClawApiKey);
     client.Timeout = TimeSpan.FromMinutes(5);
-});
+})
+    .AddHttpMessageHandler<SharpClawAuthHandler>();
 builder.Services.AddSingleton<SessionMappingStore>();
 builder.Services.AddSingleton<TelegramUpdateHandler>();
 builder.Services.AddHostedService<TelegramPollingService>();
@@ -63,7 +59,7 @@ builder.Services.AddHostedService<TelegramPollingService>();
 var host = builder.Build();
 await host.RunAsync();
 
-static async Task<TelegramRuntimeSettings?> TryLoadRuntimeSettingsAsync(string apiUrl, string apiKey)
+static async Task<TelegramRuntimeSettings?> TryLoadRuntimeSettingsAsync(string apiUrl, SharpClawAuthTokenProvider tokenProvider)
 {
     try
     {
@@ -72,7 +68,8 @@ static async Task<TelegramRuntimeSettings?> TryLoadRuntimeSettingsAsync(string a
             BaseAddress = new Uri(apiUrl.TrimEnd('/') + "/"),
             Timeout = TimeSpan.FromSeconds(10),
         };
-        httpClient.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
+        var authToken = await tokenProvider.GetTokenAsync();
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", authToken);
         httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         using var response = await httpClient.GetAsync("api/integrations/telegram/runtime");
@@ -95,4 +92,5 @@ internal sealed record TelegramRuntimeSettings(
     bool IsEnabled,
     string? BotToken,
     IReadOnlyList<long> AllowedUserIds,
-    IReadOnlyList<string> AllowedUsernames);
+    IReadOnlyList<string> AllowedUsernames,
+    string MappingStorePath);
