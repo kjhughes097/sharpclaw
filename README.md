@@ -110,9 +110,12 @@ SharpClaw now stores MCP definitions in PostgreSQL and resolves them at runtime 
 - `filesystem`
 - `sqlite`
 - `github`
+- `duckduckgo`
 - `knowledge-base`
 
 The seeded `github` MCP starts disabled by default. It requires `GITHUB_PERSONAL_ACCESS_TOKEN` in the API runtime environment before you enable it.
+
+The seeded `duckduckgo` MCP starts enabled by default and is launched with `docker run -i --rm mcp/duckduckgo`. Docker must be installed and available on the API host for DuckDuckGo-backed web search to work.
 
 The seeded `knowledge-base` MCP also starts disabled by default. It resolves to `~/knowledge` for non-Docker runs, `/knowledge` in Docker Compose, and `/var/lib/sharpclaw/knowledge` for systemd service installs.
 
@@ -298,6 +301,7 @@ The service install script requires:
 - .NET 10 SDK
 - Node.js 18+ (22 LTS recommended) and npm
 - `npx` available in the runtime toolchain for built-in MCP servers
+- Docker installed and usable by the service host for the seeded `duckduckgo` MCP (`docker run -i --rm mcp/duckduckgo`)
 - PostgreSQL 16 running with the SharpClaw database already created
 - A populated `.env` file at the repo root
 
@@ -322,6 +326,8 @@ The script:
 2. Creates a dedicated `sharpclaw` system user (no login shell)
 3. Publishes the .NET API to `/opt/sharpclaw/api`
 4. Builds the React frontend (`npm ci && npm run build`) and deploys it to `/var/www/sharpclaw`
+
+> **Note:** The built-in DuckDuckGo MCP uses Docker even for systemd installs. Make sure Docker is installed on the host and that the `sharpclaw` service user can access the Docker socket.
 5. Installs nginx if not present
 6. Writes an nginx site configuration that:
    - Serves the compiled frontend
@@ -403,9 +409,11 @@ SHARPCLAW_API_TOKEN=<telegram-worker-bearer-token>
 
 ---
 
-## Running Locally on Linux (without Docker)
+## Running Locally on Linux (without Docker Compose)
 
-Use this path when you want to run the full SharpClaw stack on a Linux machine without Docker — for example during active development, debugging, or in environments where containers are impractical.
+Use this path when you want to run the SharpClaw application processes directly on a Linux machine instead of through Docker Compose — for example during active development or debugging.
+
+SharpClaw itself does not require Docker in this mode. The only Docker dependency is the seeded `duckduckgo` MCP, which launches through `docker run -i --rm mcp/duckduckgo`. If you do not want Docker installed for local runs, disable that MCP.
 
 ### Prerequisites
 
@@ -416,6 +424,7 @@ The following tools must be installed:
 | .NET SDK | 10.0 | Build and run the ASP.NET Core API |
 | Node.js | 18 LTS (22 recommended) | Build and serve the React frontend |
 | npm | bundled with Node.js | Frontend package management |
+| Docker | recent CLI/Engine | Optional; only needed if you want to use the seeded `duckduckgo` MCP |
 | PostgreSQL | 16 | Persistent storage for agents, sessions, and messages |
 
 If you are starting from a fresh Debian/Ubuntu or RHEL/Fedora/CentOS Stream machine, the install script handles everything:
@@ -430,6 +439,8 @@ The script:
 2. Installs Node.js 22 LTS and npm (via the NodeSource package feed)
 3. Installs PostgreSQL 16
 4. Creates the PostgreSQL role and database using credentials from your `.env` file
+
+> **Note:** `scripts/install-linux.sh` does not install Docker. Install Docker separately only if you want to use the seeded DuckDuckGo MCP in local Linux runs; otherwise you can disable that MCP.
 
 > **Note:** Open a new terminal after running the install script so that updated `PATH` entries take effect.
 
@@ -862,11 +873,48 @@ Example request:
 
 ## Built-In Agents
 
-The database is automatically seeded with built-in agents on startup. The current built-in agent is:
+The database is automatically seeded with built-in agents on startup. Agent definitions are stored in `agents/*.md` and loaded via `SessionStore.cs`. These seeds are inserted safely and do not overwrite user-edited definitions.
 
-- `ade.agent.md`
+### Agent Roster
 
-These seeds are inserted safely and do not overwrite user-edited definitions.
+| Agent | Role | MCP | Backend | Model |
+|-------|------|-----|---------|-------|
+| **Ade** | Generalist router; routes to specialists when a better fit exists | `duckduckgo` | Anthropic | Claude Haiku 4.5 |
+| **Noah** | Knowledge manager; captures and organizes notes, todos, meeting notes, journals | `knowledge-base`, `duckduckgo` | Anthropic | Claude Haiku 4.5 |
+| **Cody** | Software architect; C#, TypeScript, Python expert; SOLID principles and design patterns | `filesystem`, `github`, `duckduckgo` | Copilot | Claude Opus 4.6 |
+| **Debbie** | Critical thinking partner; challenges ideas, finds gaps, plays devil's advocate | `duckduckgo` | Anthropic | Claude Haiku 4.5 |
+| **Remy** | Task manager; captures and organizes todos, reminders, shopping lists | `knowledge-base`, `duckduckgo` | Anthropic | Claude Haiku 4.5 |
+
+### Agent Details
+
+**Ade** (`ade`) — Your generalist assistant. Helps directly or routes to a specialist when appropriate. Uses JSON routing decisions to hand off work.
+
+**Noah** (`noah`) — Knowledge base manager. Captures reflections, meeting notes, daily journals, and work documentation using the `knowledge-base` MCP. Optimized for speed with built-in safety (asks before destructive edits).
+
+**Cody** (`cody`) — Software architect with deep expertise in design patterns, SOLID principles, clean architecture, and testability. Uses the `filesystem` MCP to read and write code. Runs on Copilot backend with Claude Opus 4.6 for more sophisticated architectural reasoning.
+
+**Debbie** (`debbie`) — Rigorous thinking partner. Challenges assumptions, probes for gaps, examines trade-offs, and plays devil's advocate constructively. Helps you think stronger, not just feel better.
+
+**Remy** (`remy`) — Task and reminder manager. Captures todos, reminders, and shopping lists quickly and reliably using the `knowledge-base` MCP. Organizes by category, priority, and due date; suggests weekly reviews.
+
+### Built-In MCPs
+
+- `filesystem` — local workspace file access
+- `sqlite` — SQLite inspection and querying
+- `github` — GitHub repositories, issues, and pull requests
+- `duckduckgo` — lightweight web search and page-content fetching via Docker image `mcp/duckduckgo` (requires Docker on the API host)
+- `knowledge-base` — personal knowledge base files mounted from the configured knowledge directory
+
+### Agent Files
+
+Agent definitions are stored in markdown format in the `agents/` folder:
+- `agents/ade.md`
+- `agents/noah.md`
+- `agents/cody.md`
+- `agents/debbie.md`
+- `agents/remy.md`
+
+Each file contains YAML frontmatter (name, description, backend, model, MCP servers, permission policy) and a system prompt that guides the agent's behavior. You can edit these files to customize agent behavior; changes will be reflected in `SessionStore.cs` and seeded on next API startup.
 
 ## Backend Notes
 
