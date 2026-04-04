@@ -114,6 +114,7 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
         using var reader = new StreamReader(stream);
 
         string? currentEventType = null;
+        var statuses = new List<string>();
 
         string? line;
         while ((line = await reader.ReadLineAsync(ct)) is not null)
@@ -128,12 +129,39 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
                 var data = line[6..];
                 switch (currentEventType)
                 {
+                    case "status":
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(data);
+                            if (doc.RootElement.TryGetProperty("message", out var messageEl))
+                            {
+                                var statusText = messageEl.GetString();
+                                if (!string.IsNullOrWhiteSpace(statusText))
+                                    statuses.Add(statusText.Trim());
+                            }
+                        }
+                        catch (JsonException ex)
+                        {
+                            logger.LogWarning(ex, "Failed to parse status event payload");
+                        }
+                        break;
+
                     case "done":
                         try
                         {
                             using var doc = JsonDocument.Parse(data);
                             if (doc.RootElement.TryGetProperty("content", out var contentEl))
-                                return contentEl.GetString() ?? string.Empty;
+                            {
+                                var content = contentEl.GetString() ?? string.Empty;
+                                if (statuses.Count == 0)
+                                    return content;
+
+                                var statusPrefix = string.Join('\n', statuses.Select(message => $"[{message}]"));
+                                if (string.IsNullOrWhiteSpace(content))
+                                    return statusPrefix;
+
+                                return $"{statusPrefix}\n\n{content}";
+                            }
                         }
                         catch (JsonException ex)
                         {
