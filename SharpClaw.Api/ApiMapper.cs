@@ -5,7 +5,7 @@ namespace SharpClaw.Api;
 
 internal static class ApiMapper
 {
-    internal const string AdeAgentId = "ade.agent.md";
+    internal const string AdeAgentId = "ade";
 
     internal static string CreateAgentId(string name)
     {
