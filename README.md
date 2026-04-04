@@ -297,6 +297,7 @@ The system dependencies must already be installed before running the service ins
 The service install script requires:
 - .NET 10 SDK
 - Node.js 18+ (22 LTS recommended) and npm
+- `npx` available in the runtime toolchain for built-in MCP servers
 - PostgreSQL 16 running with the SharpClaw database already created
 - A populated `.env` file at the repo root
 
@@ -375,7 +376,7 @@ sudo journalctl -u     nginx -f
 
 ### Editing the Environment File
 
-The environment file at `/etc/sharpclaw/env` holds all secrets and configuration for the running service.  Edit it directly for runtime changes:
+The environment file at `/etc/sharpclaw/env` holds all secrets and configuration for the running service, including the service `PATH` used by `npx`-based MCP subprocesses.  Edit it directly for runtime changes:
 
 ```bash
 sudo $EDITOR /etc/sharpclaw/env
