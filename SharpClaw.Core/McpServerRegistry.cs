@@ -3,6 +3,8 @@ using ModelContextProtocol.Client;
 
 namespace SharpClaw.Core;
 
+public sealed record McpLaunchInfo(string Command, IReadOnlyList<string> Arguments, string DisplayCommand);
+
 /// <summary>
 /// Builds MCP client transports from the stored MCP registry.
 /// </summary>
@@ -42,15 +44,24 @@ public static class McpServerRegistry
     /// </summary>
     public static IClientTransport Resolve(McpServerRecord server, string? workspacePath = null)
     {
-        if (string.IsNullOrWhiteSpace(server.Command))
-            throw new ArgumentException($"MCP '{server.Slug}' has no command configured.");
+        var launch = ResolveLaunch(server, workspacePath);
 
         return new StdioClientTransport(new StdioClientTransportOptions
         {
-            Command = server.Command,
-            Arguments = ExpandArguments(server.Args, workspacePath),
+            Command = launch.Command,
+            Arguments = launch.Arguments.ToList(),
             Name = server.Slug,
         });
+    }
+
+    public static McpLaunchInfo ResolveLaunch(McpServerRecord server, string? workspacePath = null)
+    {
+        if (string.IsNullOrWhiteSpace(server.Command))
+            throw new ArgumentException($"MCP '{server.Slug}' has no command configured.");
+
+        var command = ResolveCommandPath(ExpandEnvironmentVariables(server.Command.Trim()));
+        var arguments = ExpandArguments(server.Args, workspacePath);
+        return new McpLaunchInfo(command, arguments, FormatCommand(command, arguments));
     }
 
     private static List<string> ExpandArguments(IReadOnlyList<string> rawArgs, string? workspacePath)
@@ -85,5 +96,56 @@ public static class McpServerRegistry
             var name = match.Groups["name"].Value;
             return Environment.GetEnvironmentVariable(name) ?? string.Empty;
         });
+    }
+
+    private static string ResolveCommandPath(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            throw new ArgumentException("MCP command resolves to an empty value.");
+
+        if (Path.IsPathRooted(command)
+            || command.Contains(Path.DirectorySeparatorChar)
+            || command.Contains(Path.AltDirectorySeparatorChar))
+        {
+            return command;
+        }
+
+        var pathValue = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        foreach (var directory in pathValue.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var candidate = Path.Combine(directory, command);
+            if (File.Exists(candidate))
+                return candidate;
+
+            if (!OperatingSystem.IsWindows())
+                continue;
+
+            var pathExt = Environment.GetEnvironmentVariable("PATHEXT") ?? ".EXE;.CMD;.BAT;.COM";
+            foreach (var extension in pathExt.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var withExtension = candidate + extension;
+                if (File.Exists(withExtension))
+                    return withExtension;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Unable to resolve MCP command '{command}' from PATH. Ensure the executable is installed and available to the SharpClaw process.");
+    }
+
+    private static string FormatCommand(string command, IReadOnlyList<string> arguments)
+    {
+        return string.Join(" ", new[] { QuoteForDisplay(command) }.Concat(arguments.Select(QuoteForDisplay)));
+    }
+
+    private static string QuoteForDisplay(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "\"\"";
+
+        if (!value.Any(char.IsWhiteSpace) && !value.Contains('"'))
+            return value;
+
+        return '"' + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + '"';
     }
 }

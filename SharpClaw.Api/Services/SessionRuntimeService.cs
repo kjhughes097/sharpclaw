@@ -204,7 +204,7 @@ public sealed class SessionRuntimeService(
     {
         var persona = agentRecord.ToPersona();
         var mcps = store.ListMcpsBySlug(agentRecord.McpServers, includeDisabled: false);
-        return new AgentRunner(persona, mcps, CreateBackend, store.GetWorkspacePath());
+        return new AgentRunner(persona, mcps, CreateBackend, store.GetWorkspacePath(), logger: logger);
     }
 
     private IAgentBackend CreateBackend(AgentPersona persona, PermissionGate gate)
