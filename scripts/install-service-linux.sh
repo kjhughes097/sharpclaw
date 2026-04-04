@@ -27,6 +27,11 @@
 #   - Node.js 22 LTS and npm
 #   - PostgreSQL 16
 #
+# Additional runtime note:
+#   - The seeded DuckDuckGo MCP uses `docker run -i --rm mcp/duckduckgo`.
+#   - Install Docker separately and ensure the service user can access the
+#     Docker socket if you want that built-in MCP to work.
+#
 # Usage:
 #   chmod +x scripts/install-service-linux.sh
 #   sudo ./scripts/install-service-linux.sh [--no-telegram]
