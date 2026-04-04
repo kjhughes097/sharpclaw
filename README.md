@@ -666,7 +666,7 @@ Example response:
 ```json
 [
 	{
-		"id": "ade.agent.md",
+		"id": "ade",
 		"name": "Ade",
 		"description": "A general assistant who helps directly and hands work to a better-fit specialist when needed.",
 		"backend": "anthropic",
@@ -805,7 +805,7 @@ Example request:
 
 ```json
 {
-	"agentId": "ade.agent.md"
+	"agentId": "ade"
 }
 ```
 
@@ -815,7 +815,7 @@ Example response:
 {
 	"sessionId": "abc123def456",
 	"persona": "Ade",
-	"agentId": "ade.agent.md"
+	"agentId": "ade"
 }
 ```
 

@@ -282,7 +282,7 @@ function buildPermissionGroups(rows: PermissionRow[], mcps: string[]): Permissio
 }
 
 function isAdeAgent(agent: Pick<AgentDefinition, 'id' | 'name'>): boolean {
-  return agent.id === 'ade.agent.md' || agent.name.trim().toLowerCase() === 'ade';
+  return agent.id === 'ade' || agent.id === 'ade.agent.md' || agent.name.trim().toLowerCase() === 'ade';
 }
 
 export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {

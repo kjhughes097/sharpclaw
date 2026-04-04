@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Session, ChatMessage, PersistedSession, PersistedStreamItem, StreamItem, AgentEvent, ToolResultEvent } from './types';
 import { createSession, deleteSession as deletePersistedSession, fetchSession, fetchSessions, sendMessage, streamEvents } from './api';
 
-const DEFAULT_AGENT_ID = 'ade.agent.md';
+const DEFAULT_AGENT_ID = 'ade';
 const DEFAULT_PERSONA_NAME = 'Ade';
 
 export interface SessionState {
