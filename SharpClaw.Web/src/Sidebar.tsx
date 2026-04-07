@@ -248,6 +248,7 @@ export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewS
                 {sessionMeta(s.messages, s.session.persona)}
               </span>
               <div className="session-pills">
+                <span className="session-pill session-pill-agent">{s.session.persona}</span>
                 <span className="session-pill session-pill-time">{sessionAge(s.lastActivityAt)}</span>
                 <span className="session-pill">{messageCountLabel(s.messages)}</span>
                 <span className="session-pill">{tokenCountLabel(s.messages, s.eventLogs, s.streamItems)}</span>

@@ -17,6 +17,9 @@ permissionPolicy:
   github.read_*: auto_approve
   github.search_*: auto_approve
   duckduckgo.*: auto_approve
+  builtin.read_file: auto_approve
+  builtin.write_file: auto_approve
+  builtin.run_command: ask
   "*": ask
 isEnabled: true
 ---

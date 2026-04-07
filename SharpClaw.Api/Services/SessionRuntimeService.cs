@@ -325,8 +325,11 @@ public sealed class SessionRuntimeService(
                         var specialistRunner = CreateRunner(specialistRecord);
                         await specialistRunner.InitializeAsync(CancellationToken.None);
                         turnRunner = specialistRunner;
-                        disposeTurnRunner = true;
                         _runners[sessionId] = turnRunner;
+
+                        // Persist the agent assignment so future messages go directly
+                        // to this specialist without re-routing through Ade.
+                        store.UpdateSessionAgent(sessionId, specialistRecord.Slug);
 
                         if (decision.RewrittenPrompt is not null)
                             conversation.ReplaceLastUser(decision.RewrittenPrompt);
