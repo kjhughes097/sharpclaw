@@ -22,11 +22,12 @@ interface SidebarProps {
   onShowMcps: () => void;
   onShowTelegram: () => void;
   onShowApp: () => void;
+  onShowTokenUsage: () => void;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   isOpen: boolean;
   onClose: () => void;
-  currentView: 'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app';
+  currentView: 'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app' | 'token-usage';
 }
 
 function plainTextPreview(text: string | undefined, maxLength: number): string {
@@ -157,7 +158,7 @@ function sessionAge(lastActivityAt: string): string {
   return `${years}y ago`;
 }
 
-export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewSession, onShowAgents, onShowBackends, onShowMcps, onShowTelegram, onShowApp, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
+export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewSession, onShowAgents, onShowBackends, onShowMcps, onShowTelegram, onShowApp, onShowTokenUsage, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
   const handleDeleteClick = async (
     event: MouseEvent<HTMLButtonElement>,
     sessionId: string,
@@ -289,6 +290,12 @@ export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewS
           onClick={onShowApp}
         >
           App
+        </button>
+        <button
+          className={`sidebar-nav-item ${currentView === 'token-usage' ? 'active' : ''}`}
+          onClick={onShowTokenUsage}
+        >
+          Token Usage
         </button>
       </div>
     </aside>

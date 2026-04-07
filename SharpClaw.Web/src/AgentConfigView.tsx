@@ -141,6 +141,7 @@ function blankAgent(defaultBackend = 'anthropic'): AgentUpsertRequest {
     permissionPolicy: { ...PERMISSION_TEMPLATES['workspace-editor'] },
     systemPrompt: '',
     isEnabled: true,
+    dailyTokenLimit: null,
   };
 }
 
@@ -154,6 +155,7 @@ function toForm(agent: AgentDefinition): AgentUpsertRequest {
     permissionPolicy: { ...agent.permissionPolicy },
     systemPrompt: agent.systemPrompt,
     isEnabled: agent.isEnabled,
+    dailyTokenLimit: agent.dailyTokenLimit,
   };
 }
 
@@ -758,6 +760,27 @@ export function AgentConfigView({ onMenuClick }: AgentConfigViewProps) {
                 />
               </label>
             </div>
+
+            <label>
+              <span>Daily Token Limit (optional)</span>
+              <input
+                type="number"
+                min="0"
+                step="100000"
+                value={form.dailyTokenLimit ?? ''}
+                onChange={event => {
+                  const raw = event.target.value.trim();
+                  setForm(prev => ({
+                    ...prev,
+                    dailyTokenLimit: raw === '' ? null : Math.max(0, parseInt(raw, 10) || 0),
+                  }));
+                }}
+                placeholder="No limit"
+              />
+            </label>
+            <small className="field-hint">
+              Maximum total tokens per day for this agent. Leave blank for no agent-level limit.
+            </small>
 
             <label>
               <span>Brief Description</span>

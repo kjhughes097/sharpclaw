@@ -4,4 +4,5 @@ public sealed record BackendIntegrationSettings(
     string Backend,
     bool IsEnabled,
     string? ApiKey,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    long DailyTokenLimit = 1_000_000);

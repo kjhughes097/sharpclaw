@@ -73,11 +73,14 @@ public sealed class BackendSettingsService(SessionStore store, BackendRegistry b
             ? null
             : requestedKey ?? existing?.ApiKey;
 
+        var dailyTokenLimit = request.DailyTokenLimit ?? existing?.DailyTokenLimit ?? 1_000_000;
+
         var updated = new BackendIntegrationSettings(
             Backend: normalizedBackend,
             IsEnabled: request.IsEnabled,
             ApiKey: apiKey,
-            UpdatedAt: DateTimeOffset.UtcNow);
+            UpdatedAt: DateTimeOffset.UtcNow,
+            DailyTokenLimit: dailyTokenLimit);
 
         store.UpsertBackendIntegrationSettings(updated);
 
@@ -94,7 +97,7 @@ public sealed class BackendSettingsService(SessionStore store, BackendRegistry b
 
         var binding = GetBinding(normalizedBackend);
         var settings = store.GetBackendIntegrationSettings(normalizedBackend)
-            ?? new BackendIntegrationSettings(normalizedBackend, false, null, null);
+            ?? new BackendIntegrationSettings(normalizedBackend, false, null, null, 1_000_000);
 
         if (!settings.IsEnabled)
         {

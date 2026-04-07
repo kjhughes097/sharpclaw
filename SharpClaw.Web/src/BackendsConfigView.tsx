@@ -14,6 +14,7 @@ interface BackendFormState {
   maskedApiKey: string | null;
   requiresApiKey: boolean;
   updatedAt: string | null;
+  dailyTokenLimit: number;
 }
 
 function toFormState(setting: BackendSettings): BackendFormState {
@@ -25,6 +26,7 @@ function toFormState(setting: BackendSettings): BackendFormState {
     maskedApiKey: setting.maskedApiKey,
     requiresApiKey: setting.requiresApiKey,
     updatedAt: setting.updatedAt,
+    dailyTokenLimit: setting.dailyTokenLimit,
   };
 }
 
@@ -76,6 +78,7 @@ export function BackendsConfigView({ onMenuClick }: BackendsConfigViewProps) {
       const payload = {
         isEnabled: form.isEnabled,
         clearApiKey: form.clearApiKey,
+        dailyTokenLimit: form.dailyTokenLimit,
         ...(form.apiKeyInput.trim() ? { apiKey: form.apiKeyInput.trim() } : {}),
       };
 
@@ -160,6 +163,23 @@ export function BackendsConfigView({ onMenuClick }: BackendsConfigViewProps) {
                     onChange={event => updateForm(setting.backend, current => ({ ...current, clearApiKey: event.target.checked }))}
                   />
                 </label>
+
+                <label>
+                  <span>Daily Token Limit</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="100000"
+                    value={form.dailyTokenLimit}
+                    onChange={event => updateForm(setting.backend, current => ({
+                      ...current,
+                      dailyTokenLimit: Math.max(0, parseInt(event.target.value, 10) || 0),
+                    }))}
+                  />
+                </label>
+                <small className="field-hint">
+                  Maximum total tokens per day for this provider. Set to 0 for unlimited.
+                </small>
 
                 <small className="field-hint">
                   {form.requiresApiKey

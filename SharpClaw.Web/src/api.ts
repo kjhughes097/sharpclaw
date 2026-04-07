@@ -1,4 +1,4 @@
-import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest } from './types';
+import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest, TokenUsageSummary, TokenUsageHistory } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -291,6 +291,18 @@ export async function resolvePermission(
         body: JSON.stringify({ allow }),
     });
     if (!res.ok) throw new Error(`POST permissions: ${res.status}`);
+}
+
+export async function fetchTokenUsageSummary(): Promise<TokenUsageSummary> {
+    const res = await fetch(`${BASE}/token-usage/summary`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /token-usage/summary: ${res.status}`));
+    return res.json();
+}
+
+export async function fetchTokenUsageHistory(period: string = 'week'): Promise<TokenUsageHistory> {
+    const res = await fetch(`${BASE}/token-usage/history?period=${encodeURIComponent(period)}`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /token-usage/history: ${res.status}`));
+    return res.json();
 }
 
 async function readError(res: Response, fallback: string): Promise<string> {

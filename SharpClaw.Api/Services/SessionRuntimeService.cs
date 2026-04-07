@@ -231,6 +231,36 @@ public sealed class SessionRuntimeService(
 
         try
         {
+            // ── Token limit pre-check ────────────────────────────────────
+            var agentRecord = store.GetAgent(conversation.AgentSlug);
+            if (agentRecord is not null)
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var backendSettings = store.GetBackendIntegrationSettings(agentRecord.Backend);
+
+                if (backendSettings is not null)
+                {
+                    var providerUsage = store.GetDailyProviderTokenUsage(agentRecord.Backend, today);
+                    if (providerUsage >= backendSettings.DailyTokenLimit)
+                    {
+                        channel.Writer.TryWrite(new DoneEvent(
+                            $"Daily token limit reached for provider '{agentRecord.Backend}' ({providerUsage:N0}/{backendSettings.DailyTokenLimit:N0} tokens). Try again tomorrow."));
+                        return;
+                    }
+                }
+
+                if (agentRecord.DailyTokenLimit.HasValue)
+                {
+                    var agentUsage = store.GetDailyAgentTokenUsage(agentRecord.Slug, today);
+                    if (agentUsage >= agentRecord.DailyTokenLimit.Value)
+                    {
+                        channel.Writer.TryWrite(new DoneEvent(
+                            $"Daily token limit reached for agent '{agentRecord.Name}' ({agentUsage:N0}/{agentRecord.DailyTokenLimit.Value:N0} tokens). Try again tomorrow."));
+                        return;
+                    }
+                }
+            }
+
             var assistantIndex = conversation.Messages.Count(item => item.Role == ChatRole.Assistant);
             var persistedEventLog = new List<StoredEventLogItem>();
 
@@ -261,6 +291,7 @@ public sealed class SessionRuntimeService(
                         break;
                     case UsageEvent usage:
                         persistedEventLog.Add(new StoredEventLogItem(usage, null));
+                        RecordAndCheckTokenUsage(usage, conversation.AgentSlug, channel);
                         break;
                     case PermissionRequestEvent permissionRequest:
                         persistedEventLog.Add(new StoredEventLogItem(permissionRequest, null));
@@ -405,6 +436,89 @@ public sealed class SessionRuntimeService(
             }
 
             channel.Writer.TryComplete();
+        }
+    }
+
+    private void RecordAndCheckTokenUsage(UsageEvent usage, string agentSlug, Channel<AgentEvent> channel)
+    {
+        try
+        {
+            store.RecordTokenUsage(usage.Provider, agentSlug, usage.InputTokens, usage.OutputTokens);
+
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var backendSettings = store.GetBackendIntegrationSettings(usage.Provider);
+            if (backendSettings is not null && backendSettings.DailyTokenLimit > 0)
+            {
+                var providerTotal = store.GetDailyProviderTokenUsage(usage.Provider, today);
+                var percent = (double)providerTotal / backendSettings.DailyTokenLimit * 100;
+
+                if (percent >= 90)
+                {
+                    var message = $"⛔ Token usage for '{usage.Provider}' is at {percent:F0}% of the daily limit ({providerTotal:N0}/{backendSettings.DailyTokenLimit:N0}).";
+                    channel.Writer.TryWrite(new StatusEvent(message));
+
+                    if (store.TryRecordThresholdAlert(usage.Provider, today, 90))
+                        _ = Task.Run(() => SendTelegramAlertAsync(message));
+                }
+                else if (percent >= 75)
+                {
+                    var message = $"⚠️ Token usage for '{usage.Provider}' is at {percent:F0}% of the daily limit ({providerTotal:N0}/{backendSettings.DailyTokenLimit:N0}).";
+                    channel.Writer.TryWrite(new StatusEvent(message));
+
+                    if (store.TryRecordThresholdAlert(usage.Provider, today, 75))
+                        _ = Task.Run(() => SendTelegramAlertAsync(message));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to record or check token usage for provider '{Provider}', agent '{AgentSlug}'.",
+                usage.Provider, agentSlug);
+        }
+    }
+
+    private async Task SendTelegramAlertAsync(string message)
+    {
+        try
+        {
+            var telegramSettings = store.GetTelegramIntegrationSettings();
+            if (!telegramSettings.IsEnabled || string.IsNullOrWhiteSpace(telegramSettings.BotToken))
+                return;
+
+            if (telegramSettings.AllowedUserIds.Count == 0)
+                return;
+
+            using var httpClient = new HttpClient();
+            foreach (var chatId in telegramSettings.AllowedUserIds)
+            {
+                try
+                {
+                    var url = $"https://api.telegram.org/bot{telegramSettings.BotToken}/sendMessage";
+                    var payload = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        chat_id = chatId,
+                        text = $"🔔 SharpClaw Token Alert\n\n{message}",
+                    });
+
+                    using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                    var response = await httpClient.PostAsync(url, content);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        logger.LogWarning(
+                            "Failed to send Telegram alert to chat {ChatId}: {StatusCode}",
+                            chatId, response.StatusCode);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to send Telegram alert to chat {ChatId}", chatId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send Telegram token usage alerts");
         }
     }
 }

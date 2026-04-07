@@ -42,7 +42,8 @@ public sealed record AgentDto(
     IReadOnlyDictionary<string, string> PermissionPolicy,
     string SystemPrompt,
     bool IsEnabled,
-    int SessionCount) : IApiPayload;
+    int SessionCount,
+    long? DailyTokenLimit) : IApiPayload;
 
 public sealed record McpDto(
     string Slug,
@@ -67,7 +68,8 @@ public sealed record BackendSettingsDto(
     bool HasApiKey,
     string? MaskedApiKey,
     bool RequiresApiKey,
-    DateTimeOffset? UpdatedAt) : IApiPayload;
+    DateTimeOffset? UpdatedAt,
+    long DailyTokenLimit) : IApiPayload;
 
 public sealed record MessageDto(string Role, string Content);
 
@@ -145,7 +147,8 @@ public sealed record UpdateTelegramSettingsRequest(
 public sealed record UpdateBackendSettingsRequest(
     bool IsEnabled,
     string? ApiKey,
-    bool? ClearApiKey);
+    bool? ClearApiKey,
+    long? DailyTokenLimit);
 
 public sealed record UpdateAppSettingsRequest(
     string? WorkspacePath,
@@ -168,7 +171,8 @@ public sealed record AgentDefinitionRequest(
     List<string>? McpServers,
     Dictionary<string, string>? PermissionPolicy,
     string? SystemPrompt,
-    bool? IsEnabled);
+    bool? IsEnabled,
+    long? DailyTokenLimit);
 
 public sealed record McpDefinitionRequest(
     string? Slug,
@@ -177,3 +181,28 @@ public sealed record McpDefinitionRequest(
     string? Command,
     List<string>? Args,
     bool? IsEnabled);
+
+public sealed record ProviderDailyUsageDto(
+    string Provider,
+    long TotalTokens,
+    long DailyLimit,
+    double UsagePercent) : IApiPayload;
+
+public sealed record AgentDailyUsageDto(
+    string AgentSlug,
+    long TotalTokens,
+    long? DailyLimit,
+    double? UsagePercent) : IApiPayload;
+
+public sealed record TokenUsageSummaryDto(
+    IReadOnlyList<ProviderDailyUsageDto> Providers,
+    IReadOnlyList<AgentDailyUsageDto> Agents) : IApiPayload;
+
+public sealed record TokenUsageDataPointDto(
+    string Bucket,
+    string AgentSlug,
+    long TotalTokens);
+
+public sealed record TokenUsageHistoryDto(
+    string Period,
+    IReadOnlyList<TokenUsageDataPointDto> DataPoints) : IApiPayload;
