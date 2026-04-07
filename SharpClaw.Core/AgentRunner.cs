@@ -58,21 +58,19 @@ public sealed class AgentRunner : IAsyncDisposable
 
         foreach (var server in _mcpServers)
         {
-            var launch = McpServerRegistry.ResolveLaunch(server, _workspacePath);
+            var displayInfo = server.IsRemote ? server.Url! : McpServerRegistry.ResolveLaunch(server, _workspacePath).DisplayCommand;
+
             _logger?.LogInformation(
-                "Starting MCP {McpSlug} ({McpName}) with command {McpCommand}.",
+                server.IsRemote
+                    ? "Connecting to remote MCP {McpSlug} ({McpName}) at {McpEndpoint}."
+                    : "Starting MCP {McpSlug} ({McpName}) with command {McpEndpoint}.",
                 server.Slug,
                 server.Name,
-                launch.DisplayCommand);
+                displayInfo);
 
             try
             {
-                var transport = new StdioClientTransport(new StdioClientTransportOptions
-                {
-                    Command = launch.Command,
-                    Arguments = launch.Arguments.ToList(),
-                    Name = server.Slug,
-                });
+                var transport = McpServerRegistry.Resolve(server, _workspacePath);
 
                 var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
                 _mcpClients.Add(client);
@@ -88,7 +86,7 @@ public sealed class AgentRunner : IAsyncDisposable
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 throw new IOException(
-                    $"Failed to initialize MCP '{server.Slug}' using {launch.DisplayCommand}. {ex.Message}",
+                    $"Failed to initialize MCP '{server.Slug}' using {displayInfo}. {ex.Message}",
                     ex);
             }
         }

@@ -14,6 +14,7 @@ function blankMcp(): McpUpsertRequest {
     command: 'npx',
     args: ['-y'],
     isEnabled: true,
+    url: null,
   };
 }
 
@@ -25,6 +26,7 @@ function toForm(mcp: McpDefinition): McpUpsertRequest {
     command: mcp.command,
     args: [...mcp.args],
     isEnabled: mcp.isEnabled,
+    url: mcp.url,
   };
 }
 
@@ -156,8 +158,9 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
         slug: form.slug.trim(),
         name: form.name.trim(),
         description: form.description.trim(),
-        command: form.command.trim(),
-        args: parseArgs(argsText),
+        command: form.url ? '' : form.command.trim(),
+        args: form.url ? [] : parseArgs(argsText),
+        url: form.url ? form.url.trim() : null,
       };
 
       const saved = selectedMcp
@@ -284,8 +287,8 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
                   <p className="agent-card-description">{mcp.description}</p>
 
                   <div className="agent-meta-grid">
-                    <span className="mcp-card-command">{mcp.command}</span>
-                    <span>{mcp.args.length} arg{mcp.args.length === 1 ? '' : 's'}</span>
+                    <span className="mcp-card-command">{mcp.url ?? mcp.command}</span>
+                    {!mcp.url && <span>{mcp.args.length} arg{mcp.args.length === 1 ? '' : 's'}</span>}
                     <span>{mcp.linkedAgentCount} linked agent{mcp.linkedAgentCount === 1 ? '' : 's'}</span>
                   </div>
 
@@ -362,25 +365,59 @@ export function McpConfigView({ onMenuClick }: McpConfigViewProps) {
               />
             </label>
 
-            <label>
-              <span>Command</span>
-              <input
-                value={form.command}
-                onChange={event => setForm(prev => ({ ...prev, command: event.target.value }))}
-                placeholder="npx"
-              />
-            </label>
+            <div className="agent-form-row two-up">
+              <label>
+                <span>Transport</span>
+                <select
+                  value={form.url !== null ? 'remote' : 'stdio'}
+                  onChange={event => {
+                    if (event.target.value === 'remote') {
+                      setForm(prev => ({ ...prev, url: '', command: '', args: [] }));
+                      setArgsText('[]');
+                    } else {
+                      setForm(prev => ({ ...prev, url: null, command: 'npx', args: ['-y'] }));
+                      setArgsText(formatArgs(['-y']));
+                    }
+                  }}
+                >
+                  <option value="stdio">Stdio (local command)</option>
+                  <option value="remote">Remote (HTTP/SSE URL)</option>
+                </select>
+              </label>
+            </div>
 
-            <label>
-              <span>Args (JSON Array)</span>
-              <textarea
-                className="json-textarea"
-                value={argsText}
-                onChange={event => setArgsText(event.target.value)}
-                rows={8}
-                placeholder={'[\n  "-y",\n  "@modelcontextprotocol/server-github"\n]'}
-              />
-            </label>
+            {form.url !== null ? (
+              <label>
+                <span>URL</span>
+                <input
+                  value={form.url}
+                  onChange={event => setForm(prev => ({ ...prev, url: event.target.value }))}
+                  placeholder="https://mcp.example.com/sse"
+                />
+              </label>
+            ) : (
+              <>
+                <label>
+                  <span>Command</span>
+                  <input
+                    value={form.command}
+                    onChange={event => setForm(prev => ({ ...prev, command: event.target.value }))}
+                    placeholder="npx"
+                  />
+                </label>
+
+                <label>
+                  <span>Args (JSON Array)</span>
+                  <textarea
+                    className="json-textarea"
+                    value={argsText}
+                    onChange={event => setArgsText(event.target.value)}
+                    rows={8}
+                    placeholder={'[\n  "-y",\n  "@modelcontextprotocol/server-github"\n]'}
+                  />
+                </label>
+              </>
+            )}
 
             <div className="mcp-selection-panel">
               <div className="agent-permissions-header">

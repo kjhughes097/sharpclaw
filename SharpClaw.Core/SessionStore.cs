@@ -202,6 +202,7 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NOT NULL DEFAULT 1000000;
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NULL;
+            ALTER TABLE mcps ADD COLUMN IF NOT EXISTS url TEXT NULL;
 
             CREATE TABLE IF NOT EXISTS token_usage_alerts (
                 id SERIAL PRIMARY KEY,
@@ -227,8 +228,8 @@ public sealed class SessionStore : IDisposable
         {
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
-                INSERT INTO mcps (slug, name, description, command, args, is_enabled)
-                VALUES (@slug, @name, @description, @command, @args, @is_enabled)
+                INSERT INTO mcps (slug, name, description, command, args, is_enabled, url)
+                VALUES (@slug, @name, @description, @command, @args, @is_enabled, @url)
                 ON CONFLICT (slug) DO UPDATE
                 SET description = CASE
                         WHEN mcps.description = '' THEN EXCLUDED.description
@@ -241,6 +242,10 @@ public sealed class SessionStore : IDisposable
                     args = CASE
                         WHEN mcps.args = '[]'::jsonb THEN EXCLUDED.args
                         ELSE mcps.args
+                    END,
+                    url = CASE
+                        WHEN mcps.url IS NULL THEN EXCLUDED.url
+                        ELSE mcps.url
                     END
                 """;
             WriteMcpParameters(cmd, seed);
@@ -687,7 +692,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT slug, name, description, command, args::text, is_enabled
+            SELECT slug, name, description, command, args::text, is_enabled, url
             FROM mcps
             WHERE @include_disabled OR is_enabled = TRUE
             ORDER BY name
@@ -737,7 +742,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT slug, name, description, command, args::text, is_enabled
+            SELECT slug, name, description, command, args::text, is_enabled, url
             FROM mcps
             WHERE slug = @slug
             """;
@@ -752,8 +757,8 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO mcps (slug, name, description, command, args, is_enabled)
-            VALUES (@slug, @name, @description, @command, @args, @is_enabled)
+            INSERT INTO mcps (slug, name, description, command, args, is_enabled, url)
+            VALUES (@slug, @name, @description, @command, @args, @is_enabled, @url)
             """;
         WriteMcpParameters(cmd, mcp);
         cmd.ExecuteNonQuery();
@@ -769,7 +774,8 @@ public sealed class SessionStore : IDisposable
                 description = @description,
                 command = @command,
                 args = @args,
-                is_enabled = @is_enabled
+                is_enabled = @is_enabled,
+                url = @url
             WHERE slug = @slug
             """;
         WriteMcpParameters(cmd, mcp with { Slug = slug });
@@ -1239,7 +1245,8 @@ public sealed class SessionStore : IDisposable
             Description: reader.GetString(2),
             Command: reader.GetString(3),
             Args: args,
-            IsEnabled: reader.GetBoolean(5));
+            IsEnabled: reader.GetBoolean(5),
+            Url: reader.IsDBNull(6) ? null : reader.GetString(6));
     }
 
     private static void WriteAgentParameters(NpgsqlCommand cmd, AgentRecord agent)
@@ -1264,6 +1271,7 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("command", mcp.Command);
         cmd.Parameters.Add("args", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(mcp.Args, JsonOpts);
         cmd.Parameters.AddWithValue("is_enabled", mcp.IsEnabled);
+        cmd.Parameters.AddWithValue("url", (object?)mcp.Url ?? DBNull.Value);
     }
 
     private static string? NormalizeOptionalString(string? value)

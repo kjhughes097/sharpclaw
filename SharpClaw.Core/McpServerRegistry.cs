@@ -41,9 +41,20 @@ public static class McpServerRegistry
 
     /// <summary>
     /// Returns an <see cref="IClientTransport"/> for a stored MCP server definition.
+    /// Uses <see cref="HttpClientTransport"/> for remote (URL-based) servers, and
+    /// <see cref="StdioClientTransport"/> for local (command-based) servers.
     /// </summary>
     public static IClientTransport Resolve(McpServerRecord server, string? workspacePath = null)
     {
+        if (server.IsRemote)
+        {
+            return new HttpClientTransport(new HttpClientTransportOptions
+            {
+                Endpoint = new Uri(server.Url!),
+                Name = server.Slug,
+            });
+        }
+
         var launch = ResolveLaunch(server, workspacePath);
 
         return new StdioClientTransport(new StdioClientTransportOptions
@@ -56,6 +67,9 @@ public static class McpServerRegistry
 
     public static McpLaunchInfo ResolveLaunch(McpServerRecord server, string? workspacePath = null)
     {
+        if (server.IsRemote)
+            return new McpLaunchInfo(string.Empty, [], server.Url!);
+
         if (string.IsNullOrWhiteSpace(server.Command))
             throw new ArgumentException($"MCP '{server.Slug}' has no command configured.");
 
