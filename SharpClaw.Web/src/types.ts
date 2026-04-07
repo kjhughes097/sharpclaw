@@ -277,3 +277,17 @@ export interface TokenUsageHistory {
     period: string;
     dataPoints: TokenUsageDataPoint[];
 }
+
+/* ── Workspace browser types ─────────────────────────────────────────────── */
+
+export interface WorkspaceEntry {
+    name: string;
+    type: 'file' | 'directory';
+    size: number | null;
+    lastModified: string | null;
+}
+
+export interface WorkspaceBrowseResponse {
+    path: string;
+    entries: WorkspaceEntry[];
+}
