@@ -417,6 +417,8 @@ public sealed class SessionStore : IDisposable
                 { "filesystem.search_*", "auto_approve" },
                 { "filesystem.create_*", "auto_approve" },
                 { "filesystem.write_*", "auto_approve" },
+                { "filesystem.edit_*", "auto_approve" },
+                { "filesystem.directory_*", "auto_approve" },
                 { "filesystem.delete_*", "ask" },
                 { "github.read_*", "auto_approve" },
                 { "github.search_*", "auto_approve" },
