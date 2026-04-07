@@ -107,7 +107,8 @@ internal static class ApiMapper
             mcp.Command,
             mcp.Args,
             mcp.IsEnabled,
-            linkedAgentCount);
+            linkedAgentCount,
+            mcp.Url);
 
     internal static BackendModelsResponse ToBackendModelsDto(
         IReadOnlyList<BackendModelInfo> models,
@@ -169,9 +170,10 @@ internal static class ApiMapper
         Slug: slugOverride ?? req.Slug!.Trim(),
         Name: req.Name!.Trim(),
         Description: req.Description!.Trim(),
-        Command: req.Command!.Trim(),
+        Command: (req.Command ?? string.Empty).Trim(),
         Args: NormalizeStringList(req.Args),
-        IsEnabled: req.IsEnabled ?? true);
+        IsEnabled: req.IsEnabled ?? true,
+        Url: string.IsNullOrWhiteSpace(req.Url) ? null : req.Url.Trim());
 
     internal static string BuildDirectResponseSystemPrompt(AgentRecord agentRecord)
     {

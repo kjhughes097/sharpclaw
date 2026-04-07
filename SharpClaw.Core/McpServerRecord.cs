@@ -9,4 +9,11 @@ public sealed record McpServerRecord(
     string Description,
     string Command,
     IReadOnlyList<string> Args,
-    bool IsEnabled);
+    bool IsEnabled,
+    string? Url = null)
+{
+    /// <summary>
+    /// True when this MCP is configured as a remote HTTP/SSE server rather than a local stdio process.
+    /// </summary>
+    public bool IsRemote => !string.IsNullOrWhiteSpace(Url);
+}

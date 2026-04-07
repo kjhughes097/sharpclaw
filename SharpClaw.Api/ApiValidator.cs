@@ -45,8 +45,20 @@ internal static class ApiValidator
             return "name is required.";
         if (string.IsNullOrWhiteSpace(req.Description))
             return "description is required.";
-        if (string.IsNullOrWhiteSpace(req.Command))
-            return "command is required.";
+
+        var hasCommand = !string.IsNullOrWhiteSpace(req.Command);
+        var hasUrl = !string.IsNullOrWhiteSpace(req.Url);
+
+        if (!hasCommand && !hasUrl)
+            return "Either command or url is required.";
+        if (hasCommand && hasUrl)
+            return "command and url cannot both be set. Use command for stdio MCPs or url for remote HTTP/SSE MCPs.";
+
+        if (hasUrl && !Uri.TryCreate(req.Url, UriKind.Absolute, out var uri))
+            return "url must be a valid absolute URI (e.g. https://example.com/sse).";
+        else if (hasUrl && Uri.TryCreate(req.Url, UriKind.Absolute, out var parsedUri)
+                 && parsedUri.Scheme != "http" && parsedUri.Scheme != "https")
+            return "url must use the http or https scheme.";
 
         return null;
     }

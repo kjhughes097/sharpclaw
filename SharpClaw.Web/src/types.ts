@@ -103,6 +103,7 @@ export interface McpDefinition {
     args: string[];
     isEnabled: boolean;
     linkedAgentCount: number;
+    url: string | null;
 }
 
 export interface McpUpsertRequest {
@@ -112,6 +113,7 @@ export interface McpUpsertRequest {
     command: string;
     args: string[];
     isEnabled: boolean;
+    url: string | null;
 }
 
 export interface TelegramSettings {

@@ -52,7 +52,8 @@ public sealed record McpDto(
     string Command,
     IReadOnlyList<string> Args,
     bool IsEnabled,
-    int LinkedAgentCount) : IApiPayload;
+    int LinkedAgentCount,
+    string? Url) : IApiPayload;
 
 public sealed record BackendModelDto(string Id, string DisplayName);
 
@@ -180,7 +181,8 @@ public sealed record McpDefinitionRequest(
     string? Description,
     string? Command,
     List<string>? Args,
-    bool? IsEnabled);
+    bool? IsEnabled,
+    string? Url);
 
 public sealed record ProviderDailyUsageDto(
     string Provider,
