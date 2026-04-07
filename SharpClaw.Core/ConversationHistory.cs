@@ -11,11 +11,13 @@ public sealed class ConversationHistory
 
     public string SessionId { get; }
     public string AgentSlug { get; }
+    public bool RoutingComplete { get; }
 
-    public ConversationHistory(string sessionId, string agentSlug)
+    public ConversationHistory(string sessionId, string agentSlug, bool routingComplete = false)
     {
         SessionId = sessionId;
         AgentSlug = agentSlug;
+        RoutingComplete = routingComplete;
     }
 
     public IReadOnlyList<ChatMessage> Messages => _messages;

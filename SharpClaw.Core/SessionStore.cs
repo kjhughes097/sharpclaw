@@ -198,6 +198,7 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT FALSE;
             ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS api_key TEXT NULL;
             ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS routing_complete BOOLEAN NOT NULL DEFAULT FALSE;
             ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NOT NULL DEFAULT 1000000;
@@ -1289,24 +1290,29 @@ public sealed class SessionStore : IDisposable
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "SELECT agent_slug FROM sessions WHERE session_id = @sid";
+        cmd.CommandText = "SELECT agent_slug, routing_complete FROM sessions WHERE session_id = @sid";
         cmd.Parameters.AddWithValue("sid", sessionId);
 
-        var agentSlug = cmd.ExecuteScalar() as string;
-        if (agentSlug is null)
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
             return null;
 
-        var history = new ConversationHistory(sessionId, agentSlug);
+        var agentSlug = reader.GetString(0);
+        var routingComplete = reader.GetBoolean(1);
+
+        reader.Close();
+
+        var history = new ConversationHistory(sessionId, agentSlug, routingComplete);
 
         using var msgCmd = conn.CreateCommand();
         msgCmd.CommandText = "SELECT role, content FROM messages WHERE session_id = @sid ORDER BY id";
         msgCmd.Parameters.AddWithValue("sid", sessionId);
 
-        using var reader = msgCmd.ExecuteReader();
-        while (reader.Read())
+        using var msgReader = msgCmd.ExecuteReader();
+        while (msgReader.Read())
         {
-            var role = Enum.Parse<ChatRole>(reader.GetString(0), ignoreCase: true);
-            var content = reader.GetString(1);
+            var role = Enum.Parse<ChatRole>(msgReader.GetString(0), ignoreCase: true);
+            var content = msgReader.GetString(1);
             history.AddRange([new ChatMessage(role, content)]);
         }
 
@@ -1347,8 +1353,20 @@ public sealed class SessionStore : IDisposable
     {
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = "UPDATE sessions SET agent_slug = @slug WHERE session_id = @sid";
+        cmd.CommandText = "UPDATE sessions SET agent_slug = @slug, routing_complete = TRUE WHERE session_id = @sid";
         cmd.Parameters.AddWithValue("slug", agentSlug);
+        cmd.Parameters.AddWithValue("sid", sessionId);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Marks routing as complete for a session without changing the agent assignment.
+    /// </summary>
+    public void MarkRoutingComplete(string sessionId)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE sessions SET routing_complete = TRUE WHERE session_id = @sid";
         cmd.Parameters.AddWithValue("sid", sessionId);
         cmd.ExecuteNonQuery();
     }

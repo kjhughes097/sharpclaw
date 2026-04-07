@@ -121,7 +121,8 @@ public sealed class SessionRuntimeService(
         if (conversation is null)
             return new ApiResponse<IApiPayload>(StatusCodes.Status404NotFound, new ErrorResponse($"Session '{sessionId}' not found."));
 
-        var isAdeSession = conversation.AgentSlug.Equals(ApiMapper.AdeAgentId, StringComparison.OrdinalIgnoreCase);
+        var isAdeSession = conversation.AgentSlug.Equals(ApiMapper.AdeAgentId, StringComparison.OrdinalIgnoreCase)
+            && !conversation.RoutingComplete;
 
         AgentRunner? runner = null;
         if (!isAdeSession && !_runners.TryGetValue(sessionId, out runner))
@@ -132,6 +133,17 @@ public sealed class SessionRuntimeService(
                 return new ApiResponse<IApiPayload>(
                     StatusCodes.Status404NotFound,
                     new ErrorResponse($"Agent definition '{conversation.AgentSlug}' not found."));
+            }
+
+            // When Ade previously decided to handle a session directly,
+            // use the direct-response system prompt instead of the routing prompt.
+            if (conversation.RoutingComplete
+                && conversation.AgentSlug.Equals(ApiMapper.AdeAgentId, StringComparison.OrdinalIgnoreCase))
+            {
+                agentRecord = agentRecord with
+                {
+                    SystemPrompt = ApiMapper.BuildDirectResponseSystemPrompt(agentRecord),
+                };
             }
 
             runner = CreateRunner(agentRecord);
@@ -382,6 +394,9 @@ public sealed class SessionRuntimeService(
                     turnRunner = directAdeRunner;
                     disposeTurnRunner = true;
                     _runners[sessionId] = turnRunner;
+
+                    // Persist routing decision so future messages skip re-routing.
+                    store.MarkRoutingComplete(sessionId);
                 }
 
                 logger.LogInformation(
