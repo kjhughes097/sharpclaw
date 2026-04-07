@@ -1,4 +1,4 @@
-import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, HeartbeatSettings, UpdateHeartbeatSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest, TokenUsageSummary, TokenUsageHistory } from './types';
+import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, HeartbeatSettings, UpdateHeartbeatSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest, TokenUsageSummary, TokenUsageHistory, WorkspaceBrowseResponse } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -358,6 +358,13 @@ export async function fetchTokenUsageSummary(): Promise<TokenUsageSummary> {
 export async function fetchTokenUsageHistory(period: string = 'week'): Promise<TokenUsageHistory> {
     const res = await fetch(`${BASE}/token-usage/history?period=${encodeURIComponent(period)}`, { headers: headers() });
     if (!res.ok) throw new Error(await readError(res, `GET /token-usage/history: ${res.status}`));
+    return res.json();
+}
+
+export async function fetchWorkspaceContents(path?: string): Promise<WorkspaceBrowseResponse> {
+    const params = path ? `?path=${encodeURIComponent(path)}` : '';
+    const res = await fetch(`${BASE}/workspace/browse${params}`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /workspace/browse: ${res.status}`));
     return res.json();
 }
 

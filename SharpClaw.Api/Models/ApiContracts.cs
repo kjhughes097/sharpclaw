@@ -222,3 +222,13 @@ public sealed record TokenUsageDataPointDto(
 public sealed record TokenUsageHistoryDto(
     string Period,
     IReadOnlyList<TokenUsageDataPointDto> DataPoints) : IApiPayload;
+
+public sealed record WorkspaceEntryDto(
+    string Name,
+    string Type,
+    long? Size,
+    DateTimeOffset? LastModified);
+
+public sealed record WorkspaceBrowseResponse(
+    string Path,
+    IReadOnlyList<WorkspaceEntryDto> Entries) : IApiPayload;

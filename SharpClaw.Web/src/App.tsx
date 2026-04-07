@@ -7,6 +7,7 @@ import { TelegramConfigView } from './TelegramConfigView';
 import { AppSettingsConfigView } from './AppSettingsConfigView';
 import { HeartbeatConfigView } from './HeartbeatConfigView';
 import { TokenUsageView } from './TokenUsageView';
+import { WorkspaceBrowserView } from './WorkspaceBrowserView';
 import { Sidebar } from './Sidebar';
 import { ChatView } from './ChatView';
 import { LoginScreen } from './LoginScreen';
@@ -29,7 +30,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
-  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app' | 'heartbeat' | 'token-usage'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app' | 'heartbeat' | 'token-usage' | 'workspace'>('chat');
   const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, send } = useChat(authed === true);
   const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 
@@ -173,6 +174,11 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
+  const handleShowWorkspace = useCallback(() => {
+    setCurrentView('workspace');
+    setSidebarOpen(false);
+  }, []);
+
   const handleShowChats = useCallback(() => {
     setCurrentView('chat');
     setSidebarOpen(false);
@@ -213,6 +219,7 @@ export function App() {
           onShowApp={handleShowApp}
           onShowHeartbeat={handleShowHeartbeat}
           onShowTokenUsage={handleShowTokenUsage}
+          onShowWorkspace={handleShowWorkspace}
           theme={theme}
           onToggleTheme={toggleTheme}
           isOpen={sidebarOpen}
@@ -233,6 +240,8 @@ export function App() {
           <HeartbeatConfigView onMenuClick={() => setSidebarOpen(true)} />
         ) : currentView === 'token-usage' ? (
           <TokenUsageView onMenuClick={() => setSidebarOpen(true)} />
+        ) : currentView === 'workspace' ? (
+          <WorkspaceBrowserView onMenuClick={() => setSidebarOpen(true)} />
         ) : active ? (
           <ChatView
             state={active}
