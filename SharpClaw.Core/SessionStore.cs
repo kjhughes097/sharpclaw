@@ -6,7 +6,7 @@ namespace SharpClaw.Core;
 
 public sealed record StoredSession(string SessionId, string AgentSlug, DateTimeOffset CreatedAt, DateTimeOffset LastActivityAt);
 public sealed record StoredEventLogItem(AgentEvent Event, ToolResultEvent? Result);
-public sealed record HeartbeatSettings(bool Enabled, int IntervalSeconds, int StuckThresholdSeconds);
+public sealed record HeartbeatSettings(bool Enabled, int IntervalSeconds, int StuckThresholdSeconds, bool AutoCleanupEnabled, int AutoCleanupThresholdSeconds);
 
 /// <summary>
 /// Persists conversation history and agent definitions in a PostgreSQL database.
@@ -21,6 +21,8 @@ public sealed class SessionStore : IDisposable
     private const string HeartbeatEnabledKey = "heartbeat_enabled";
     private const string HeartbeatIntervalKey = "heartbeat_interval_seconds";
     private const string HeartbeatThresholdKey = "heartbeat_stuck_threshold_seconds";
+    private const string HeartbeatAutoCleanupEnabledKey = "heartbeat_auto_cleanup_enabled";
+    private const string HeartbeatAutoCleanupThresholdKey = "heartbeat_auto_cleanup_threshold_seconds";
     private readonly NpgsqlDataSource _dataSource;
 
     public static string DefaultWorkspacePath()
@@ -971,11 +973,13 @@ public sealed class SessionStore : IDisposable
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT key, value FROM app_settings
-            WHERE key IN (@k1, @k2, @k3)
+            WHERE key IN (@k1, @k2, @k3, @k4, @k5)
             """;
         cmd.Parameters.AddWithValue("k1", HeartbeatEnabledKey);
         cmd.Parameters.AddWithValue("k2", HeartbeatIntervalKey);
         cmd.Parameters.AddWithValue("k3", HeartbeatThresholdKey);
+        cmd.Parameters.AddWithValue("k4", HeartbeatAutoCleanupEnabledKey);
+        cmd.Parameters.AddWithValue("k5", HeartbeatAutoCleanupThresholdKey);
 
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         using var reader = cmd.ExecuteReader();
@@ -985,7 +989,9 @@ public sealed class SessionStore : IDisposable
         return new HeartbeatSettings(
             Enabled: values.TryGetValue(HeartbeatEnabledKey, out var e) && bool.TryParse(e, out var enabled) ? enabled : true,
             IntervalSeconds: values.TryGetValue(HeartbeatIntervalKey, out var i) && int.TryParse(i, out var interval) && interval > 0 ? interval : 300,
-            StuckThresholdSeconds: values.TryGetValue(HeartbeatThresholdKey, out var t) && int.TryParse(t, out var threshold) && threshold > 0 ? threshold : 600);
+            StuckThresholdSeconds: values.TryGetValue(HeartbeatThresholdKey, out var t) && int.TryParse(t, out var threshold) && threshold > 0 ? threshold : 600,
+            AutoCleanupEnabled: values.TryGetValue(HeartbeatAutoCleanupEnabledKey, out var ace) && bool.TryParse(ace, out var autoCleanup) ? autoCleanup : true,
+            AutoCleanupThresholdSeconds: values.TryGetValue(HeartbeatAutoCleanupThresholdKey, out var act) && int.TryParse(act, out var autoThreshold) && autoThreshold > 0 ? autoThreshold : 1200);
     }
 
     public void UpsertHeartbeatSettings(HeartbeatSettings settings)
@@ -995,6 +1001,8 @@ public sealed class SessionStore : IDisposable
             (HeartbeatEnabledKey, settings.Enabled.ToString()),
             (HeartbeatIntervalKey, Math.Max(1, settings.IntervalSeconds).ToString()),
             (HeartbeatThresholdKey, Math.Max(1, settings.StuckThresholdSeconds).ToString()),
+            (HeartbeatAutoCleanupEnabledKey, settings.AutoCleanupEnabled.ToString()),
+            (HeartbeatAutoCleanupThresholdKey, Math.Max(1, settings.AutoCleanupThresholdSeconds).ToString()),
         };
 
         using var conn = _dataSource.OpenConnection();

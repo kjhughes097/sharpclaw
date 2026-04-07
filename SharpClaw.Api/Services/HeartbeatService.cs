@@ -5,6 +5,8 @@ namespace SharpClaw.Api.Services;
 /// <summary>
 /// Background service that periodically checks for stuck sessions — those with
 /// active in-memory runners or streams but no recent activity — and logs diagnostics.
+/// When auto-cleanup is enabled, sessions idle beyond the auto-cleanup threshold are
+/// automatically cleaned up by disposing their runners and completing their streams.
 /// Settings are loaded from the database on each tick so changes take effect without a restart.
 /// </summary>
 public sealed class HeartbeatService(
@@ -34,7 +36,7 @@ public sealed class HeartbeatService(
                     continue;
 
                 var threshold = TimeSpan.FromSeconds(cfg.StuckThresholdSeconds);
-                RunCheck(threshold);
+                await RunCheckAsync(threshold, cfg);
 
                 nextRunAt = DateTimeOffset.UtcNow.AddSeconds(cfg.IntervalSeconds);
             }
@@ -45,7 +47,7 @@ public sealed class HeartbeatService(
         }
     }
 
-    private void RunCheck(TimeSpan threshold)
+    private async Task RunCheckAsync(TimeSpan threshold, HeartbeatSettings cfg)
     {
         var report = runtime.GetDiagnostics(threshold);
 
@@ -55,18 +57,42 @@ public sealed class HeartbeatService(
             report.ActiveStreamCount,
             report.StuckSessions.Count);
 
+        var autoCleanupThreshold = cfg.AutoCleanupEnabled
+            ? TimeSpan.FromSeconds(cfg.AutoCleanupThresholdSeconds)
+            : (TimeSpan?)null;
+
         foreach (var stuck in report.StuckSessions)
         {
-            logger.LogWarning(
-                "Stuck session detected: {SessionId} (agent: {AgentSlug}). " +
-                "Last activity: {LastActivity}, idle for {IdleMinutes:F1} minute(s). " +
-                "Has runner: {HasRunner}, has streams: {HasStreams}.",
-                stuck.SessionId,
-                stuck.AgentSlug,
-                stuck.LastActivityAt,
-                stuck.IdleSeconds / 60.0,
-                stuck.HasRunner,
-                stuck.HasStreams);
+            var shouldAutoCleanup = autoCleanupThreshold.HasValue && stuck.IdleSeconds >= autoCleanupThreshold.Value.TotalSeconds;
+
+            if (shouldAutoCleanup)
+            {
+                logger.LogWarning(
+                    "Auto-cleaning stuck session: {SessionId} (agent: {AgentSlug}). " +
+                    "Last activity: {LastActivity}, idle for {IdleMinutes:F1} minute(s). " +
+                    "Has runner: {HasRunner}, has streams: {HasStreams}.",
+                    stuck.SessionId,
+                    stuck.AgentSlug,
+                    stuck.LastActivityAt,
+                    stuck.IdleSeconds / 60.0,
+                    stuck.HasRunner,
+                    stuck.HasStreams);
+
+                await runtime.CleanupSessionAsync(stuck.SessionId);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Stuck session detected: {SessionId} (agent: {AgentSlug}). " +
+                    "Last activity: {LastActivity}, idle for {IdleMinutes:F1} minute(s). " +
+                    "Has runner: {HasRunner}, has streams: {HasStreams}.",
+                    stuck.SessionId,
+                    stuck.AgentSlug,
+                    stuck.LastActivityAt,
+                    stuck.IdleSeconds / 60.0,
+                    stuck.HasRunner,
+                    stuck.HasStreams);
+            }
         }
     }
 }

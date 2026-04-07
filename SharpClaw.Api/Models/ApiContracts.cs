@@ -128,7 +128,9 @@ public sealed record AppSettingsDto(string WorkspacePath) : IApiPayload;
 public sealed record HeartbeatSettingsDto(
     bool Enabled,
     int IntervalSeconds,
-    int StuckThresholdSeconds) : IApiPayload;
+    int StuckThresholdSeconds,
+    bool AutoCleanupEnabled,
+    int AutoCleanupThresholdSeconds) : IApiPayload;
 
 public sealed record CreateSessionRequest(string? AgentId);
 
@@ -162,7 +164,9 @@ public sealed record UpdateAppSettingsRequest(
 public sealed record UpdateHeartbeatSettingsRequest(
     bool? Enabled,
     int? IntervalSeconds,
-    int? StuckThresholdSeconds);
+    int? StuckThresholdSeconds,
+    bool? AutoCleanupEnabled,
+    int? AutoCleanupThresholdSeconds);
 
 public sealed record SetupAuthRequest(
     string? Username,

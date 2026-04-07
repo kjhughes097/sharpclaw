@@ -109,6 +109,46 @@ export async function updateHeartbeatSettings(payload: UpdateHeartbeatSettingsRe
     return res.json();
 }
 
+export interface HeartbeatDiagnostics {
+    activeRunnerCount: number;
+    activeStreamCount: number;
+    stuckSessions: StuckSessionInfo[];
+    checkedAt: string;
+}
+
+export interface StuckSessionInfo {
+    sessionId: string;
+    agentSlug: string;
+    lastActivityAt: string;
+    idleSeconds: number;
+    hasRunner: boolean;
+    hasStreams: boolean;
+}
+
+export async function fetchHeartbeatDiagnostics(): Promise<HeartbeatDiagnostics> {
+    const res = await fetch(`${BASE}/diagnostics/heartbeat`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /diagnostics/heartbeat: ${res.status}`));
+    return res.json();
+}
+
+export async function cleanupStuckSession(sessionId: string): Promise<{ sessionId: string; cleanedUp: boolean }> {
+    const res = await fetch(`${BASE}/diagnostics/heartbeat/cleanup/${encodeURIComponent(sessionId)}`, {
+        method: 'POST',
+        headers: headers(),
+    });
+    if (!res.ok) throw new Error(await readError(res, `POST /diagnostics/heartbeat/cleanup/${sessionId}: ${res.status}`));
+    return res.json();
+}
+
+export async function cleanupAllStuckSessions(): Promise<{ cleanedUp: number; sessionIds: string[] }> {
+    const res = await fetch(`${BASE}/diagnostics/heartbeat/cleanup`, {
+        method: 'POST',
+        headers: headers(),
+    });
+    if (!res.ok) throw new Error(await readError(res, `POST /diagnostics/heartbeat/cleanup: ${res.status}`));
+    return res.json();
+}
+
 export async function fetchMcps(): Promise<McpDefinition[]> {
     const res = await fetch(`${BASE}/mcps`, { headers: headers() });
     if (!res.ok) throw new Error(`GET /mcps: ${res.status}`);

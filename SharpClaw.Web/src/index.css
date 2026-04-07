@@ -2173,3 +2173,39 @@ body {
   border-radius: var(--radius);
   padding: 16px 8px 8px;
 }
+
+/* ── Heartbeat diagnostics table ────────────────────────────────────────── */
+
+.heartbeat-diagnostics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.heartbeat-diagnostics-table th,
+.heartbeat-diagnostics-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.heartbeat-diagnostics-table th {
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.heartbeat-diagnostics-table td {
+  font-family: var(--font-mono, monospace);
+}
+
+.heartbeat-diagnostics-table td:last-child {
+  text-align: right;
+}
+
+.heartbeat-diagnostics-table .secondary-btn {
+  font-size: 0.78rem;
+  padding: 3px 10px;
+}
