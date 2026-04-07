@@ -1434,7 +1434,7 @@ public sealed class SessionStore : IDisposable
             """;
         cmd.Parameters.AddWithValue("provider", provider);
         cmd.Parameters.AddWithValue("date", date);
-        return (long)(cmd.ExecuteScalar() ?? 0L);
+        return Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
     }
 
     /// <summary>
@@ -1451,7 +1451,7 @@ public sealed class SessionStore : IDisposable
             """;
         cmd.Parameters.AddWithValue("agent_slug", agentSlug);
         cmd.Parameters.AddWithValue("date", date);
-        return (long)(cmd.ExecuteScalar() ?? 0L);
+        return Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
     }
 
     /// <summary>
@@ -1534,7 +1534,7 @@ public sealed class SessionStore : IDisposable
             dataPoints.Add(new TokenUsageDataPoint(
                 Bucket: reader.GetString(0),
                 AgentSlug: reader.GetString(1),
-                TotalTokens: reader.GetInt64(2)));
+                TotalTokens: Convert.ToInt64(reader.GetValue(2))));
         }
 
         return dataPoints;
