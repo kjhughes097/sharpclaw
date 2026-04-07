@@ -29,6 +29,7 @@ builder.Services.AddSingleton<BackendRegistry>();
 builder.Services.AddSingleton<BackendSettingsService>();
 builder.Services.AddSingleton<BackendModelService>();
 builder.Services.AddSingleton<SessionRuntimeService>();
+builder.Services.AddHostedService<HeartbeatService>();
 builder.Services.AddSingleton<PasswordHashService>();
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<AuthService>();

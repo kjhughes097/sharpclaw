@@ -76,6 +76,22 @@ export interface UpdateAppSettingsRequest {
     clearWorkspacePath?: boolean;
 }
 
+export interface HeartbeatSettings {
+    enabled: boolean;
+    intervalSeconds: number;
+    stuckThresholdSeconds: number;
+    autoCleanupEnabled: boolean;
+    autoCleanupThresholdSeconds: number;
+}
+
+export interface UpdateHeartbeatSettingsRequest {
+    enabled?: boolean;
+    intervalSeconds?: number;
+    stuckThresholdSeconds?: number;
+    autoCleanupEnabled?: boolean;
+    autoCleanupThresholdSeconds?: number;
+}
+
 export interface AuthStatus {
     isConfigured: boolean;
 }

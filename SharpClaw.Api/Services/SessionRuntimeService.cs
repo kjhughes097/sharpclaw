@@ -23,6 +23,54 @@ public sealed class SessionRuntimeService(
     public bool HasActiveStreams(string sessionId)
         => _messageStreams.Keys.Any(key => key.StartsWith($"{sessionId}/", StringComparison.Ordinal));
 
+    /// <summary>
+    /// Produces a diagnostics snapshot identifying sessions with active in-memory
+    /// runners or streams whose last persisted activity exceeds the given threshold.
+    /// </summary>
+    public HeartbeatReport GetDiagnostics(TimeSpan stuckThreshold)
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        // Collect session IDs that hold in-memory resources.
+        var activeSessionIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var id in _runners.Keys)
+            activeSessionIds.Add(id);
+        foreach (var key in _messageStreams.Keys)
+        {
+            var slashIndex = key.IndexOf('/', StringComparison.Ordinal);
+            if (slashIndex > 0)
+                activeSessionIds.Add(key[..slashIndex]);
+        }
+
+        // Load persisted sessions to resolve activity timestamps.
+        var allSessions = store.ListSessions().ToDictionary(s => s.SessionId, StringComparer.Ordinal);
+
+        var stuckSessions = new List<StuckSessionInfo>();
+        foreach (var sessionId in activeSessionIds)
+        {
+            allSessions.TryGetValue(sessionId, out var stored);
+            var lastActivity = stored?.LastActivityAt ?? DateTimeOffset.MinValue;
+            var idle = now - lastActivity;
+
+            if (idle >= stuckThreshold)
+            {
+                stuckSessions.Add(new StuckSessionInfo(
+                    SessionId: sessionId,
+                    AgentSlug: stored?.AgentSlug ?? "unknown",
+                    LastActivityAt: lastActivity,
+                    IdleSeconds: idle.TotalSeconds,
+                    HasRunner: _runners.ContainsKey(sessionId),
+                    HasStreams: HasActiveStreams(sessionId)));
+            }
+        }
+
+        return new HeartbeatReport(
+            ActiveRunnerCount: _runners.Count,
+            ActiveStreamCount: _messageStreams.Count,
+            StuckSessions: stuckSessions,
+            CheckedAt: now);
+    }
+
     public async Task CleanupSessionAsync(string sessionId)
     {
         if (_runners.TryRemove(sessionId, out var runner))
