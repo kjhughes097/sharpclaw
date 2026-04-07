@@ -454,13 +454,19 @@ public sealed class SessionRuntimeService(
 
                 if (percent >= 90)
                 {
-                    channel.Writer.TryWrite(new StatusEvent(
-                        $"⛔ Token usage for '{usage.Provider}' is at {percent:F0}% of the daily limit ({providerTotal:N0}/{backendSettings.DailyTokenLimit:N0})."));
+                    var message = $"⛔ Token usage for '{usage.Provider}' is at {percent:F0}% of the daily limit ({providerTotal:N0}/{backendSettings.DailyTokenLimit:N0}).";
+                    channel.Writer.TryWrite(new StatusEvent(message));
+
+                    if (store.TryRecordThresholdAlert(usage.Provider, today, 90))
+                        _ = Task.Run(() => SendTelegramAlertAsync(message));
                 }
                 else if (percent >= 75)
                 {
-                    channel.Writer.TryWrite(new StatusEvent(
-                        $"⚠️ Token usage for '{usage.Provider}' is at {percent:F0}% of the daily limit ({providerTotal:N0}/{backendSettings.DailyTokenLimit:N0})."));
+                    var message = $"⚠️ Token usage for '{usage.Provider}' is at {percent:F0}% of the daily limit ({providerTotal:N0}/{backendSettings.DailyTokenLimit:N0}).";
+                    channel.Writer.TryWrite(new StatusEvent(message));
+
+                    if (store.TryRecordThresholdAlert(usage.Provider, today, 75))
+                        _ = Task.Run(() => SendTelegramAlertAsync(message));
                 }
             }
         }
@@ -468,6 +474,51 @@ public sealed class SessionRuntimeService(
         {
             logger.LogWarning(ex, "Failed to record or check token usage for provider '{Provider}', agent '{AgentSlug}'.",
                 usage.Provider, agentSlug);
+        }
+    }
+
+    private async Task SendTelegramAlertAsync(string message)
+    {
+        try
+        {
+            var telegramSettings = store.GetTelegramIntegrationSettings();
+            if (!telegramSettings.IsEnabled || string.IsNullOrWhiteSpace(telegramSettings.BotToken))
+                return;
+
+            if (telegramSettings.AllowedUserIds.Count == 0)
+                return;
+
+            using var httpClient = new HttpClient();
+            foreach (var chatId in telegramSettings.AllowedUserIds)
+            {
+                try
+                {
+                    var url = $"https://api.telegram.org/bot{telegramSettings.BotToken}/sendMessage";
+                    var payload = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        chat_id = chatId,
+                        text = $"🔔 SharpClaw Token Alert\n\n{message}",
+                    });
+
+                    using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                    var response = await httpClient.PostAsync(url, content);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        logger.LogWarning(
+                            "Failed to send Telegram alert to chat {ChatId}: {StatusCode}",
+                            chatId, response.StatusCode);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to send Telegram alert to chat {ChatId}", chatId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send Telegram token usage alerts");
         }
     }
 }

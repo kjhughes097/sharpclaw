@@ -202,6 +202,15 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NOT NULL DEFAULT 1000000;
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NULL;
+
+            CREATE TABLE IF NOT EXISTS token_usage_alerts (
+                id SERIAL PRIMARY KEY,
+                provider TEXT NOT NULL,
+                usage_date DATE NOT NULL,
+                threshold INT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (provider, usage_date, threshold)
+            );
             """;
         cmd.ExecuteNonQuery();
 
@@ -1387,6 +1396,26 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("output_tokens", outputTokens);
         cmd.Parameters.AddWithValue("total_tokens", inputTokens + outputTokens);
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Returns true and inserts the alert record if this is the first time a
+    /// threshold has been crossed for this provider on this date. Returns false
+    /// if the alert was already recorded.
+    /// </summary>
+    public bool TryRecordThresholdAlert(string provider, DateOnly date, int threshold)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO token_usage_alerts (provider, usage_date, threshold)
+            VALUES (@provider, @date, @threshold)
+            ON CONFLICT (provider, usage_date, threshold) DO NOTHING
+            """;
+        cmd.Parameters.AddWithValue("provider", provider);
+        cmd.Parameters.AddWithValue("date", date);
+        cmd.Parameters.AddWithValue("threshold", threshold);
+        return cmd.ExecuteNonQuery() > 0;
     }
 
     /// <summary>
