@@ -5,7 +5,7 @@ namespace SharpClaw.Api;
 
 internal static class ApiMapper
 {
-    internal const string AdeAgentId = "ade.agent.md";
+    internal const string AdeAgentId = "ade";
 
     internal static string CreateAgentId(string name)
     {
@@ -69,7 +69,8 @@ internal static class ApiMapper
             HasBotToken: !string.IsNullOrWhiteSpace(settings.BotToken),
             MaskedBotToken: MaskToken(settings.BotToken),
             AllowedUserIds: settings.AllowedUserIds,
-            AllowedUsernames: settings.AllowedUsernames);
+            AllowedUsernames: settings.AllowedUsernames,
+            MappingStorePath: settings.MappingStorePath ?? SessionStore.DefaultTelegramMappingStorePath());
     }
 
     internal static PersonaDto ToPersonaDto(AgentRecord agent) =>
@@ -95,7 +96,8 @@ internal static class ApiMapper
             agent.PermissionPolicy,
             agent.SystemPrompt,
             agent.IsEnabled,
-            sessionCount);
+            sessionCount,
+            agent.DailyTokenLimit);
 
     internal static McpDto ToMcpDto(McpServerRecord mcp, int linkedAgentCount) =>
         new(
@@ -108,7 +110,7 @@ internal static class ApiMapper
             linkedAgentCount);
 
     internal static BackendModelsResponse ToBackendModelsDto(
-        IReadOnlyList<(string Id, string DisplayName)> models,
+        IReadOnlyList<BackendModelInfo> models,
         string source,
         DateTimeOffset? cachedAt = null,
         string? warning = null) =>
@@ -117,6 +119,16 @@ internal static class ApiMapper
             source,
             cachedAt,
             warning);
+
+    internal static BackendSettingsDto ToBackendSettingsDto(BackendIntegrationSettings settings, bool requiresApiKey) =>
+        new(
+            settings.Backend,
+            settings.IsEnabled,
+            !string.IsNullOrWhiteSpace(settings.ApiKey),
+            MaskToken(settings.ApiKey),
+            requiresApiKey,
+            settings.UpdatedAt,
+            settings.DailyTokenLimit);
 
     internal static SessionDto ToSessionDto(SessionStore store, StoredSession session, Dictionary<string, AgentRecord> agentsBySlug)
     {
@@ -150,7 +162,8 @@ internal static class ApiMapper
             .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
             .ToDictionary(kvp => kvp.Key.Trim(), kvp => kvp.Value.Trim(), StringComparer.OrdinalIgnoreCase),
         SystemPrompt: req.SystemPrompt!.Trim(),
-        IsEnabled: req.IsEnabled ?? true);
+        IsEnabled: req.IsEnabled ?? true,
+        DailyTokenLimit: req.DailyTokenLimit);
 
     internal static McpServerRecord ToMcpRecord(McpDefinitionRequest req, string? slugOverride = null) => new(
         Slug: slugOverride ?? req.Slug!.Trim(),

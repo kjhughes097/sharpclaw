@@ -1,5 +1,6 @@
-using Anthropic;
 using ModelContextProtocol.Client;
+using System.IO;
+using Microsoft.Extensions.Logging;
 
 namespace SharpClaw.Core;
 
@@ -15,6 +16,8 @@ public sealed class AgentRunner : IAsyncDisposable
     private readonly AgentPersona _persona;
     private readonly IReadOnlyList<McpServerRecord> _mcpServers;
     private readonly Func<AgentPersona, PermissionGate, IAgentBackend>? _backendFactory;
+    private readonly ILogger? _logger;
+    private readonly string? _workspacePath;
     private readonly List<McpClient> _mcpClients = [];
     private readonly List<ToolSchema> _toolSchemas = [];
     private readonly Dictionary<string, ResolvedTool> _toolClientMap = [];
@@ -26,11 +29,15 @@ public sealed class AgentRunner : IAsyncDisposable
     public AgentRunner(
         AgentPersona persona,
         IReadOnlyList<McpServerRecord>? mcpServers = null,
-        Func<AgentPersona, PermissionGate, IAgentBackend>? backendFactory = null)
+        Func<AgentPersona, PermissionGate, IAgentBackend>? backendFactory = null,
+        string? workspacePath = null,
+        ILogger? logger = null)
     {
         _persona = persona;
         _mcpServers = mcpServers ?? [];
         _backendFactory = backendFactory;
+        _workspacePath = workspacePath;
+        _logger = logger;
     }
 
     public AgentPersona Persona => _persona;
@@ -51,16 +58,38 @@ public sealed class AgentRunner : IAsyncDisposable
 
         foreach (var server in _mcpServers)
         {
-            var transport = McpServerRegistry.Resolve(server);
-            var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
-            _mcpClients.Add(client);
+            var launch = McpServerRegistry.ResolveLaunch(server, _workspacePath);
+            _logger?.LogInformation(
+                "Starting MCP {McpSlug} ({McpName}) with command {McpCommand}.",
+                server.Slug,
+                server.Name,
+                launch.DisplayCommand);
 
-            var tools = await client.ListToolsAsync(cancellationToken: ct);
-            foreach (var t in tools)
+            try
             {
-                var namespacedToolName = CreateToolName(server.Slug, t.Name);
-                _toolSchemas.Add(t.ToToolSchema(namespacedToolName));
-                _toolClientMap[namespacedToolName] = new ResolvedTool(client, t.Name);
+                var transport = new StdioClientTransport(new StdioClientTransportOptions
+                {
+                    Command = launch.Command,
+                    Arguments = launch.Arguments.ToList(),
+                    Name = server.Slug,
+                });
+
+                var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
+                _mcpClients.Add(client);
+
+                var tools = await client.ListToolsAsync(cancellationToken: ct);
+                foreach (var t in tools)
+                {
+                    var namespacedToolName = CreateToolName(server.Slug, t.Name);
+                    _toolSchemas.Add(t.ToToolSchema(namespacedToolName));
+                    _toolClientMap[namespacedToolName] = new ResolvedTool(client, t.Name);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new IOException(
+                    $"Failed to initialize MCP '{server.Slug}' using {launch.DisplayCommand}. {ex.Message}",
+                    ex);
             }
         }
 
@@ -161,25 +190,11 @@ public sealed class AgentRunner : IAsyncDisposable
         if (_backendFactory is not null)
             return _backendFactory(persona, permissionGate);
 
-        return persona.Backend switch
-        {
-            "anthropic" => CreateAnthropicBackend(persona.Model),
-            _ => throw new InvalidOperationException(
-                $"Unknown backend '{persona.Backend}'. Register a backendFactory to support it."),
-        };
+        throw new InvalidOperationException(
+            $"Unknown backend '{persona.Backend}'. Register a backendFactory to support it.");
     }
 
-    private static AnthropicBackend CreateAnthropicBackend(string model)
-    {
-        var apiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            throw new InvalidOperationException("ANTHROPIC_API_KEY environment variable is not set.");
-
-        var anthropic = new AnthropicClient(new Anthropic.Core.ClientOptions { ApiKey = apiKey });
-        return new AnthropicBackend(anthropic, string.IsNullOrWhiteSpace(model) ? "claude-haiku-4-5-20251001" : model);
-    }
-
-    private static string CreateToolName(string mcpSlug, string rawToolName) => $"{mcpSlug}.{rawToolName}";
+    private static string CreateToolName(string mcpSlug, string rawToolName) => $"{mcpSlug}-{rawToolName}";
 
     public async ValueTask DisposeAsync()
     {

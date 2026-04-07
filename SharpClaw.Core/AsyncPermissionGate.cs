@@ -67,9 +67,13 @@ public sealed class AsyncPermissionGate
 
     private ToolPermission ResolvePermission(string toolName)
     {
-        foreach (var candidate in GetCandidates(toolName))
+        // Iterate rules in priority order (first match wins), trying all
+        // candidate forms of the tool name against each rule. This ensures
+        // specific rules like 'filesystem.write_*' match before a '*' catch-all.
+        var candidates = GetCandidates(toolName).ToList();
+        foreach (var (pattern, permission) in _rules)
         {
-            foreach (var (pattern, permission) in _rules)
+            foreach (var candidate in candidates)
             {
                 if (pattern.IsMatch(candidate))
                     return permission;
@@ -82,11 +86,20 @@ public sealed class AsyncPermissionGate
     {
         yield return toolName;
 
-        var separatorIndex = toolName.IndexOf('.');
-        if (separatorIndex <= 0 || separatorIndex >= toolName.Length - 1)
-            yield break;
+        // Tool names use '-' as the namespace separator (e.g. filesystem-write_file)
+        // but permission policies use '.' (e.g. filesystem.write_*). Yield a
+        // dot-normalized form so patterns match correctly.
+        var hyphenIndex = toolName.IndexOf('-');
+        if (hyphenIndex > 0 && hyphenIndex < toolName.Length - 1)
+        {
+            var dotNormalized = string.Concat(toolName.AsSpan(0, hyphenIndex), ".", toolName.AsSpan(hyphenIndex + 1));
+            yield return dotNormalized;
+            yield return toolName[(hyphenIndex + 1)..];
+        }
 
-        yield return toolName[(separatorIndex + 1)..];
+        var dotIndex = toolName.IndexOf('.');
+        if (dotIndex > 0 && dotIndex < toolName.Length - 1)
+            yield return toolName[(dotIndex + 1)..];
     }
 
     private static bool Denied(string toolName)

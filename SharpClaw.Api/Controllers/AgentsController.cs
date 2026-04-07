@@ -9,6 +9,7 @@ namespace SharpClaw.Api.Controllers;
 [Route("api")]
 public sealed class AgentsController(
     SessionStore store,
+    BackendSettingsService backendSettingsService,
     BackendModelService backendModelService,
     SessionRuntimeService runtimeService) : ControllerBase
 {
@@ -16,7 +17,9 @@ public sealed class AgentsController(
     [ProducesResponseType<List<PersonaDto>>(StatusCodes.Status200OK)]
     public IActionResult GetPersonas()
     {
+        var enabledBackends = backendSettingsService.EnabledBackendNames();
         var personas = store.ListAgents(includeDisabled: false)
+            .Where(agent => enabledBackends.Contains(agent.Backend))
             .Select(ApiMapper.ToPersonaDto)
             .ToList();
 
@@ -35,6 +38,22 @@ public sealed class AgentsController(
         return Ok(agents);
     }
 
+    [HttpGet("backends/settings")]
+    [ProducesResponseType<List<BackendSettingsDto>>(StatusCodes.Status200OK)]
+    public IActionResult GetBackendSettings()
+    {
+        return Ok(backendSettingsService.ListSettings());
+    }
+
+    [HttpPut("backends/settings/{backend}")]
+    [ProducesResponseType<BackendSettingsDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
+    public IActionResult UpdateBackendSettings(string backend, [FromBody] UpdateBackendSettingsRequest req)
+    {
+        var response = backendSettingsService.UpdateSettings(backend, req);
+        return StatusCode(response.StatusCode, response.Payload);
+    }
+
     [HttpGet("backends/{backend}/models")]
     [ProducesResponseType<BackendModelsResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status400BadRequest)]
@@ -51,7 +70,7 @@ public sealed class AgentsController(
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status409Conflict)]
     public IActionResult CreateAgent([FromBody] AgentDefinitionRequest req)
     {
-        var error = ApiValidator.ValidateAgentRequest(store, req);
+        var error = ApiValidator.ValidateAgentRequest(store, backendSettingsService.EnabledBackendNames(), req);
         if (error is not null)
             return BadRequest(new ErrorResponse(error));
 
@@ -71,7 +90,7 @@ public sealed class AgentsController(
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
     public IActionResult UpdateAgent(string slug, [FromBody] AgentDefinitionRequest req)
     {
-        var error = ApiValidator.ValidateAgentRequest(store, req);
+        var error = ApiValidator.ValidateAgentRequest(store, backendSettingsService.EnabledBackendNames(), req);
         if (error is not null)
             return BadRequest(new ErrorResponse(error));
 

@@ -13,6 +13,12 @@
 #   4. Creates the PostgreSQL role and database defined in .env
 #      (reads POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB from .env if present)
 #
+# Note:
+#   - This script does NOT install Docker.
+#   - The seeded DuckDuckGo MCP uses `docker run -i --rm mcp/duckduckgo`, so
+#     install Docker separately if you want DuckDuckGo search available in
+#     local Linux runs.
+#
 # Usage:
 #   chmod +x scripts/install-linux.sh
 #   sudo ./scripts/install-linux.sh
@@ -242,6 +248,15 @@ echo "       ./scripts/start-backend.sh"
 echo ""
 echo "  2. Start the frontend dev server (in a separate terminal):"
 echo "       ./scripts/start-frontend.sh"
+echo ""
+echo "  3. (Optional) Run the Telegram worker:"
+echo "       configure token/settings in SharpClaw UI: Configure > Telegram"
+echo "       export SHARPCLAW_API_URL=http://localhost:5000"
+echo "       export SHARPCLAW_API_TOKEN=<jwt-bearer-token>"
+echo "       dotnet run --project SharpClaw.Telegram"
+echo ""
+echo "  4. (Optional) Install Docker if you want the built-in DuckDuckGo MCP:"
+echo "       the seeded MCP launches with: docker run -i --rm mcp/duckduckgo"
 echo ""
 echo "  See the 'Running Locally on Linux' section of README.md for details."
 echo ""

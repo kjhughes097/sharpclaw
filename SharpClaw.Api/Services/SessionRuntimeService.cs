@@ -2,17 +2,16 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
-using Anthropic;
-using Anthropic.Core;
 using SharpClaw.Api.Models;
-using SharpClaw.Copilot;
 using SharpClaw.Core;
-using SharpClaw.OpenAI;
-using SharpClaw.OpenRouter;
 
 namespace SharpClaw.Api.Services;
 
-public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRuntimeService> logger)
+public sealed class SessionRuntimeService(
+    SessionStore store,
+    BackendRegistry backendRegistry,
+    BackendSettingsService backendSettingsService,
+    ILogger<SessionRuntimeService> logger)
 {
     private readonly ConcurrentDictionary<string, AgentRunner> _runners = new();
     private readonly ConcurrentDictionary<string, Channel<AgentEvent>> _messageStreams = new();
@@ -99,9 +98,25 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
         var sessionId = Guid.NewGuid().ToString("N")[..12];
         store.CreateSession(sessionId, agentRecord.Slug);
 
-        var runner = CreateRunner(agentRecord);
-        await runner.InitializeAsync(ct);
-        _runners[sessionId] = runner;
+        try
+        {
+            var runner = CreateRunner(agentRecord);
+            await runner.InitializeAsync(ct);
+            _runners[sessionId] = runner;
+        }
+        catch (InvalidOperationException ex)
+        {
+            store.DeleteSession(sessionId);
+            return new ApiResponse<IApiPayload>(StatusCodes.Status409Conflict, new ErrorResponse(ex.Message));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to initialize session runner for agent '{AgentId}'", agentRecord.Slug);
+            store.DeleteSession(sessionId);
+            return new ApiResponse<IApiPayload>(
+                StatusCodes.Status500InternalServerError,
+                new ErrorResponse($"Failed to initialize agent '{agentRecord.Slug}'. Check MCP configuration and runtime dependencies."));
+        }
 
         return new ApiResponse<IApiPayload>(
             StatusCodes.Status200OK,
@@ -168,7 +183,22 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
             }
 
             runner = CreateRunner(agentRecord);
-            await runner.InitializeAsync(ct);
+            try
+            {
+                await runner.InitializeAsync(ct);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return new ApiResponse<IApiPayload>(StatusCodes.Status409Conflict, new ErrorResponse(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to initialize session runner for agent '{AgentId}'", agentRecord.Slug);
+                return new ApiResponse<IApiPayload>(
+                    StatusCodes.Status500InternalServerError,
+                    new ErrorResponse($"Failed to initialize agent '{agentRecord.Slug}'. Check MCP configuration and runtime dependencies."));
+            }
+
             _runners[sessionId] = runner;
         }
 
@@ -222,28 +252,18 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
     {
         var persona = agentRecord.ToPersona();
         var mcps = store.ListMcpsBySlug(agentRecord.McpServers, includeDisabled: false);
-        return new AgentRunner(persona, mcps, CreateBackend);
+        return new AgentRunner(persona, mcps, CreateBackend, store.GetWorkspacePath(), logger: logger);
     }
 
-    private IAgentBackend CreateBackend(AgentPersona persona, PermissionGate gate) => persona.Backend switch
+    private IAgentBackend CreateBackend(AgentPersona persona, PermissionGate gate)
     {
-        "anthropic" => new AnthropicBackend(new AnthropicClient(new ClientOptions
-        {
-            ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")
-                ?? throw new InvalidOperationException("ANTHROPIC_API_KEY is not set."),
-        }), string.IsNullOrWhiteSpace(persona.Model) ? "claude-haiku-4-5-20251001" : persona.Model),
-        "copilot" => new CopilotBackend(gate,
-            Environment.GetEnvironmentVariable("SHARPCLAW_WORKSPACE") ?? Environment.CurrentDirectory),
-        "openai" => new OpenAIBackend(
-            Environment.GetEnvironmentVariable("OPENAI_API_KEY")
-                ?? throw new InvalidOperationException("OPENAI_API_KEY is not set."),
-            string.IsNullOrWhiteSpace(persona.Model) ? "gpt-4o-mini" : persona.Model),
-        "openrouter" => new OpenRouterBackend(
-            Environment.GetEnvironmentVariable("OPENROUTER_API_KEY")
-                ?? throw new InvalidOperationException("OPENROUTER_API_KEY is not set."),
-            string.IsNullOrWhiteSpace(persona.Model) ? "openai/gpt-4o-mini" : persona.Model),
-        _ => throw new InvalidOperationException($"Unknown backend '{persona.Backend}'."),
-    };
+        backendSettingsService.EnsureBackendConfigured(persona.Backend);
+
+        if (!backendRegistry.TryGet(persona.Backend, out var provider))
+            throw new InvalidOperationException($"Unknown backend '{persona.Backend}'.");
+
+        return provider.CreateBackend(persona, gate);
+    }
 
     private async Task RunMessageTurnAsync(
         string sessionId,
@@ -259,6 +279,36 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
 
         try
         {
+            // ── Token limit pre-check ────────────────────────────────────
+            var agentRecord = store.GetAgent(conversation.AgentSlug);
+            if (agentRecord is not null)
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var backendSettings = store.GetBackendIntegrationSettings(agentRecord.Backend);
+
+                if (backendSettings is not null)
+                {
+                    var providerUsage = store.GetDailyProviderTokenUsage(agentRecord.Backend, today);
+                    if (providerUsage >= backendSettings.DailyTokenLimit)
+                    {
+                        channel.Writer.TryWrite(new DoneEvent(
+                            $"Daily token limit reached for provider '{agentRecord.Backend}' ({providerUsage:N0}/{backendSettings.DailyTokenLimit:N0} tokens). Try again tomorrow."));
+                        return;
+                    }
+                }
+
+                if (agentRecord.DailyTokenLimit.HasValue)
+                {
+                    var agentUsage = store.GetDailyAgentTokenUsage(agentRecord.Slug, today);
+                    if (agentUsage >= agentRecord.DailyTokenLimit.Value)
+                    {
+                        channel.Writer.TryWrite(new DoneEvent(
+                            $"Daily token limit reached for agent '{agentRecord.Name}' ({agentUsage:N0}/{agentRecord.DailyTokenLimit.Value:N0} tokens). Try again tomorrow."));
+                        return;
+                    }
+                }
+            }
+
             var assistantIndex = conversation.Messages.Count(item => item.Role == ChatRole.Assistant);
             var persistedEventLog = new List<StoredEventLogItem>();
 
@@ -289,6 +339,7 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
                         break;
                     case UsageEvent usage:
                         persistedEventLog.Add(new StoredEventLogItem(usage, null));
+                        RecordAndCheckTokenUsage(usage, conversation.AgentSlug, channel);
                         break;
                     case PermissionRequestEvent permissionRequest:
                         persistedEventLog.Add(new StoredEventLogItem(permissionRequest, null));
@@ -329,13 +380,11 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
                     sessionId,
                     messageId);
 
+                var adePersona = adeRecord.ToPersona();
+
                 var routingAgent = new RoutingAgent(
-                    new AnthropicBackend(new AnthropicClient(
-                        new ClientOptions
-                        {
-                            ApiKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY")!
-                        })),
-                    adeRecord.ToPersona());
+                    CreateBackend(adePersona, new PermissionGate(adePersona.PermissionPolicy)),
+                    adePersona);
 
                 var decision = await routingAgent.RouteAsync(message, availableAgents);
 
@@ -355,8 +404,11 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
                         var specialistRunner = CreateRunner(specialistRecord);
                         await specialistRunner.InitializeAsync(CancellationToken.None);
                         turnRunner = specialistRunner;
-                        disposeTurnRunner = true;
                         _runners[sessionId] = turnRunner;
+
+                        // Persist the agent assignment so future messages go directly
+                        // to this specialist without re-routing through Ade.
+                        store.UpdateSessionAgent(sessionId, specialistRecord.Slug);
 
                         if (decision.RewrittenPrompt is not null)
                             conversation.ReplaceLastUser(decision.RewrittenPrompt);
@@ -432,6 +484,89 @@ public sealed class SessionRuntimeService(SessionStore store, ILogger<SessionRun
             }
 
             channel.Writer.TryComplete();
+        }
+    }
+
+    private void RecordAndCheckTokenUsage(UsageEvent usage, string agentSlug, Channel<AgentEvent> channel)
+    {
+        try
+        {
+            store.RecordTokenUsage(usage.Provider, agentSlug, usage.InputTokens, usage.OutputTokens);
+
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var backendSettings = store.GetBackendIntegrationSettings(usage.Provider);
+            if (backendSettings is not null && backendSettings.DailyTokenLimit > 0)
+            {
+                var providerTotal = store.GetDailyProviderTokenUsage(usage.Provider, today);
+                var percent = (double)providerTotal / backendSettings.DailyTokenLimit * 100;
+
+                if (percent >= 90)
+                {
+                    var message = $"⛔ Token usage for '{usage.Provider}' is at {percent:F0}% of the daily limit ({providerTotal:N0}/{backendSettings.DailyTokenLimit:N0}).";
+                    channel.Writer.TryWrite(new StatusEvent(message));
+
+                    if (store.TryRecordThresholdAlert(usage.Provider, today, 90))
+                        _ = Task.Run(() => SendTelegramAlertAsync(message));
+                }
+                else if (percent >= 75)
+                {
+                    var message = $"⚠️ Token usage for '{usage.Provider}' is at {percent:F0}% of the daily limit ({providerTotal:N0}/{backendSettings.DailyTokenLimit:N0}).";
+                    channel.Writer.TryWrite(new StatusEvent(message));
+
+                    if (store.TryRecordThresholdAlert(usage.Provider, today, 75))
+                        _ = Task.Run(() => SendTelegramAlertAsync(message));
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to record or check token usage for provider '{Provider}', agent '{AgentSlug}'.",
+                usage.Provider, agentSlug);
+        }
+    }
+
+    private async Task SendTelegramAlertAsync(string message)
+    {
+        try
+        {
+            var telegramSettings = store.GetTelegramIntegrationSettings();
+            if (!telegramSettings.IsEnabled || string.IsNullOrWhiteSpace(telegramSettings.BotToken))
+                return;
+
+            if (telegramSettings.AllowedUserIds.Count == 0)
+                return;
+
+            using var httpClient = new HttpClient();
+            foreach (var chatId in telegramSettings.AllowedUserIds)
+            {
+                try
+                {
+                    var url = $"https://api.telegram.org/bot{telegramSettings.BotToken}/sendMessage";
+                    var payload = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        chat_id = chatId,
+                        text = $"🔔 SharpClaw Token Alert\n\n{message}",
+                    });
+
+                    using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                    var response = await httpClient.PostAsync(url, content);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        logger.LogWarning(
+                            "Failed to send Telegram alert to chat {ChatId}: {StatusCode}",
+                            chatId, response.StatusCode);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to send Telegram alert to chat {ChatId}", chatId);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to send Telegram token usage alerts");
         }
     }
 }

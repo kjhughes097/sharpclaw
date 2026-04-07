@@ -23,6 +23,7 @@ export interface AgentDefinition {
     systemPrompt: string;
     isEnabled: boolean;
     sessionCount: number;
+    dailyTokenLimit: number | null;
 }
 
 export interface AgentUpsertRequest {
@@ -34,6 +35,7 @@ export interface AgentUpsertRequest {
     permissionPolicy: Record<string, string>;
     systemPrompt: string;
     isEnabled: boolean;
+    dailyTokenLimit?: number | null;
 }
 
 export interface BackendModelOption {
@@ -46,6 +48,51 @@ export interface BackendModelListResponse {
     source: 'live' | 'cache';
     cachedAt: string | null;
     warning?: string | null;
+}
+
+export interface BackendSettings {
+    backend: string;
+    isEnabled: boolean;
+    hasApiKey: boolean;
+    maskedApiKey: string | null;
+    requiresApiKey: boolean;
+    updatedAt: string | null;
+    dailyTokenLimit: number;
+}
+
+export interface UpdateBackendSettingsRequest {
+    isEnabled: boolean;
+    apiKey?: string;
+    clearApiKey?: boolean;
+    dailyTokenLimit?: number;
+}
+
+export interface AppSettings {
+    workspacePath: string;
+}
+
+export interface UpdateAppSettingsRequest {
+    workspacePath?: string;
+    clearWorkspacePath?: boolean;
+}
+
+export interface AuthStatus {
+    isConfigured: boolean;
+}
+
+export interface AuthUser {
+    username: string;
+}
+
+export interface SetupAuthRequest {
+    username: string;
+    password: string;
+    confirmPassword: string;
+}
+
+export interface LoginRequest {
+    username: string;
+    password: string;
 }
 
 export interface McpDefinition {
@@ -73,6 +120,12 @@ export interface TelegramSettings {
     maskedBotToken: string | null;
     allowedUserIds: number[];
     allowedUsernames: string[];
+    mappingStorePath: string;
+}
+
+export interface TelegramWorkerToken {
+    token: string;
+    expiresAt: string;
 }
 
 export interface UpdateTelegramSettingsRequest {
@@ -81,6 +134,8 @@ export interface UpdateTelegramSettingsRequest {
     clearBotToken?: boolean;
     allowedUserIds: number[];
     allowedUsernames: string[];
+    mappingStorePath?: string;
+    clearMappingStorePath?: boolean;
 }
 
 export interface Session {
@@ -171,4 +226,36 @@ export interface StreamItem {
 export interface PersistedStreamItem {
     event: AgentEvent;
     result?: ToolResultEvent;
+}
+
+/* ── Token usage types ────────────────────────────────────────────────────── */
+
+export interface ProviderDailyUsage {
+    provider: string;
+    totalTokens: number;
+    dailyLimit: number;
+    usagePercent: number;
+}
+
+export interface AgentDailyUsage {
+    agentSlug: string;
+    totalTokens: number;
+    dailyLimit: number | null;
+    usagePercent: number | null;
+}
+
+export interface TokenUsageSummary {
+    providers: ProviderDailyUsage[];
+    agents: AgentDailyUsage[];
+}
+
+export interface TokenUsageDataPoint {
+    bucket: string;
+    agentSlug: string;
+    totalTokens: number;
+}
+
+export interface TokenUsageHistory {
+    period: string;
+    dataPoints: TokenUsageDataPoint[];
 }

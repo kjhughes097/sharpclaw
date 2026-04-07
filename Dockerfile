@@ -5,6 +5,7 @@ WORKDIR /src
 COPY SharpClaw.slnx .
 COPY SharpClaw.Core/SharpClaw.Core.csproj SharpClaw.Core/
 COPY SharpClaw.Copilot/SharpClaw.Copilot.csproj SharpClaw.Copilot/
+COPY SharpClaw.Anthropic/SharpClaw.Anthropic.csproj SharpClaw.Anthropic/
 COPY SharpClaw.OpenAI/SharpClaw.OpenAI.csproj SharpClaw.OpenAI/
 COPY SharpClaw.OpenRouter/SharpClaw.OpenRouter.csproj SharpClaw.OpenRouter/
 COPY SharpClaw.Api/SharpClaw.Api.csproj SharpClaw.Api/

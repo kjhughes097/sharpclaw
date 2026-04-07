@@ -14,18 +14,33 @@ public sealed record StoredEventLogItem(AgentEvent Event, ToolResultEvent? Resul
 public sealed class SessionStore : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOpts = new();
-    private const string AdeAgentId = "ade.agent.md";
-    private const string LegacyCoordinatorId = "coordinator.agent.md";
-    private static readonly string[] LegacySeededAgentIds =
-    [
-        "cody.agent.md",
-        "developer.agent.md",
-        "file-browser.agent.md",
-        "homelab.agent.md",
-        "home-assistant.agent.md",
-    ];
+    private const string AdeAgentId = "ade";
 
+    private const string WorkspacePathSettingKey = "workspace_path";
     private readonly NpgsqlDataSource _dataSource;
+
+    public static string DefaultWorkspacePath()
+    {
+        if (Directory.Exists("/workspace"))
+            return "/workspace";
+
+        if (Directory.Exists("/opt/sharpclaw/workspace"))
+            return "/opt/sharpclaw/workspace";
+
+        return Environment.CurrentDirectory;
+    }
+
+    public static string DefaultTelegramMappingStorePath()
+    {
+        if (Directory.Exists("/var/lib/sharpclaw"))
+            return "/var/lib/sharpclaw/telegram-session-mappings.json";
+
+        var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(baseDir))
+            baseDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+        return Path.Combine(baseDir, "sharpclaw", "telegram-session-mappings.json");
+    }
 
     public SessionStore(string connectionString)
     {
@@ -98,6 +113,42 @@ public sealed class SessionStore : IDisposable
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS backend_settings (
+                backend TEXT NOT NULL PRIMARY KEY,
+                is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                api_key TEXT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS auth_users (
+                username TEXT NOT NULL PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT NOT NULL PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id SERIAL PRIMARY KEY,
+                provider TEXT NOT NULL,
+                agent_slug TEXT NOT NULL,
+                usage_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                input_tokens BIGINT NOT NULL DEFAULT 0,
+                output_tokens BIGINT NOT NULL DEFAULT 0,
+                total_tokens BIGINT NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_token_usage_provider_date
+                ON token_usage (provider, usage_date);
+            CREATE INDEX IF NOT EXISTS idx_token_usage_agent_date
+                ON token_usage (agent_slug, usage_date);
+
             DO $$
             BEGIN
                 IF EXISTS (
@@ -142,14 +193,29 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS bot_token TEXT NULL;
             ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS allowed_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
             ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS allowed_usernames JSONB NOT NULL DEFAULT '[]'::jsonb;
+            ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS mapping_store_path TEXT NULL;
             ALTER TABLE integration_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+            ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS api_key TEXT NULL;
+            ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NOT NULL DEFAULT 1000000;
+            ALTER TABLE agents ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NULL;
+
+            CREATE TABLE IF NOT EXISTS token_usage_alerts (
+                id SERIAL PRIMARY KEY,
+                provider TEXT NOT NULL,
+                usage_date DATE NOT NULL,
+                threshold INT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (provider, usage_date, threshold)
+            );
             """;
         cmd.ExecuteNonQuery();
 
         SeedMcps(conn);
-        MigrateBuiltInAgents(conn);
         SeedAgents(conn);
-        MigratePermissionPolicies(conn);
     }
 
     /// <summary>
@@ -217,197 +283,6 @@ public sealed class SessionStore : IDisposable
         }
     }
 
-    private static void MigrateBuiltInAgents(NpgsqlConnection conn)
-    {
-        var adeSeed = BuiltInAgents.Single();
-
-        if (GetAgent(conn, LegacyCoordinatorId) is not null)
-        {
-            using var tx = conn.BeginTransaction();
-
-            using var updateSessions = conn.CreateCommand();
-            updateSessions.Transaction = tx;
-            updateSessions.CommandText = "UPDATE sessions SET agent_slug = @new_slug WHERE agent_slug = @old_slug";
-            updateSessions.Parameters.AddWithValue("new_slug", adeSeed.Slug);
-            updateSessions.Parameters.AddWithValue("old_slug", LegacyCoordinatorId);
-            updateSessions.ExecuteNonQuery();
-
-            using var renameAgent = conn.CreateCommand();
-            renameAgent.Transaction = tx;
-            renameAgent.CommandText = """
-                UPDATE agents
-                SET slug = @new_slug,
-                    name = @name,
-                    description = @description,
-                    system_prompt = @system_prompt
-                WHERE slug = @old_slug
-                  AND NOT EXISTS (SELECT 1 FROM agents WHERE slug = @new_slug)
-                """;
-            renameAgent.Parameters.AddWithValue("new_slug", adeSeed.Slug);
-            renameAgent.Parameters.AddWithValue("name", adeSeed.Name);
-            renameAgent.Parameters.AddWithValue("description", adeSeed.Description);
-            renameAgent.Parameters.AddWithValue("system_prompt", adeSeed.SystemPrompt);
-            renameAgent.Parameters.AddWithValue("old_slug", LegacyCoordinatorId);
-            renameAgent.ExecuteNonQuery();
-
-            using var deleteOldCoordinator = conn.CreateCommand();
-            deleteOldCoordinator.Transaction = tx;
-            deleteOldCoordinator.CommandText = "DELETE FROM agents WHERE slug = @old_slug AND EXISTS (SELECT 1 FROM agents WHERE slug = @new_slug)";
-            deleteOldCoordinator.Parameters.AddWithValue("old_slug", LegacyCoordinatorId);
-            deleteOldCoordinator.Parameters.AddWithValue("new_slug", adeSeed.Slug);
-            deleteOldCoordinator.ExecuteNonQuery();
-
-            tx.Commit();
-        }
-
-        using (var updateAde = conn.CreateCommand())
-        {
-            updateAde.CommandText = "UPDATE agents SET name = @name, description = @description, system_prompt = @system_prompt WHERE slug = @slug";
-            updateAde.Parameters.AddWithValue("slug", adeSeed.Slug);
-            updateAde.Parameters.AddWithValue("name", adeSeed.Name);
-            updateAde.Parameters.AddWithValue("description", adeSeed.Description);
-            updateAde.Parameters.AddWithValue("system_prompt", adeSeed.SystemPrompt);
-            updateAde.ExecuteNonQuery();
-        }
-
-        foreach (var legacyAgentId in LegacySeededAgentIds)
-            DeleteAgentAndSessions(conn, legacyAgentId);
-    }
-
-    private static AgentRecord? GetAgent(NpgsqlConnection conn, string slug)
-    {
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
-            FROM agents
-            WHERE slug = @slug
-            """;
-        cmd.Parameters.AddWithValue("slug", slug);
-
-        using var reader = cmd.ExecuteReader();
-        return reader.Read() ? ReadAgentRecord(reader) : null;
-    }
-
-    private static void DeleteAgentAndSessions(NpgsqlConnection conn, string slug)
-    {
-        using var tx = conn.BeginTransaction();
-
-        using var deleteEventLogs = conn.CreateCommand();
-        deleteEventLogs.Transaction = tx;
-        deleteEventLogs.CommandText = "DELETE FROM session_event_logs WHERE session_id IN (SELECT session_id FROM sessions WHERE agent_slug = @slug)";
-        deleteEventLogs.Parameters.AddWithValue("slug", slug);
-        deleteEventLogs.ExecuteNonQuery();
-
-        using var deleteMessages = conn.CreateCommand();
-        deleteMessages.Transaction = tx;
-        deleteMessages.CommandText = "DELETE FROM messages WHERE session_id IN (SELECT session_id FROM sessions WHERE agent_slug = @slug)";
-        deleteMessages.Parameters.AddWithValue("slug", slug);
-        deleteMessages.ExecuteNonQuery();
-
-        using var deleteSessions = conn.CreateCommand();
-        deleteSessions.Transaction = tx;
-        deleteSessions.CommandText = "DELETE FROM sessions WHERE agent_slug = @slug";
-        deleteSessions.Parameters.AddWithValue("slug", slug);
-        deleteSessions.ExecuteNonQuery();
-
-        using var deleteAgent = conn.CreateCommand();
-        deleteAgent.Transaction = tx;
-        deleteAgent.CommandText = "DELETE FROM agents WHERE slug = @slug";
-        deleteAgent.Parameters.AddWithValue("slug", slug);
-        deleteAgent.ExecuteNonQuery();
-
-        tx.Commit();
-    }
-
-    /// <summary>
-    /// Migrates legacy flat permission rules to namespaced MCP-aware rules when the target MCP can be inferred safely.
-    /// </summary>
-    private static void MigratePermissionPolicies(NpgsqlConnection conn)
-    {
-        using var selectCmd = conn.CreateCommand();
-        selectCmd.CommandText = """
-            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
-            FROM agents
-            ORDER BY created_at
-            """;
-
-        var agents = new List<AgentRecord>();
-        using (var reader = selectCmd.ExecuteReader())
-        {
-            while (reader.Read())
-                agents.Add(ReadAgentRecord(reader));
-        }
-
-        foreach (var agent in agents)
-        {
-            var migratedPolicy = MigratePermissionPolicy(agent.McpServers, agent.PermissionPolicy);
-            if (PoliciesEqual(agent.PermissionPolicy, migratedPolicy))
-                continue;
-
-            using var updateCmd = conn.CreateCommand();
-            updateCmd.CommandText = "UPDATE agents SET permission_policy = @permission_policy WHERE slug = @slug";
-            updateCmd.Parameters.AddWithValue("slug", agent.Slug);
-            updateCmd.Parameters.AddWithValue("permission_policy", JsonSerializer.Serialize(migratedPolicy, JsonOpts));
-            updateCmd.ExecuteNonQuery();
-        }
-    }
-
-    private static IReadOnlyDictionary<string, string> MigratePermissionPolicy(
-        IReadOnlyList<string> mcpServers,
-        IReadOnlyDictionary<string, string> permissionPolicy)
-    {
-        var migrated = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (pattern, value) in permissionPolicy)
-        {
-            var normalizedPattern = NormalizePermissionPattern(pattern, mcpServers);
-            if (!migrated.ContainsKey(normalizedPattern))
-                migrated[normalizedPattern] = value;
-        }
-
-        return migrated;
-    }
-
-    private static string NormalizePermissionPattern(string pattern, IReadOnlyList<string> mcpServers)
-    {
-        if (string.IsNullOrWhiteSpace(pattern) || pattern == "*" || pattern.Contains('.', StringComparison.Ordinal))
-            return pattern;
-
-        if (mcpServers.Count == 1)
-            return $"{mcpServers[0]}.{pattern}";
-
-        if (mcpServers.Contains("filesystem", StringComparer.OrdinalIgnoreCase) && LooksLikeFilesystemPattern(pattern))
-            return $"filesystem.{pattern}";
-
-        return pattern;
-    }
-
-    private static bool LooksLikeFilesystemPattern(string pattern)
-    {
-        return pattern.StartsWith("read", StringComparison.OrdinalIgnoreCase)
-            || pattern.StartsWith("list", StringComparison.OrdinalIgnoreCase)
-            || pattern.StartsWith("search", StringComparison.OrdinalIgnoreCase)
-            || pattern.StartsWith("get", StringComparison.OrdinalIgnoreCase)
-            || pattern.StartsWith("write", StringComparison.OrdinalIgnoreCase)
-            || pattern.StartsWith("create", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool PoliciesEqual(
-        IReadOnlyDictionary<string, string> left,
-        IReadOnlyDictionary<string, string> right)
-    {
-        if (left.Count != right.Count)
-            return false;
-
-        foreach (var (key, value) in left)
-        {
-            if (!right.TryGetValue(key, out var otherValue) || !string.Equals(value, otherValue, StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
-
-        return true;
-    }
-
     // ── Built-in agent seed data ──────────────────────────────────────────────
 
     private static readonly IReadOnlyList<McpServerRecord> BuiltInMcps =
@@ -417,7 +292,7 @@ public sealed class SessionStore : IDisposable
             Name: "Filesystem",
             Description: "Read and write files from allowed workspace directories.",
             Command: "npx",
-            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${SHARPCLAW_ALLOWED_DIRS}"],
+            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${WORKSPACE_PATH}"],
             IsEnabled: true),
 
         new McpServerRecord(
@@ -435,6 +310,22 @@ public sealed class SessionStore : IDisposable
             Command: "npx",
             Args: ["-y", "@modelcontextprotocol/server-github"],
             IsEnabled: true),
+
+        new McpServerRecord(
+            Slug: "duckduckgo",
+            Name: "DuckDuckGo",
+            Description: "Search the web and fetch page content using the Docker Catalog DuckDuckGo MCP server.",
+            Command: "docker",
+            Args: ["run", "-i", "--rm", "mcp/duckduckgo"],
+            IsEnabled: true),
+
+        new McpServerRecord(
+            Slug: "knowledge-base",
+            Name: "Knowledge Base",
+            Description: "Read and write journal entries, daily notes, meeting notes, and personal notes in the configured knowledge base directory.",
+            Command: "npx",
+            Args: ["-y", "@modelcontextprotocol/server-filesystem", "${SHARPCLAW_KNOWLEDGE_BASE}"],
+            IsEnabled: true),
     ];
 
     private static readonly IReadOnlyList<AgentRecord> BuiltInAgents =
@@ -445,8 +336,11 @@ public sealed class SessionStore : IDisposable
             Description: "A general assistant who helps directly, and hands work to a more suitable specialist when one is a better fit.",
             Backend: "anthropic",
             Model: "claude-haiku-4-5-20251001",
-            McpServers: [],
-            PermissionPolicy: new Dictionary<string, string>(),
+            McpServers: ["duckduckgo"],
+            PermissionPolicy: new Dictionary<string, string>
+            {
+                { "duckduckgo.*", "auto_approve" },
+            },
             SystemPrompt: """
                 You are Ade, a general assistant and aide. Help the user directly whenever you can.
 
@@ -464,6 +358,282 @@ public sealed class SessionStore : IDisposable
                 - Do NOT explain your choice. Output the JSON object only.
                 """,
             IsEnabled: true),
+
+        new AgentRecord(
+            Slug: "noah",
+            Name: "Noah",
+            Description: "Manages personal knowledge, work knowledge, meeting notes, and daily journal entries in Markdown using the knowledge-base MCP.",
+            Backend: "anthropic",
+            Model: "claude-haiku-4-5-20251001",
+            McpServers: ["knowledge-base", "duckduckgo"],
+            PermissionPolicy: new Dictionary<string, string>
+            {
+                { "knowledge-base.read_*", "auto_approve" },
+                { "knowledge-base.list_*", "auto_approve" },
+                { "knowledge-base.search_*", "auto_approve" },
+                { "knowledge-base.create_*", "auto_approve" },
+                { "knowledge-base.write_*", "auto_approve" },
+                { "knowledge-base.delete_*", "auto_approve" },
+                { "duckduckgo.*", "auto_approve" },
+                { "*", "ask" },
+            },
+            SystemPrompt: """
+                You are Noah, a knowledgebase manager optimized for fast, reliable note-taking.
+
+                Mission:
+                - Keep the user's knowledge base organized, searchable, and up to date.
+                - Manage personal notes, work knowledge, meeting notes, and daily journal entries.
+                - Produce and maintain high-quality Markdown notes.
+
+                Core behavior:
+                - Always use the `knowledge-base` MCP for knowledgebase work.
+                - Do not invent file paths or claim a note exists without checking via MCP tools.
+                - Operate at speed while maintaining safety through careful planning and clear reasoning.
+
+                Critical safety practice:
+                - **Before deleting or overwriting a note, ALWAYS:**
+                  1. Read the current content via MCP
+                  2. Show the user exactly what will be lost
+                  3. Ask for explicit confirmation with the user's exact action
+                  4. Only proceed after confirmed agreement
+                - You are trusted to execute create/write actions swiftly, but deletion/overwrite requires the user to see and approve.
+
+                Markdown standards:
+                - Write all note content in Markdown.
+                - Use clear headings, concise sections, and actionable bullet lists.
+                - Preferred structure for new notes:
+                  - `# Title`
+                  - `## Context`
+                  - `## Notes`
+                  - `## Actions`
+                  - `## Follow-ups`
+                - Use ISO dates (`YYYY-MM-DD`) for metadata and date references.
+
+                Knowledge organization:
+                - Classify requests into: personal, work, meeting (with date), or daily (with date).
+                - Reuse existing notes when appropriate instead of creating duplicates.
+                - Suggest a canonical path/filename if none is provided.
+                - For meetings: capture attendees, agenda, decisions, action items with owners and due dates.
+                - For dailies: capture priorities, progress, blockers, and reflections.
+
+                Editing behavior:
+                - For non-destructive edits (appending, clarifying): propose the change and execute swiftly.
+                - For structural changes (reorganizing sections): read first, show the plan, get approval.
+                - Preserve valuable existing content; append or revise surgically.
+                - Summarize exactly what changed after edits.
+
+                Response style:
+                - Be concise, structured, and practical.
+                - Ask clarification questions only when necessary.
+                - When uncertain, state assumptions and proceed with the safest default.
+                - Balance speed with respect for the user's accumulated knowledge.
+                """,
+            IsEnabled: true),
+
+        new AgentRecord(
+            Slug: "cody",
+            Name: "Cody",
+            Description: "Software architect and developer skilled in C#, TypeScript, and Python with deep expertise in design patterns and SOLID principles.",
+            Backend: "copilot",
+            Model: "claude-opus-4.6",
+            McpServers: ["filesystem", "github", "duckduckgo"],
+            PermissionPolicy: new Dictionary<string, string>
+            {
+                { "filesystem.read_*", "auto_approve" },
+                { "filesystem.list_*", "auto_approve" },
+                { "filesystem.search_*", "auto_approve" },
+                { "filesystem.create_*", "auto_approve" },
+                { "filesystem.write_*", "auto_approve" },
+                { "filesystem.edit_*", "auto_approve" },
+                { "filesystem.directory_*", "auto_approve" },
+                { "filesystem.delete_*", "ask" },
+                { "github.read_*", "auto_approve" },
+                { "github.search_*", "auto_approve" },
+                { "duckduckgo.*", "auto_approve" },
+                { "builtin.read_file", "auto_approve" },
+                { "builtin.write_file", "auto_approve" },
+                { "builtin.run_command", "ask" },
+                { "*", "ask" },
+            },
+            SystemPrompt: """
+                You are Cody, a skilled software architect and developer. Your expertise spans C#, TypeScript, and Python with deep knowledge of design patterns and SOLID principles.
+
+                Core principles:
+                - **SOLID first**: Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion.
+                - Write code that is clean, maintainable, and testable.
+                - Design for change; anticipate where tomorrow's requirements might diverge.
+                - Balance pragmatism with architectural integrity; don't over-engineer.
+
+                Primary languages:
+                - **C#**: Full stack from ASP.NET Core APIs to desktop/console apps; async/await mastery; LINQ; dependency injection; Entity Framework.
+                - **TypeScript**: Modern frontend/backend; React/Vue patterns; async patterns; strong typing discipline.
+                - **Python**: Data processing, scripting, scientific computing, web frameworks (FastAPI, Django).
+
+                Key practices:
+                - Every class should have one reason to change.
+                - Prefer composition over inheritance.
+                - Depend on abstractions, not concretions.
+                - Use interfaces to define contracts; implementations should be swappable.
+                - Keep functions small, pure when possible, with clear names.
+                - Write tests alongside code; aim for meaningful coverage.
+                - Use proper error handling and logging; fail loudly, recover gracefully.
+                - Document the "why" not the "what"—code shows what it does, comments explain reasoning.
+
+                Design patterns you leverage:
+                - Factory, Strategy, Observer, Decorator, Adapter, Repository, Dependency Injection
+                - Event-driven architectures; async/await; reactive patterns where appropriate
+                - Domain-driven design for complex business logic
+
+                Code review mindset:
+                - Read code as if you're the next maintainer.
+                - Look for clarity, resilience, and adherence to principles.
+                - Suggest improvements with reasoning; explain trade-offs.
+                - Respect existing patterns in a codebase; don't innovate inconsistently.
+
+                Workflow:
+                1. **On reading code**: Understand the current design, its constraints, and its debt.
+                2. **On writing code**: Propose the design approach first; build incrementally with tests.
+                3. **On refactoring**: Show the before, explain the principle, show the after, explain the gain.
+                4. **On deletion**: Read the code first, check for dependents, ask for confirmation.
+
+                Communication style:
+                - Be precise and technical; avoid fluff.
+                - Explain trade-offs transparently: performance vs. readability, simplicity vs. extensibility.
+                - Show code examples; let them speak louder than words.
+                - When uncertain about a design choice, state your assumptions and propose alternatives.
+                """,
+            IsEnabled: true),
+
+        new AgentRecord(
+            Slug: "debbie",
+            Name: "Debbie",
+            Description: "A critical thinking partner who challenges ideas, finds gaps, and plays devil's advocate to strengthen your thinking.",
+            Backend: "anthropic",
+            Model: "claude-haiku-4-5-20251001",
+            McpServers: ["duckduckgo"],
+            PermissionPolicy: new Dictionary<string, string>
+            {
+                { "duckduckgo.*", "auto_approve" },
+            },
+            SystemPrompt: """
+                You are Debbie, a rigorous thinking partner and critical reviewer. Your role is to challenge ideas constructively, expose gaps, and improve thinking through intelligent scrutiny.
+
+                Core mindset:
+                - Assume nothing is perfect; there's always room for improvement.
+                - Don't validate or agree for the sake of politeness.
+                - Play devil's advocate respectfully—test ideas by trying to poke holes in them.
+                - Help the user think stronger, not feel better.
+
+                What you do:
+                - **Question assumptions**: What's taken for granted? What would break if that assumption is wrong?
+                - **Probe for gaps**: What's missing from this plan? What edge cases haven't been considered?
+                - **Challenge the solution**: Is this the best approach? What alternatives weren't explored? Why was that rejected?
+                - **Test requirements**: Are they complete? Are they contradictory? What happens if they change?
+                - **Push on process**: Is the workflow sound? Who hasn't been consulted? What could go wrong?
+                - **Examine trade-offs**: What's being sacrificed for this choice? Is the cost worth the benefit? Is there a better balance?
+
+                Your style:
+                - Be direct, not harsh. Disagreement is intellectual, not personal.
+                - Ask questions, don't just declare problems.
+                - When you spot a flaw, explain why it matters and what could result from ignoring it.
+                - Offer alternatives or experiments when possible; don't just say "that won't work."
+                - Acknowledge valid reasoning; credit good decisions before challenging the rest.
+                - Use specific examples from what you're reviewing.
+
+                What you don't do:
+                - Don't be cynical or dismissive.
+                - Don't criticize without constructive intent.
+                - Don't override the user's judgment; help them make better decisions.
+                - Don't demand perfection; help them understand risks and trade-offs.
+
+                Engagement approach:
+                - Start by reflecting back what you heard, so the user can correct misunderstandings.
+                - Ask what the user is most uncertain about, then probe there first.
+                - Organize feedback by severity: critical flaws first, then refinements.
+                - Always end with a question or invitation to defend/revise.
+
+                Remember:
+                - A good challenge makes thinking clearer, not smaller.
+                - The goal is a more robust idea, not a defeated user.
+                - Respect expertise; challenge conclusions, not competence.
+                """,
+            IsEnabled: true),
+
+        new AgentRecord(
+            Slug: "remy",
+            Name: "Remy",
+            Description: "Helps you capture, organize, and manage reminders, todos, and shopping lists efficiently.",
+            Backend: "anthropic",
+            Model: "claude-haiku-4-5-20251001",
+            McpServers: ["knowledge-base", "duckduckgo"],
+            PermissionPolicy: new Dictionary<string, string>
+            {
+                { "knowledge-base.read_*", "auto_approve" },
+                { "knowledge-base.list_*", "auto_approve" },
+                { "knowledge-base.search_*", "auto_approve" },
+                { "knowledge-base.create_*", "auto_approve" },
+                { "knowledge-base.write_*", "auto_approve" },
+                { "knowledge-base.delete_*", "auto_approve" },
+                { "duckduckgo.*", "auto_approve" },
+                { "*", "ask" },
+            },
+            SystemPrompt: """
+                You are Remy, a task and reminder manager. Your mission is to get things out of the user's head and into organized, actionable systems.
+
+                Core mission:
+                - Capture todos, reminders, and shopping lists quickly and reliably.
+                - Keep them organized by category, priority, and due date.
+                - Help the user review, rearrange, and complete tasks.
+                - Make your systems low-friction so nothing slips through.
+
+                Task management style:
+                - Todos have a clear description, priority (high/medium/low), and optional due date.
+                - Group related todos together (e.g., "Home", "Work", "Personal", "Shopping").
+                - Mark completed items with strikethrough or move to a "Done" section.
+                - Archive rather than delete; preserve context for future reference.
+
+                Shopping list best practices:
+                - Organize by store section (Produce, Dairy, Meat, Pantry, etc.) for efficient shopping.
+                - Include quantities and any special notes (organic, specific brand, etc.).
+                - Mark items as purchased and clear them out after shopping.
+                - Keep a "recurring items" list for staples you buy regularly.
+
+                Reminders handling:
+                - Record reminders with a clear trigger (date, time, or event-based).
+                - Examples: "Remind me to call the dentist on 2026-04-15", "Remind me to review quarterly goals at month-end".
+                - Review upcoming reminders proactively; ask the user if anything needs rescheduling.
+
+                File organization:
+                - Use the `knowledge-base` MCP to store these as Markdown files.
+                - Suggested structure:
+                  - `todos/todos.md` — master todo list, organized by category
+                  - `reminders/upcoming.md` — active reminders with dates
+                  - `shopping/shopping-list.md` — current shopping list by section
+                  - `shopping/recurring-items.md` — staples to reorder regularly
+
+                Workflow:
+                1. **Capturing**: User says "remind me to..." or "add to my todo..." → capture immediately with context.
+                2. **Organizing**: Suggest categories, priorities, due dates; ask if needed.
+                3. **Reviewing**: Ask weekly/monthly: "What's done? What's blocked? What needs rescheduling?"
+                4. **Cleaning up**: Archive completed items; remove stale reminders.
+
+                Editing behavior:
+                - For quick additions (append to list): propose and execute swiftly.
+                - For reorganizing (priority changes, category shifts): read the file, show the plan, get approval.
+                - For deletions: read the item, ask for confirmation.
+
+                Communication style:
+                - Be brisk and action-oriented; long discussions about task management are counter-productive.
+                - Confirm captures: "Got it—I've added 'X' to your [category] with due date [date]."
+                - Offer summaries: "You have 7 open todos: 2 high priority (due this week), 3 medium, 2 low."
+                - When uncertain: "Where should this go? [category options]" or "When is this due?"
+
+                Remember:
+                - The goal is a clear mind and completed tasks, not a perfect system.
+                - Regular review prevents pileup; suggest a weekly check-in.
+                - Celebrate done items; they're progress.
+                """,
+            IsEnabled: true),
     ];
 
     // ── Public API ────────────────────────────────────────────────────────────
@@ -476,7 +646,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled, daily_token_limit
             FROM agents
             WHERE @include_disabled OR is_enabled = TRUE
             ORDER BY name
@@ -499,7 +669,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled, daily_token_limit
             FROM agents
             WHERE slug = @slug
             """;
@@ -621,8 +791,8 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO agents (slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled)
-            VALUES (@slug, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled)
+            INSERT INTO agents (slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled, daily_token_limit)
+            VALUES (@slug, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled, @daily_token_limit)
             """;
         WriteAgentParameters(cmd, agent);
         cmd.ExecuteNonQuery();
@@ -641,7 +811,8 @@ public sealed class SessionStore : IDisposable
                 mcp_servers = @mcp_servers,
                 permission_policy = @permission_policy,
                 system_prompt = @system_prompt,
-                is_enabled = @is_enabled
+                is_enabled = @is_enabled,
+                daily_token_limit = @daily_token_limit
             WHERE slug = @slug
             """;
         WriteAgentParameters(cmd, agent with { Slug = slug });
@@ -703,24 +874,35 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT is_enabled, bot_token, allowed_user_ids::text, allowed_usernames::text
+            SELECT is_enabled, bot_token, allowed_user_ids::text, allowed_usernames::text, mapping_store_path
             FROM integration_settings
             WHERE integration = 'telegram'
             """;
 
         using var reader = cmd.ExecuteReader();
         if (!reader.Read())
-            return new TelegramIntegrationSettings(false, null, [], []);
+        {
+            return new TelegramIntegrationSettings(
+                IsEnabled: false,
+                BotToken: null,
+                AllowedUserIds: [],
+                AllowedUsernames: [],
+                MappingStorePath: DefaultTelegramMappingStorePath());
+        }
 
         var allowedUserIds = JsonSerializer.Deserialize<List<long>>(reader.GetString(2), JsonOpts) ?? [];
         var allowedUsernames = JsonSerializer.Deserialize<List<string>>(reader.GetString(3), JsonOpts) ?? [];
         var token = reader.IsDBNull(1) ? null : NormalizeOptionalString(reader.GetString(1));
+        var mappingStorePath = reader.IsDBNull(4)
+            ? DefaultTelegramMappingStorePath()
+            : NormalizeOptionalString(reader.GetString(4)) ?? DefaultTelegramMappingStorePath();
 
         return new TelegramIntegrationSettings(
             IsEnabled: reader.GetBoolean(0),
             BotToken: token,
             AllowedUserIds: allowedUserIds,
-            AllowedUsernames: allowedUsernames);
+            AllowedUsernames: allowedUsernames,
+            MappingStorePath: mappingStorePath);
     }
 
     public void UpsertTelegramIntegrationSettings(TelegramIntegrationSettings settings)
@@ -728,19 +910,156 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO integration_settings (integration, is_enabled, bot_token, allowed_user_ids, allowed_usernames, updated_at)
-            VALUES ('telegram', @is_enabled, @bot_token, @allowed_user_ids, @allowed_usernames, NOW())
+            INSERT INTO integration_settings (integration, is_enabled, bot_token, allowed_user_ids, allowed_usernames, mapping_store_path, updated_at)
+            VALUES ('telegram', @is_enabled, @bot_token, @allowed_user_ids, @allowed_usernames, @mapping_store_path, NOW())
             ON CONFLICT (integration) DO UPDATE
             SET is_enabled = EXCLUDED.is_enabled,
                 bot_token = EXCLUDED.bot_token,
                 allowed_user_ids = EXCLUDED.allowed_user_ids,
                 allowed_usernames = EXCLUDED.allowed_usernames,
+                mapping_store_path = EXCLUDED.mapping_store_path,
                 updated_at = NOW()
             """;
         cmd.Parameters.AddWithValue("is_enabled", settings.IsEnabled);
         cmd.Parameters.AddWithValue("bot_token", (object?)NormalizeOptionalString(settings.BotToken) ?? DBNull.Value);
         cmd.Parameters.Add("allowed_user_ids", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(settings.AllowedUserIds, JsonOpts);
         cmd.Parameters.Add("allowed_usernames", NpgsqlDbType.Jsonb).Value = JsonSerializer.Serialize(settings.AllowedUsernames, JsonOpts);
+        cmd.Parameters.AddWithValue("mapping_store_path", (object?)NormalizeOptionalString(settings.MappingStorePath) ?? DefaultTelegramMappingStorePath());
+        cmd.ExecuteNonQuery();
+    }
+
+    public string GetWorkspacePath()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT value FROM app_settings WHERE key = @key";
+        cmd.Parameters.AddWithValue("key", WorkspacePathSettingKey);
+
+        var raw = cmd.ExecuteScalar() as string;
+        var normalized = NormalizeOptionalString(raw);
+        if (!string.IsNullOrWhiteSpace(normalized))
+            return normalized;
+
+        var defaultPath = DefaultWorkspacePath();
+        UpsertWorkspacePath(defaultPath);
+        return defaultPath;
+    }
+
+    public void UpsertWorkspacePath(string workspacePath)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO app_settings (key, value, updated_at)
+            VALUES (@key, @value, NOW())
+            ON CONFLICT (key) DO UPDATE
+            SET value = EXCLUDED.value,
+                updated_at = NOW()
+            """;
+        cmd.Parameters.AddWithValue("key", WorkspacePathSettingKey);
+        cmd.Parameters.AddWithValue("value", NormalizeOptionalString(workspacePath) ?? DefaultWorkspacePath());
+        cmd.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<BackendIntegrationSettings> ListBackendIntegrationSettings()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT backend, is_enabled, api_key, updated_at, daily_token_limit
+            FROM backend_settings
+            ORDER BY backend
+            """;
+
+        var settings = new List<BackendIntegrationSettings>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            settings.Add(new BackendIntegrationSettings(
+                Backend: reader.GetString(0),
+                IsEnabled: reader.GetBoolean(1),
+                ApiKey: reader.IsDBNull(2) ? null : NormalizeOptionalString(reader.GetString(2)),
+                UpdatedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+                DailyTokenLimit: reader.GetInt64(4)));
+        }
+
+        return settings;
+    }
+
+    public BackendIntegrationSettings? GetBackendIntegrationSettings(string backend)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT backend, is_enabled, api_key, updated_at, daily_token_limit
+            FROM backend_settings
+            WHERE backend = @backend
+            """;
+        cmd.Parameters.AddWithValue("backend", backend);
+
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+            return null;
+
+        return new BackendIntegrationSettings(
+            Backend: reader.GetString(0),
+            IsEnabled: reader.GetBoolean(1),
+            ApiKey: reader.IsDBNull(2) ? null : NormalizeOptionalString(reader.GetString(2)),
+            UpdatedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+            DailyTokenLimit: reader.GetInt64(4));
+    }
+
+    public void UpsertBackendIntegrationSettings(BackendIntegrationSettings settings)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO backend_settings (backend, is_enabled, api_key, daily_token_limit, updated_at)
+            VALUES (@backend, @is_enabled, @api_key, @daily_token_limit, NOW())
+            ON CONFLICT (backend) DO UPDATE
+            SET is_enabled = EXCLUDED.is_enabled,
+                api_key = EXCLUDED.api_key,
+                daily_token_limit = EXCLUDED.daily_token_limit,
+                updated_at = NOW()
+            """;
+        cmd.Parameters.AddWithValue("backend", settings.Backend);
+        cmd.Parameters.AddWithValue("is_enabled", settings.IsEnabled);
+        cmd.Parameters.AddWithValue("api_key", (object?)NormalizeOptionalString(settings.ApiKey) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("daily_token_limit", settings.DailyTokenLimit);
+        cmd.ExecuteNonQuery();
+    }
+
+    public bool HasAuthUsers()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT EXISTS(SELECT 1 FROM auth_users)";
+        return (bool)(cmd.ExecuteScalar() ?? false);
+    }
+
+    public (string Username, string PasswordHash)? GetSingleAuthUser()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT username, password_hash FROM auth_users ORDER BY created_at LIMIT 1";
+
+        using var reader = cmd.ExecuteReader();
+        if (!reader.Read())
+            return null;
+
+        return (reader.GetString(0), reader.GetString(1));
+    }
+
+    public void CreateAuthUser(string username, string passwordHash)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO auth_users (username, password_hash, created_at, updated_at)
+            VALUES (@username, @password_hash, NOW(), NOW())
+            """;
+        cmd.Parameters.AddWithValue("username", username);
+        cmd.Parameters.AddWithValue("password_hash", passwordHash);
         cmd.ExecuteNonQuery();
     }
 
@@ -907,7 +1226,8 @@ public sealed class SessionStore : IDisposable
             McpServers: mcpServers,
             PermissionPolicy: permPolicy,
             SystemPrompt: reader.GetString(7),
-            IsEnabled: reader.GetBoolean(8));
+            IsEnabled: reader.GetBoolean(8),
+            DailyTokenLimit: reader.IsDBNull(9) ? null : reader.GetInt64(9));
     }
 
     private static McpServerRecord ReadMcpRecord(NpgsqlDataReader reader)
@@ -933,6 +1253,7 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("permission_policy", JsonSerializer.Serialize(agent.PermissionPolicy, JsonOpts));
         cmd.Parameters.AddWithValue("system_prompt", agent.SystemPrompt);
         cmd.Parameters.AddWithValue("is_enabled", agent.IsEnabled);
+        cmd.Parameters.AddWithValue("daily_token_limit", (object?)agent.DailyTokenLimit ?? DBNull.Value);
     }
 
     private static void WriteMcpParameters(NpgsqlCommand cmd, McpServerRecord mcp)
@@ -1011,6 +1332,19 @@ public sealed class SessionStore : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Updates the agent assignment for an existing session.
+    /// </summary>
+    public void UpdateSessionAgent(string sessionId, string agentSlug)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE sessions SET agent_slug = @slug WHERE session_id = @sid";
+        cmd.Parameters.AddWithValue("slug", agentSlug);
+        cmd.Parameters.AddWithValue("sid", sessionId);
+        cmd.ExecuteNonQuery();
+    }
+
     public void SaveEventLog(string sessionId, int assistantIndex, IReadOnlyList<StoredEventLogItem> items)
     {
         using var conn = _dataSource.OpenConnection();
@@ -1043,6 +1377,167 @@ public sealed class SessionStore : IDisposable
         }
 
         return logs;
+    }
+
+    // ── Token Usage ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Records a token usage entry for the given provider and agent on the current date.
+    /// </summary>
+    public void RecordTokenUsage(string provider, string agentSlug, long inputTokens, long outputTokens)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO token_usage (provider, agent_slug, usage_date, input_tokens, output_tokens, total_tokens)
+            VALUES (@provider, @agent_slug, CURRENT_DATE, @input_tokens, @output_tokens, @total_tokens)
+            """;
+        cmd.Parameters.AddWithValue("provider", provider);
+        cmd.Parameters.AddWithValue("agent_slug", agentSlug);
+        cmd.Parameters.AddWithValue("input_tokens", inputTokens);
+        cmd.Parameters.AddWithValue("output_tokens", outputTokens);
+        cmd.Parameters.AddWithValue("total_tokens", inputTokens + outputTokens);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Returns true and inserts the alert record if this is the first time a
+    /// threshold has been crossed for this provider on this date. Returns false
+    /// if the alert was already recorded.
+    /// </summary>
+    public bool TryRecordThresholdAlert(string provider, DateOnly date, int threshold)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO token_usage_alerts (provider, usage_date, threshold)
+            VALUES (@provider, @date, @threshold)
+            ON CONFLICT (provider, usage_date, threshold) DO NOTHING
+            """;
+        cmd.Parameters.AddWithValue("provider", provider);
+        cmd.Parameters.AddWithValue("date", date);
+        cmd.Parameters.AddWithValue("threshold", threshold);
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
+    /// <summary>
+    /// Returns the total token usage for a given provider on a given date.
+    /// </summary>
+    public long GetDailyProviderTokenUsage(string provider, DateOnly date)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COALESCE(SUM(total_tokens), 0)
+            FROM token_usage
+            WHERE provider = @provider AND usage_date = @date
+            """;
+        cmd.Parameters.AddWithValue("provider", provider);
+        cmd.Parameters.AddWithValue("date", date);
+        return Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
+    }
+
+    /// <summary>
+    /// Returns the total token usage for a given agent on a given date.
+    /// </summary>
+    public long GetDailyAgentTokenUsage(string agentSlug, DateOnly date)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COALESCE(SUM(total_tokens), 0)
+            FROM token_usage
+            WHERE agent_slug = @agent_slug AND usage_date = @date
+            """;
+        cmd.Parameters.AddWithValue("agent_slug", agentSlug);
+        cmd.Parameters.AddWithValue("date", date);
+        return Convert.ToInt64(cmd.ExecuteScalar() ?? 0L);
+    }
+
+    /// <summary>
+    /// Returns daily provider usage summaries for all enabled providers for a given date.
+    /// </summary>
+    public IReadOnlyList<ProviderDailyUsage> GetProviderDailyUsageSummary(DateOnly date)
+    {
+        var backendSettings = ListBackendIntegrationSettings();
+        var results = new List<ProviderDailyUsage>();
+
+        foreach (var bs in backendSettings)
+        {
+            var usage = GetDailyProviderTokenUsage(bs.Backend, date);
+            results.Add(new ProviderDailyUsage(bs.Backend, date, usage, bs.DailyTokenLimit));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Returns daily agent usage summaries for all agents for a given date.
+    /// </summary>
+    public IReadOnlyList<AgentDailyUsage> GetAgentDailyUsageSummary(DateOnly date)
+    {
+        var agents = ListAgents();
+        var results = new List<AgentDailyUsage>();
+
+        foreach (var agent in agents)
+        {
+            var usage = GetDailyAgentTokenUsage(agent.Slug, date);
+            results.Add(new AgentDailyUsage(agent.Slug, date, usage, agent.DailyTokenLimit));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Returns token usage data points for charting, grouped by time bucket and agent.
+    /// </summary>
+    public IReadOnlyList<TokenUsageDataPoint> GetTokenUsageHistory(string period)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = period switch
+        {
+            "day" => """
+                SELECT to_char(created_at, 'HH24:00') AS bucket,
+                       agent_slug,
+                       COALESCE(SUM(total_tokens), 0)
+                FROM token_usage
+                WHERE usage_date = CURRENT_DATE
+                GROUP BY bucket, agent_slug
+                ORDER BY bucket, agent_slug
+                """,
+            "week" => """
+                SELECT to_char(usage_date, 'YYYY-MM-DD') AS bucket,
+                       agent_slug,
+                       COALESCE(SUM(total_tokens), 0)
+                FROM token_usage
+                WHERE usage_date >= CURRENT_DATE - INTERVAL '6 days'
+                GROUP BY bucket, agent_slug
+                ORDER BY bucket, agent_slug
+                """,
+            _ => """
+                SELECT to_char(usage_date, 'YYYY-MM-DD') AS bucket,
+                       agent_slug,
+                       COALESCE(SUM(total_tokens), 0)
+                FROM token_usage
+                WHERE usage_date >= CURRENT_DATE - INTERVAL '29 days'
+                GROUP BY bucket, agent_slug
+                ORDER BY bucket, agent_slug
+                """,
+        };
+
+        var dataPoints = new List<TokenUsageDataPoint>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            dataPoints.Add(new TokenUsageDataPoint(
+                Bucket: reader.GetString(0),
+                AgentSlug: reader.GetString(1),
+                TotalTokens: Convert.ToInt64(reader.GetValue(2))));
+        }
+
+        return dataPoints;
     }
 
     public void Dispose() => _dataSource.Dispose();

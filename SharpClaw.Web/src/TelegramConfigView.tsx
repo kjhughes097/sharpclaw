@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { fetchTelegramSettings, updateTelegramSettings } from './api';
+import { createTelegramWorkerToken, fetchTelegramSettings, updateTelegramSettings } from './api';
 
 interface TelegramConfigViewProps {
   onMenuClick: () => void;
@@ -60,6 +60,11 @@ export function TelegramConfigView({ onMenuClick }: TelegramConfigViewProps) {
   const [clearToken, setClearToken] = useState(false);
   const [allowedUserIdsText, setAllowedUserIdsText] = useState('');
   const [allowedUsernamesText, setAllowedUsernamesText] = useState('');
+  const [mappingStorePath, setMappingStorePath] = useState('');
+  const [clearMappingStorePath, setClearMappingStorePath] = useState(false);
+  const [workerApiToken, setWorkerApiToken] = useState<string | null>(null);
+  const [workerApiTokenExpiresAt, setWorkerApiTokenExpiresAt] = useState<string | null>(null);
+  const [generatingWorkerToken, setGeneratingWorkerToken] = useState(false);
 
   useEffect(() => {
     void load();
@@ -76,12 +81,45 @@ export function TelegramConfigView({ onMenuClick }: TelegramConfigViewProps) {
       setMaskedToken(settings.maskedBotToken ?? null);
       setAllowedUserIdsText(settings.allowedUserIds.join(', '));
       setAllowedUsernamesText(settings.allowedUsernames.join(', '));
+      setMappingStorePath(settings.mappingStorePath);
       setTokenInput('');
       setClearToken(false);
+      setClearMappingStorePath(false);
+      setWorkerApiToken(null);
+      setWorkerApiTokenExpiresAt(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGenerateWorkerToken() {
+    setGeneratingWorkerToken(true);
+    setError(null);
+    setStatus(null);
+
+    try {
+      const result = await createTelegramWorkerToken();
+      setWorkerApiToken(result.token);
+      setWorkerApiTokenExpiresAt(result.expiresAt);
+      setStatus('Generated new Telegram worker API token. Copy it now and place it in SHARPCLAW_API_TOKEN.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setGeneratingWorkerToken(false);
+    }
+  }
+
+  async function handleCopyWorkerToken() {
+    if (!workerApiToken)
+      return;
+
+    try {
+      await navigator.clipboard.writeText(workerApiToken);
+      setStatus('Telegram worker API token copied to clipboard.');
+    } catch {
+      setError('Failed to copy token to clipboard. Copy it manually from the field below.');
     }
   }
 
@@ -100,7 +138,9 @@ export function TelegramConfigView({ onMenuClick }: TelegramConfigViewProps) {
         allowedUserIds,
         allowedUsernames,
         clearBotToken: clearToken,
+        clearMappingStorePath,
         ...(tokenInput.trim() ? { botToken: tokenInput.trim() } : {}),
+        ...(mappingStorePath.trim() ? { mappingStorePath: mappingStorePath.trim() } : {}),
       };
 
       const updated = await updateTelegramSettings(payload);
@@ -108,8 +148,10 @@ export function TelegramConfigView({ onMenuClick }: TelegramConfigViewProps) {
       setMaskedToken(updated.maskedBotToken ?? null);
       setAllowedUserIdsText(updated.allowedUserIds.join(', '));
       setAllowedUsernamesText(updated.allowedUsernames.join(', '));
+      setMappingStorePath(updated.mappingStorePath);
       setTokenInput('');
       setClearToken(false);
+      setClearMappingStorePath(false);
       setStatus('Telegram settings saved. Restart the Telegram service to apply token changes.');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -200,9 +242,66 @@ export function TelegramConfigView({ onMenuClick }: TelegramConfigViewProps) {
               />
             </label>
 
+            <label>
+              <span>Mapping Store Path</span>
+              <input
+                value={mappingStorePath}
+                onChange={event => setMappingStorePath(event.target.value)}
+                placeholder="/var/lib/sharpclaw/telegram-session-mappings.json"
+              />
+            </label>
+
+            <label className="agent-checkbox telegram-clear-token">
+              <span>Reset mapping path to default on save</span>
+              <input
+                type="checkbox"
+                checked={clearMappingStorePath}
+                onChange={event => setClearMappingStorePath(event.target.checked)}
+              />
+            </label>
+
             <div className="agent-card-note">
               Leave both allow lists empty to permit any sender. If either list is populated, only matching users can interact with the bot.
             </div>
+
+            <div className="agent-card-note">
+              Generate a dedicated API token for the Telegram worker and set it as SHARPCLAW_API_TOKEN in the worker environment.
+            </div>
+
+            <div className="agent-form-actions">
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => void handleGenerateWorkerToken()}
+                disabled={saving || generatingWorkerToken}
+              >
+                {generatingWorkerToken ? 'Generating…' : 'Generate Worker API Token'}
+              </button>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={() => void handleCopyWorkerToken()}
+                disabled={!workerApiToken}
+              >
+                Copy Token
+              </button>
+            </div>
+
+            {workerApiToken && (
+              <>
+                <label>
+                  <span>Generated Worker API Token</span>
+                  <input
+                    value={workerApiToken}
+                    readOnly
+                    onFocus={event => event.currentTarget.select()}
+                  />
+                </label>
+                <div className="agent-card-note">
+                  Expires at: {workerApiTokenExpiresAt ? new Date(workerApiTokenExpiresAt).toLocaleString() : 'unknown'}
+                </div>
+              </>
+            )}
 
             <div className="agent-form-actions">
               <button className="new-session-btn agent-add-btn" type="submit" disabled={saving}>
