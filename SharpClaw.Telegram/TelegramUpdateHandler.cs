@@ -107,6 +107,9 @@ public sealed class TelegramUpdateHandler(
         var messageId = await sharpClawClient.SendMessageAsync(sessionId, text, messageCt);
         if (messageId is null)
         {
+            if (await TryHandleStaleSessionAsync(chatId, sessionId, messageCt))
+                return;
+
             await SendErrorAsync(chatId, "Failed to send your message to the agent. Please try again.", messageCt);
             return;
         }
@@ -120,6 +123,10 @@ public sealed class TelegramUpdateHandler(
         {
             logger.LogError(ex, "Failed to stream response for session '{SessionId}', message '{MessageId}'",
                 sessionId, messageId);
+
+            if (await TryHandleStaleSessionAsync(chatId, sessionId, messageCt))
+                return;
+
             await SendErrorAsync(chatId, "The agent encountered an error. Please try again.", messageCt);
             return;
         }
@@ -260,6 +267,47 @@ public sealed class TelegramUpdateHandler(
         await botClient.SendMessage(chatId,
             $"🔗 Connected to session with *{EscapeMarkdown(session.Persona)}* ({EscapeMarkdown(session.AgentId)}). Send a message to continue the conversation.",
             parseMode: ParseMode.Markdown, cancellationToken: ct);
+    }
+
+    private async Task<bool> TryHandleStaleSessionAsync(long chatId, string sessionId, CancellationToken ct)
+    {
+        var sessions = await sharpClawClient.ListSessionsAsync(ct);
+        var sessionExists = sessions?.Any(s => string.Equals(s.SessionId, sessionId, StringComparison.Ordinal)) ?? true;
+
+        if (sessionExists)
+            return false;
+
+        sessionStore.RemoveSession(chatId);
+        logger.LogInformation("Cleared stale session '{SessionId}' for chat {ChatId} — session no longer exists on server",
+            sessionId, chatId);
+
+        var lines = new List<string>
+        {
+            "⚠️ Your active session has been deleted.\n"
+        };
+
+        if (sessions is not null && sessions.Count > 0)
+        {
+            lines.Add("📋 *Available sessions:*\n");
+            for (var i = 0; i < sessions.Count; i++)
+            {
+                var s = sessions[i];
+                var created = s.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "unknown";
+                lines.Add($"{i + 1}. *{EscapeMarkdown(s.Persona)}* ({EscapeMarkdown(s.AgentId)}) — {EscapeMarkdown(created)}");
+            }
+
+            lines.Add("");
+            lines.Add("Use .connect N to switch to an existing session, or .new to start a fresh one.");
+        }
+        else
+        {
+            lines.Add("No other sessions exist. Use .new to start a fresh session.");
+        }
+
+        await botClient.SendMessage(chatId, string.Join('\n', lines),
+            parseMode: ParseMode.Markdown, cancellationToken: ct);
+
+        return true;
     }
 
     private static string EscapeMarkdown(string text)
