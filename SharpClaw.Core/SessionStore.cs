@@ -6,6 +6,7 @@ namespace SharpClaw.Core;
 
 public sealed record StoredSession(string SessionId, string AgentSlug, DateTimeOffset CreatedAt, DateTimeOffset LastActivityAt);
 public sealed record StoredEventLogItem(AgentEvent Event, ToolResultEvent? Result);
+public sealed record HeartbeatSettings(bool Enabled, int IntervalSeconds, int StuckThresholdSeconds);
 
 /// <summary>
 /// Persists conversation history and agent definitions in a PostgreSQL database.
@@ -17,6 +18,9 @@ public sealed class SessionStore : IDisposable
     private const string AdeAgentId = "ade";
 
     private const string WorkspacePathSettingKey = "workspace_path";
+    private const string HeartbeatEnabledKey = "heartbeat_enabled";
+    private const string HeartbeatIntervalKey = "heartbeat_interval_seconds";
+    private const string HeartbeatThresholdKey = "heartbeat_stuck_threshold_seconds";
     private readonly NpgsqlDataSource _dataSource;
 
     public static string DefaultWorkspacePath()
@@ -959,6 +963,55 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("key", WorkspacePathSettingKey);
         cmd.Parameters.AddWithValue("value", NormalizeOptionalString(workspacePath) ?? DefaultWorkspacePath());
         cmd.ExecuteNonQuery();
+    }
+
+    public HeartbeatSettings GetHeartbeatSettings()
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT key, value FROM app_settings
+            WHERE key IN (@k1, @k2, @k3)
+            """;
+        cmd.Parameters.AddWithValue("k1", HeartbeatEnabledKey);
+        cmd.Parameters.AddWithValue("k2", HeartbeatIntervalKey);
+        cmd.Parameters.AddWithValue("k3", HeartbeatThresholdKey);
+
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            values[reader.GetString(0)] = reader.GetString(1);
+
+        return new HeartbeatSettings(
+            Enabled: values.TryGetValue(HeartbeatEnabledKey, out var e) && bool.TryParse(e, out var enabled) ? enabled : true,
+            IntervalSeconds: values.TryGetValue(HeartbeatIntervalKey, out var i) && int.TryParse(i, out var interval) && interval > 0 ? interval : 300,
+            StuckThresholdSeconds: values.TryGetValue(HeartbeatThresholdKey, out var t) && int.TryParse(t, out var threshold) && threshold > 0 ? threshold : 600);
+    }
+
+    public void UpsertHeartbeatSettings(HeartbeatSettings settings)
+    {
+        var pairs = new (string Key, string Value)[]
+        {
+            (HeartbeatEnabledKey, settings.Enabled.ToString()),
+            (HeartbeatIntervalKey, Math.Max(1, settings.IntervalSeconds).ToString()),
+            (HeartbeatThresholdKey, Math.Max(1, settings.StuckThresholdSeconds).ToString()),
+        };
+
+        using var conn = _dataSource.OpenConnection();
+        foreach (var (key, value) in pairs)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (@key, @value, NOW())
+                ON CONFLICT (key) DO UPDATE
+                SET value = EXCLUDED.value,
+                    updated_at = NOW()
+                """;
+            cmd.Parameters.AddWithValue("key", key);
+            cmd.Parameters.AddWithValue("value", value);
+            cmd.ExecuteNonQuery();
+        }
     }
 
     public IReadOnlyList<BackendIntegrationSettings> ListBackendIntegrationSettings()

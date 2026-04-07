@@ -1,4 +1,4 @@
-import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest, TokenUsageSummary, TokenUsageHistory } from './types';
+import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, HeartbeatSettings, UpdateHeartbeatSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest, TokenUsageSummary, TokenUsageHistory } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -90,6 +90,22 @@ export async function updateAppSettings(payload: UpdateAppSettingsRequest): Prom
         body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(await readError(res, `PUT /settings/app: ${res.status}`));
+    return res.json();
+}
+
+export async function fetchHeartbeatSettings(): Promise<HeartbeatSettings> {
+    const res = await fetch(`${BASE}/settings/heartbeat`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /settings/heartbeat: ${res.status}`));
+    return res.json();
+}
+
+export async function updateHeartbeatSettings(payload: UpdateHeartbeatSettingsRequest): Promise<HeartbeatSettings> {
+    const res = await fetch(`${BASE}/settings/heartbeat`, {
+        method: 'PUT',
+        headers: headers(),
+        body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await readError(res, `PUT /settings/heartbeat: ${res.status}`));
     return res.json();
 }
 

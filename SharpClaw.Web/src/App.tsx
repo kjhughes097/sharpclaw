@@ -5,6 +5,7 @@ import { BackendsConfigView } from './BackendsConfigView';
 import { McpConfigView } from './McpConfigView';
 import { TelegramConfigView } from './TelegramConfigView';
 import { AppSettingsConfigView } from './AppSettingsConfigView';
+import { HeartbeatConfigView } from './HeartbeatConfigView';
 import { TokenUsageView } from './TokenUsageView';
 import { Sidebar } from './Sidebar';
 import { ChatView } from './ChatView';
@@ -28,7 +29,7 @@ export function App() {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
-  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app' | 'token-usage'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app' | 'heartbeat' | 'token-usage'>('chat');
   const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, send } = useChat(authed === true);
   const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 
@@ -162,6 +163,11 @@ export function App() {
     setSidebarOpen(false);
   }, []);
 
+  const handleShowHeartbeat = useCallback(() => {
+    setCurrentView('heartbeat');
+    setSidebarOpen(false);
+  }, []);
+
   const handleShowTokenUsage = useCallback(() => {
     setCurrentView('token-usage');
     setSidebarOpen(false);
@@ -205,6 +211,7 @@ export function App() {
           onShowMcps={handleShowMcps}
           onShowTelegram={handleShowTelegram}
           onShowApp={handleShowApp}
+          onShowHeartbeat={handleShowHeartbeat}
           onShowTokenUsage={handleShowTokenUsage}
           theme={theme}
           onToggleTheme={toggleTheme}
@@ -222,6 +229,8 @@ export function App() {
           <TelegramConfigView onMenuClick={() => setSidebarOpen(true)} />
         ) : currentView === 'app' ? (
           <AppSettingsConfigView onMenuClick={() => setSidebarOpen(true)} />
+        ) : currentView === 'heartbeat' ? (
+          <HeartbeatConfigView onMenuClick={() => setSidebarOpen(true)} />
         ) : currentView === 'token-usage' ? (
           <TokenUsageView onMenuClick={() => setSidebarOpen(true)} />
         ) : active ? (

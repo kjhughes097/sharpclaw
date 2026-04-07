@@ -125,6 +125,11 @@ public sealed record TelegramWorkerTokenDto(
 
 public sealed record AppSettingsDto(string WorkspacePath) : IApiPayload;
 
+public sealed record HeartbeatSettingsDto(
+    bool Enabled,
+    int IntervalSeconds,
+    int StuckThresholdSeconds) : IApiPayload;
+
 public sealed record CreateSessionRequest(string? AgentId);
 
 public sealed record SendMessageRequest(string? Message);
@@ -153,6 +158,11 @@ public sealed record UpdateBackendSettingsRequest(
 public sealed record UpdateAppSettingsRequest(
     string? WorkspacePath,
     bool? ClearWorkspacePath);
+
+public sealed record UpdateHeartbeatSettingsRequest(
+    bool? Enabled,
+    int? IntervalSeconds,
+    int? StuckThresholdSeconds);
 
 public sealed record SetupAuthRequest(
     string? Username,

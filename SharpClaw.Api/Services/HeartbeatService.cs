@@ -1,51 +1,42 @@
-using Microsoft.Extensions.Options;
+using SharpClaw.Core;
 
 namespace SharpClaw.Api.Services;
 
 /// <summary>
 /// Background service that periodically checks for stuck sessions — those with
 /// active in-memory runners or streams but no recent activity — and logs diagnostics.
+/// Settings are loaded from the database on each tick so changes take effect without a restart.
 /// </summary>
 public sealed class HeartbeatService(
     SessionRuntimeService runtime,
-    IOptions<HeartbeatOptions> options,
+    SessionStore store,
     ILogger<HeartbeatService> logger) : BackgroundService
 {
+    private static readonly TimeSpan MinTickInterval = TimeSpan.FromSeconds(10);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var cfg = options.Value;
-        if (!cfg.Enabled)
-        {
-            logger.LogInformation("Heartbeat monitor is disabled.");
-            return;
-        }
+        logger.LogInformation("Heartbeat monitor started.");
 
-        if (cfg.IntervalSeconds <= 0)
-        {
-            logger.LogWarning("Heartbeat IntervalSeconds must be positive. Heartbeat monitor will not start.");
-            return;
-        }
+        // Use a short base tick so config changes are picked up reasonably quickly.
+        using var timer = new PeriodicTimer(MinTickInterval);
+        var nextRunAt = DateTimeOffset.UtcNow;
 
-        if (cfg.StuckThresholdSeconds <= 0)
-        {
-            logger.LogWarning("Heartbeat StuckThresholdSeconds must be positive. Heartbeat monitor will not start.");
-            return;
-        }
-
-        var interval = TimeSpan.FromSeconds(cfg.IntervalSeconds);
-        var threshold = TimeSpan.FromSeconds(cfg.StuckThresholdSeconds);
-
-        logger.LogInformation(
-            "Heartbeat monitor started. Interval: {Interval}s, stuck threshold: {Threshold}s.",
-            cfg.IntervalSeconds,
-            cfg.StuckThresholdSeconds);
-
-        using var timer = new PeriodicTimer(interval);
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
             try
             {
+                var cfg = store.GetHeartbeatSettings();
+                if (!cfg.Enabled)
+                    continue;
+
+                if (DateTimeOffset.UtcNow < nextRunAt)
+                    continue;
+
+                var threshold = TimeSpan.FromSeconds(cfg.StuckThresholdSeconds);
                 RunCheck(threshold);
+
+                nextRunAt = DateTimeOffset.UtcNow.AddSeconds(cfg.IntervalSeconds);
             }
             catch (Exception ex)
             {
