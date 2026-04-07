@@ -58,10 +58,33 @@ public sealed class TelegramUpdateHandler(
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
         var messageCt = linkedCts.Token;
 
-        if (text.Equals("/start", StringComparison.OrdinalIgnoreCase) ||
-            text.Equals("/new", StringComparison.OrdinalIgnoreCase))
+        if (IsCommand(text, "start") || IsCommand(text, "new"))
         {
             await StartNewSessionAsync(chatId, messageCt);
+            return;
+        }
+
+        if (IsCommand(text, "sessions") || IsCommand(text, "list"))
+        {
+            await ListSessionsAsync(chatId, messageCt);
+            return;
+        }
+
+        if (TryMatchCommandPrefix(text, "summary", out var summaryArg))
+        {
+            await HandleSessionCommandAsync(chatId, summaryArg, "summary", SessionCommandKind.Summary, messageCt);
+            return;
+        }
+
+        if (TryMatchCommandPrefix(text, "delete", out var deleteArg))
+        {
+            await HandleSessionCommandAsync(chatId, deleteArg, "delete", SessionCommandKind.Delete, messageCt);
+            return;
+        }
+
+        if (TryMatchCommandPrefix(text, "connect", out var connectArg))
+        {
+            await HandleSessionCommandAsync(chatId, connectArg, "connect", SessionCommandKind.Connect, messageCt);
             return;
         }
 
@@ -84,6 +107,9 @@ public sealed class TelegramUpdateHandler(
         var messageId = await sharpClawClient.SendMessageAsync(sessionId, text, messageCt);
         if (messageId is null)
         {
+            if (await TryHandleStaleSessionAsync(chatId, sessionId, messageCt))
+                return;
+
             await SendErrorAsync(chatId, "Failed to send your message to the agent. Please try again.", messageCt);
             return;
         }
@@ -97,6 +123,10 @@ public sealed class TelegramUpdateHandler(
         {
             logger.LogError(ex, "Failed to stream response for session '{SessionId}', message '{MessageId}'",
                 sessionId, messageId);
+
+            if (await TryHandleStaleSessionAsync(chatId, sessionId, messageCt))
+                return;
+
             await SendErrorAsync(chatId, "The agent encountered an error. Please try again.", messageCt);
             return;
         }
@@ -108,6 +138,202 @@ public sealed class TelegramUpdateHandler(
         }
 
         await SendResponseAsync(chatId, responseContent, messageCt);
+    }
+
+    private async Task ListSessionsAsync(long chatId, CancellationToken ct)
+    {
+        var sessions = await sharpClawClient.ListSessionsAsync(ct);
+        if (sessions is null || sessions.Count == 0)
+        {
+            await botClient.SendMessage(chatId, "No existing sessions found.", cancellationToken: ct);
+            return;
+        }
+
+        sessionStore.TryGetSession(chatId, out var currentSessionId);
+
+        var lines = new List<string> { "📋 *Sessions*\n" };
+        for (var i = 0; i < sessions.Count; i++)
+        {
+            var s = sessions[i];
+            var created = s.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "unknown";
+            var current = string.Equals(s.SessionId, currentSessionId, StringComparison.Ordinal) ? " ✅" : "";
+            lines.Add($"{i + 1}. *{EscapeMarkdown(s.Persona)}* ({EscapeMarkdown(s.AgentId)}) — {EscapeMarkdown(created)}{current}");
+        }
+
+        lines.Add("");
+        lines.Add("Use .summary N, .connect N, or .delete N");
+
+        await botClient.SendMessage(chatId, string.Join('\n', lines),
+            parseMode: ParseMode.Markdown, cancellationToken: ct);
+    }
+
+    private enum SessionCommandKind { Summary, Delete, Connect }
+
+    private async Task HandleSessionCommandAsync(long chatId, string argument, string commandName, SessionCommandKind kind, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(argument) || !int.TryParse(argument, out var index) || index < 1)
+        {
+            await botClient.SendMessage(chatId, $"Usage: .{commandName} <number>\nUse .sessions to see the list.",
+                cancellationToken: ct);
+            return;
+        }
+
+        var sessions = await sharpClawClient.ListSessionsAsync(ct);
+        if (sessions is null || sessions.Count == 0)
+        {
+            await botClient.SendMessage(chatId, "No existing sessions found.", cancellationToken: ct);
+            return;
+        }
+
+        if (index > sessions.Count)
+        {
+            await botClient.SendMessage(chatId, $"Invalid session number. There are {sessions.Count} session(s).",
+                cancellationToken: ct);
+            return;
+        }
+
+        var session = sessions[index - 1];
+
+        switch (kind)
+        {
+            case SessionCommandKind.Summary:
+                await ShowSessionSummaryAsync(chatId, session, ct);
+                break;
+            case SessionCommandKind.Delete:
+                await DeleteSessionByCommandAsync(chatId, session, ct);
+                break;
+            case SessionCommandKind.Connect:
+                await ConnectToSessionAsync(chatId, session, ct);
+                break;
+        }
+    }
+
+    private async Task ShowSessionSummaryAsync(long chatId, SessionSummary session, CancellationToken ct)
+    {
+        var created = session.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "unknown";
+
+        var lines = new List<string>
+        {
+            $"📝 *Session Summary*",
+            $"Agent: {EscapeMarkdown(session.Persona)} ({EscapeMarkdown(session.AgentId)})",
+            $"Created: {EscapeMarkdown(created)}",
+            $"Messages: {session.MessageCount}",
+        };
+
+        if (!string.IsNullOrWhiteSpace(session.LastUserMessage))
+        {
+            var preview = Truncate(session.LastUserMessage, 200);
+            lines.Add($"\n*Last question:*\n{EscapeMarkdown(preview)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(session.LastAssistantMessage))
+        {
+            var preview = Truncate(session.LastAssistantMessage, 300);
+            lines.Add($"\n*Last response:*\n{EscapeMarkdown(preview)}");
+        }
+
+        if (string.IsNullOrWhiteSpace(session.LastUserMessage) && string.IsNullOrWhiteSpace(session.LastAssistantMessage))
+        {
+            lines.Add("\n_No messages in this session yet._");
+        }
+
+        await botClient.SendMessage(chatId, string.Join('\n', lines),
+            parseMode: ParseMode.Markdown, cancellationToken: ct);
+    }
+
+    private async Task DeleteSessionByCommandAsync(long chatId, SessionSummary session, CancellationToken ct)
+    {
+        var deleted = await sharpClawClient.DeleteSessionAsync(session.SessionId, ct);
+        if (!deleted)
+        {
+            await SendErrorAsync(chatId, "Could not delete the session. It may be currently streaming.", ct);
+            return;
+        }
+
+        if (sessionStore.TryGetSession(chatId, out var currentSessionId) &&
+            string.Equals(currentSessionId, session.SessionId, StringComparison.Ordinal))
+        {
+            sessionStore.RemoveSession(chatId);
+        }
+
+        await botClient.SendMessage(chatId,
+            $"🗑️ Session with *{EscapeMarkdown(session.Persona)}* has been deleted.",
+            parseMode: ParseMode.Markdown, cancellationToken: ct);
+    }
+
+    private async Task ConnectToSessionAsync(long chatId, SessionSummary session, CancellationToken ct)
+    {
+        sessionStore.SetSession(chatId, session.SessionId);
+        await botClient.SendMessage(chatId,
+            $"🔗 Connected to session with *{EscapeMarkdown(session.Persona)}* ({EscapeMarkdown(session.AgentId)}). Send a message to continue the conversation.",
+            parseMode: ParseMode.Markdown, cancellationToken: ct);
+    }
+
+    private async Task<bool> TryHandleStaleSessionAsync(long chatId, string sessionId, CancellationToken ct)
+    {
+        var sessions = await sharpClawClient.ListSessionsAsync(ct);
+        var sessionExists = sessions?.Any(s => string.Equals(s.SessionId, sessionId, StringComparison.Ordinal)) ?? true;
+
+        if (sessionExists)
+            return false;
+
+        sessionStore.RemoveSession(chatId);
+        logger.LogInformation("Cleared stale session '{SessionId}' for chat {ChatId} — session no longer exists on server",
+            sessionId, chatId);
+
+        var lines = new List<string>
+        {
+            "⚠️ Your active session has been deleted.\n"
+        };
+
+        if (sessions is not null && sessions.Count > 0)
+        {
+            lines.Add("📋 *Available sessions:*\n");
+            for (var i = 0; i < sessions.Count; i++)
+            {
+                var s = sessions[i];
+                var created = s.CreatedAt?.ToString("yyyy-MM-dd HH:mm") ?? "unknown";
+                lines.Add($"{i + 1}. *{EscapeMarkdown(s.Persona)}* ({EscapeMarkdown(s.AgentId)}) — {EscapeMarkdown(created)}");
+            }
+
+            lines.Add("");
+            lines.Add("Use .connect N to switch to an existing session, or .new to start a fresh one.");
+        }
+        else
+        {
+            lines.Add("No other sessions exist. Use .new to start a fresh session.");
+        }
+
+        await botClient.SendMessage(chatId, string.Join('\n', lines),
+            parseMode: ParseMode.Markdown, cancellationToken: ct);
+
+        return true;
+    }
+
+    private static string EscapeMarkdown(string text)
+        => text.Replace("_", "\\_").Replace("*", "\\*").Replace("[", "\\[").Replace("`", "\\`");
+
+    private static string Truncate(string text, int maxLength)
+        => text.Length <= maxLength ? text : text[..maxLength] + "…";
+
+    private static bool IsCommand(string text, string command)
+        => text.Equals("/" + command, StringComparison.OrdinalIgnoreCase) ||
+           text.Equals("." + command, StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryMatchCommandPrefix(string text, string command, out string argument)
+    {
+        foreach (var prefix in new[] { "/", "." })
+        {
+            var full = prefix + command;
+            if (text.StartsWith(full, StringComparison.OrdinalIgnoreCase))
+            {
+                argument = text.Length > full.Length ? text[full.Length..].Trim() : string.Empty;
+                return true;
+            }
+        }
+
+        argument = string.Empty;
+        return false;
     }
 
     private async Task<string?> EnsureSessionAsync(long chatId, CancellationToken ct)
