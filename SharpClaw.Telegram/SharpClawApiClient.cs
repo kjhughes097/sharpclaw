@@ -217,6 +217,82 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
         }
     }
 
+    public async Task<List<SessionSummary>?> ListSessionsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await httpClient.GetAsync("api/sessions", ct);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            var payload = GetPayloadOrRoot(doc.RootElement);
+
+            if (payload.ValueKind != JsonValueKind.Array)
+            {
+                logger.LogWarning("Unexpected list-sessions response shape: {Body}", json);
+                return null;
+            }
+
+            var sessions = new List<SessionSummary>();
+            foreach (var item in payload.EnumerateArray())
+            {
+                var sessionId = item.TryGetProperty("sessionId", out var sidEl) ? sidEl.GetString() : null;
+                var persona = item.TryGetProperty("persona", out var pEl) ? pEl.GetString() : null;
+                var agentId = item.TryGetProperty("agentId", out var aEl) ? aEl.GetString() : null;
+                var createdAt = item.TryGetProperty("createdAt", out var cEl) && cEl.TryGetDateTimeOffset(out var dt)
+                    ? dt
+                    : (DateTimeOffset?)null;
+
+                var messageCount = 0;
+                string? lastUserMessage = null;
+                string? lastAssistantMessage = null;
+
+                if (item.TryGetProperty("messages", out var msgsEl) && msgsEl.ValueKind == JsonValueKind.Array)
+                {
+                    messageCount = msgsEl.GetArrayLength();
+                    foreach (var msg in msgsEl.EnumerateArray())
+                    {
+                        var role = msg.TryGetProperty("role", out var rEl) ? rEl.GetString() : null;
+                        var content = msg.TryGetProperty("content", out var contentEl) ? contentEl.GetString() : null;
+                        if (role == "user" && !string.IsNullOrWhiteSpace(content))
+                            lastUserMessage = content;
+                        else if (role == "assistant" && !string.IsNullOrWhiteSpace(content))
+                            lastAssistantMessage = content;
+                    }
+                }
+
+                if (sessionId is not null)
+                {
+                    sessions.Add(new SessionSummary(
+                        sessionId, persona ?? "Unknown", agentId ?? "unknown",
+                        createdAt, messageCount, lastUserMessage, lastAssistantMessage));
+                }
+            }
+
+            return sessions;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to list sessions from SharpClaw API");
+            return null;
+        }
+    }
+
+    public async Task<bool> DeleteSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await httpClient.DeleteAsync($"api/sessions/{sessionId}", ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to delete session '{SessionId}'", sessionId);
+            return false;
+        }
+    }
+
     private static JsonElement GetPayloadOrRoot(JsonElement root)
     {
         if (root.ValueKind == JsonValueKind.Object &&
@@ -228,3 +304,12 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
         return root;
     }
 }
+
+public sealed record SessionSummary(
+    string SessionId,
+    string Persona,
+    string AgentId,
+    DateTimeOffset? CreatedAt,
+    int MessageCount,
+    string? LastUserMessage,
+    string? LastAssistantMessage);
