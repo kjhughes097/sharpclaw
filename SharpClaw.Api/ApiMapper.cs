@@ -96,7 +96,8 @@ internal static class ApiMapper
             agent.PermissionPolicy,
             agent.SystemPrompt,
             agent.IsEnabled,
-            sessionCount);
+            sessionCount,
+            agent.DailyTokenLimit);
 
     internal static McpDto ToMcpDto(McpServerRecord mcp, int linkedAgentCount) =>
         new(
@@ -126,7 +127,8 @@ internal static class ApiMapper
             !string.IsNullOrWhiteSpace(settings.ApiKey),
             MaskToken(settings.ApiKey),
             requiresApiKey,
-            settings.UpdatedAt);
+            settings.UpdatedAt,
+            settings.DailyTokenLimit);
 
     internal static SessionDto ToSessionDto(SessionStore store, StoredSession session, Dictionary<string, AgentRecord> agentsBySlug)
     {
@@ -160,7 +162,8 @@ internal static class ApiMapper
             .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
             .ToDictionary(kvp => kvp.Key.Trim(), kvp => kvp.Value.Trim(), StringComparer.OrdinalIgnoreCase),
         SystemPrompt: req.SystemPrompt!.Trim(),
-        IsEnabled: req.IsEnabled ?? true);
+        IsEnabled: req.IsEnabled ?? true,
+        DailyTokenLimit: req.DailyTokenLimit);
 
     internal static McpServerRecord ToMcpRecord(McpDefinitionRequest req, string? slugOverride = null) => new(
         Slug: slugOverride ?? req.Slug!.Trim(),

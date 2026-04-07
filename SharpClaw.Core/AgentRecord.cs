@@ -13,7 +13,8 @@ public sealed record AgentRecord(
     IReadOnlyList<string> McpServers,
     IReadOnlyDictionary<string, string> PermissionPolicy,
     string SystemPrompt,
-    bool IsEnabled)
+    bool IsEnabled,
+    long? DailyTokenLimit = null)
 {
     /// <summary>
     /// Converts this database record to an <see cref="AgentPersona"/> ready for

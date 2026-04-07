@@ -133,6 +133,22 @@ public sealed class SessionStore : IDisposable
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
 
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id SERIAL PRIMARY KEY,
+                provider TEXT NOT NULL,
+                agent_slug TEXT NOT NULL,
+                usage_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                input_tokens BIGINT NOT NULL DEFAULT 0,
+                output_tokens BIGINT NOT NULL DEFAULT 0,
+                total_tokens BIGINT NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_token_usage_provider_date
+                ON token_usage (provider, usage_date);
+            CREATE INDEX IF NOT EXISTS idx_token_usage_agent_date
+                ON token_usage (agent_slug, usage_date);
+
             DO $$
             BEGIN
                 IF EXISTS (
@@ -184,6 +200,8 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             ALTER TABLE auth_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
             ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+            ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NOT NULL DEFAULT 1000000;
+            ALTER TABLE agents ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NULL;
             """;
         cmd.ExecuteNonQuery();
 
@@ -617,7 +635,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled, daily_token_limit
             FROM agents
             WHERE @include_disabled OR is_enabled = TRUE
             ORDER BY name
@@ -640,7 +658,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled
+            SELECT slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled, daily_token_limit
             FROM agents
             WHERE slug = @slug
             """;
@@ -762,8 +780,8 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO agents (slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled)
-            VALUES (@slug, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled)
+            INSERT INTO agents (slug, name, description, backend, model, mcp_servers, permission_policy, system_prompt, is_enabled, daily_token_limit)
+            VALUES (@slug, @name, @description, @backend, @model, @mcp_servers, @permission_policy, @system_prompt, @is_enabled, @daily_token_limit)
             """;
         WriteAgentParameters(cmd, agent);
         cmd.ExecuteNonQuery();
@@ -782,7 +800,8 @@ public sealed class SessionStore : IDisposable
                 mcp_servers = @mcp_servers,
                 permission_policy = @permission_policy,
                 system_prompt = @system_prompt,
-                is_enabled = @is_enabled
+                is_enabled = @is_enabled,
+                daily_token_limit = @daily_token_limit
             WHERE slug = @slug
             """;
         WriteAgentParameters(cmd, agent with { Slug = slug });
@@ -936,7 +955,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT backend, is_enabled, api_key, updated_at
+            SELECT backend, is_enabled, api_key, updated_at, daily_token_limit
             FROM backend_settings
             ORDER BY backend
             """;
@@ -949,7 +968,8 @@ public sealed class SessionStore : IDisposable
                 Backend: reader.GetString(0),
                 IsEnabled: reader.GetBoolean(1),
                 ApiKey: reader.IsDBNull(2) ? null : NormalizeOptionalString(reader.GetString(2)),
-                UpdatedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3)));
+                UpdatedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+                DailyTokenLimit: reader.GetInt64(4)));
         }
 
         return settings;
@@ -960,7 +980,7 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            SELECT backend, is_enabled, api_key, updated_at
+            SELECT backend, is_enabled, api_key, updated_at, daily_token_limit
             FROM backend_settings
             WHERE backend = @backend
             """;
@@ -974,7 +994,8 @@ public sealed class SessionStore : IDisposable
             Backend: reader.GetString(0),
             IsEnabled: reader.GetBoolean(1),
             ApiKey: reader.IsDBNull(2) ? null : NormalizeOptionalString(reader.GetString(2)),
-            UpdatedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3));
+            UpdatedAt: reader.IsDBNull(3) ? null : reader.GetFieldValue<DateTimeOffset>(3),
+            DailyTokenLimit: reader.GetInt64(4));
     }
 
     public void UpsertBackendIntegrationSettings(BackendIntegrationSettings settings)
@@ -982,16 +1003,18 @@ public sealed class SessionStore : IDisposable
         using var conn = _dataSource.OpenConnection();
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO backend_settings (backend, is_enabled, api_key, updated_at)
-            VALUES (@backend, @is_enabled, @api_key, NOW())
+            INSERT INTO backend_settings (backend, is_enabled, api_key, daily_token_limit, updated_at)
+            VALUES (@backend, @is_enabled, @api_key, @daily_token_limit, NOW())
             ON CONFLICT (backend) DO UPDATE
             SET is_enabled = EXCLUDED.is_enabled,
                 api_key = EXCLUDED.api_key,
+                daily_token_limit = EXCLUDED.daily_token_limit,
                 updated_at = NOW()
             """;
         cmd.Parameters.AddWithValue("backend", settings.Backend);
         cmd.Parameters.AddWithValue("is_enabled", settings.IsEnabled);
         cmd.Parameters.AddWithValue("api_key", (object?)NormalizeOptionalString(settings.ApiKey) ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("daily_token_limit", settings.DailyTokenLimit);
         cmd.ExecuteNonQuery();
     }
 
@@ -1192,7 +1215,8 @@ public sealed class SessionStore : IDisposable
             McpServers: mcpServers,
             PermissionPolicy: permPolicy,
             SystemPrompt: reader.GetString(7),
-            IsEnabled: reader.GetBoolean(8));
+            IsEnabled: reader.GetBoolean(8),
+            DailyTokenLimit: reader.IsDBNull(9) ? null : reader.GetInt64(9));
     }
 
     private static McpServerRecord ReadMcpRecord(NpgsqlDataReader reader)
@@ -1218,6 +1242,7 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("permission_policy", JsonSerializer.Serialize(agent.PermissionPolicy, JsonOpts));
         cmd.Parameters.AddWithValue("system_prompt", agent.SystemPrompt);
         cmd.Parameters.AddWithValue("is_enabled", agent.IsEnabled);
+        cmd.Parameters.AddWithValue("daily_token_limit", (object?)agent.DailyTokenLimit ?? DBNull.Value);
     }
 
     private static void WriteMcpParameters(NpgsqlCommand cmd, McpServerRecord mcp)
@@ -1341,6 +1366,147 @@ public sealed class SessionStore : IDisposable
         }
 
         return logs;
+    }
+
+    // ── Token Usage ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Records a token usage entry for the given provider and agent on the current date.
+    /// </summary>
+    public void RecordTokenUsage(string provider, string agentSlug, long inputTokens, long outputTokens)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO token_usage (provider, agent_slug, usage_date, input_tokens, output_tokens, total_tokens)
+            VALUES (@provider, @agent_slug, CURRENT_DATE, @input_tokens, @output_tokens, @total_tokens)
+            """;
+        cmd.Parameters.AddWithValue("provider", provider);
+        cmd.Parameters.AddWithValue("agent_slug", agentSlug);
+        cmd.Parameters.AddWithValue("input_tokens", inputTokens);
+        cmd.Parameters.AddWithValue("output_tokens", outputTokens);
+        cmd.Parameters.AddWithValue("total_tokens", inputTokens + outputTokens);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Returns the total token usage for a given provider on a given date.
+    /// </summary>
+    public long GetDailyProviderTokenUsage(string provider, DateOnly date)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COALESCE(SUM(total_tokens), 0)
+            FROM token_usage
+            WHERE provider = @provider AND usage_date = @date
+            """;
+        cmd.Parameters.AddWithValue("provider", provider);
+        cmd.Parameters.AddWithValue("date", date);
+        return (long)(cmd.ExecuteScalar() ?? 0L);
+    }
+
+    /// <summary>
+    /// Returns the total token usage for a given agent on a given date.
+    /// </summary>
+    public long GetDailyAgentTokenUsage(string agentSlug, DateOnly date)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT COALESCE(SUM(total_tokens), 0)
+            FROM token_usage
+            WHERE agent_slug = @agent_slug AND usage_date = @date
+            """;
+        cmd.Parameters.AddWithValue("agent_slug", agentSlug);
+        cmd.Parameters.AddWithValue("date", date);
+        return (long)(cmd.ExecuteScalar() ?? 0L);
+    }
+
+    /// <summary>
+    /// Returns daily provider usage summaries for all enabled providers for a given date.
+    /// </summary>
+    public IReadOnlyList<ProviderDailyUsage> GetProviderDailyUsageSummary(DateOnly date)
+    {
+        var backendSettings = ListBackendIntegrationSettings();
+        var results = new List<ProviderDailyUsage>();
+
+        foreach (var bs in backendSettings)
+        {
+            var usage = GetDailyProviderTokenUsage(bs.Backend, date);
+            results.Add(new ProviderDailyUsage(bs.Backend, date, usage, bs.DailyTokenLimit));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Returns daily agent usage summaries for all agents for a given date.
+    /// </summary>
+    public IReadOnlyList<AgentDailyUsage> GetAgentDailyUsageSummary(DateOnly date)
+    {
+        var agents = ListAgents();
+        var results = new List<AgentDailyUsage>();
+
+        foreach (var agent in agents)
+        {
+            var usage = GetDailyAgentTokenUsage(agent.Slug, date);
+            results.Add(new AgentDailyUsage(agent.Slug, date, usage, agent.DailyTokenLimit));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Returns token usage data points for charting, grouped by time bucket and agent.
+    /// </summary>
+    public IReadOnlyList<TokenUsageDataPoint> GetTokenUsageHistory(string period)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = period switch
+        {
+            "day" => """
+                SELECT to_char(created_at, 'HH24:00') AS bucket,
+                       agent_slug,
+                       COALESCE(SUM(total_tokens), 0)
+                FROM token_usage
+                WHERE usage_date = CURRENT_DATE
+                GROUP BY bucket, agent_slug
+                ORDER BY bucket, agent_slug
+                """,
+            "week" => """
+                SELECT to_char(usage_date, 'YYYY-MM-DD') AS bucket,
+                       agent_slug,
+                       COALESCE(SUM(total_tokens), 0)
+                FROM token_usage
+                WHERE usage_date >= CURRENT_DATE - INTERVAL '6 days'
+                GROUP BY bucket, agent_slug
+                ORDER BY bucket, agent_slug
+                """,
+            _ => """
+                SELECT to_char(usage_date, 'YYYY-MM-DD') AS bucket,
+                       agent_slug,
+                       COALESCE(SUM(total_tokens), 0)
+                FROM token_usage
+                WHERE usage_date >= CURRENT_DATE - INTERVAL '29 days'
+                GROUP BY bucket, agent_slug
+                ORDER BY bucket, agent_slug
+                """,
+        };
+
+        var dataPoints = new List<TokenUsageDataPoint>();
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            dataPoints.Add(new TokenUsageDataPoint(
+                Bucket: reader.GetString(0),
+                AgentSlug: reader.GetString(1),
+                TotalTokens: reader.GetInt64(2)));
+        }
+
+        return dataPoints;
     }
 
     public void Dispose() => _dataSource.Dispose();
