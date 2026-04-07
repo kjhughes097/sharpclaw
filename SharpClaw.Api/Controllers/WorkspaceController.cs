@@ -34,8 +34,7 @@ public sealed class WorkspaceController(SessionStore store) : ControllerBase
         }
 
         // Ensure the resolved path is within the workspace root
-        if (!targetFull.StartsWith(rootFull, StringComparison.Ordinal)
-            || (targetFull.Length > rootFull.Length && targetFull[rootFull.Length] != Path.DirectorySeparatorChar && rootFull[^1] != Path.DirectorySeparatorChar))
+        if (!IsPathWithinRoot(targetFull, rootFull))
         {
             return BadRequest(new ErrorResponse("Path is outside the workspace directory."));
         }
@@ -69,5 +68,22 @@ public sealed class WorkspaceController(SessionStore store) : ControllerBase
         }
 
         return Ok(new WorkspaceBrowseResponse(relativePath, entries));
+    }
+
+    /// <summary>
+    /// Checks that <paramref name="target"/> is equal to or a child of <paramref name="root"/>,
+    /// preventing directory traversal outside the workspace. Both paths must already be fully resolved.
+    /// </summary>
+    private static bool IsPathWithinRoot(string target, string root)
+    {
+        if (string.Equals(target, root, StringComparison.Ordinal))
+            return true;
+
+        // Ensure the root ends with a separator so "/workspace-other" doesn't match "/workspace"
+        var normalizedRoot = root.EndsWith(Path.DirectorySeparatorChar)
+            ? root
+            : root + Path.DirectorySeparatorChar;
+
+        return target.StartsWith(normalizedRoot, StringComparison.Ordinal);
     }
 }

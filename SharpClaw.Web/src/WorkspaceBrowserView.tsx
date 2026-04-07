@@ -138,7 +138,7 @@ export function WorkspaceBrowserView({ onMenuClick }: WorkspaceBrowserViewProps)
                 onClick={entry.type === 'directory' ? () => navigateToDir(entry.name) : undefined}
                 role={entry.type === 'directory' ? 'button' : undefined}
                 tabIndex={entry.type === 'directory' ? 0 : undefined}
-                onKeyDown={entry.type === 'directory' ? (e) => { if (e.key === 'Enter') navigateToDir(entry.name); } : undefined}
+                onKeyDown={entry.type === 'directory' ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigateToDir(entry.name); } } : undefined}
               >
                 <span className="workspace-entry-icon" aria-hidden="true">
                   {entry.type === 'directory' ? '📁' : '📄'}
