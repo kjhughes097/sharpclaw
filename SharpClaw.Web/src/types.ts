@@ -23,6 +23,7 @@ export interface AgentDefinition {
     systemPrompt: string;
     isEnabled: boolean;
     sessionCount: number;
+    dailyTokenLimit: number | null;
 }
 
 export interface AgentUpsertRequest {
@@ -34,6 +35,7 @@ export interface AgentUpsertRequest {
     permissionPolicy: Record<string, string>;
     systemPrompt: string;
     isEnabled: boolean;
+    dailyTokenLimit?: number | null;
 }
 
 export interface BackendModelOption {
@@ -55,12 +57,14 @@ export interface BackendSettings {
     maskedApiKey: string | null;
     requiresApiKey: boolean;
     updatedAt: string | null;
+    dailyTokenLimit: number;
 }
 
 export interface UpdateBackendSettingsRequest {
     isEnabled: boolean;
     apiKey?: string;
     clearApiKey?: boolean;
+    dailyTokenLimit?: number;
 }
 
 export interface AppSettings {
@@ -222,4 +226,36 @@ export interface StreamItem {
 export interface PersistedStreamItem {
     event: AgentEvent;
     result?: ToolResultEvent;
+}
+
+/* ── Token usage types ────────────────────────────────────────────────────── */
+
+export interface ProviderDailyUsage {
+    provider: string;
+    totalTokens: number;
+    dailyLimit: number;
+    usagePercent: number;
+}
+
+export interface AgentDailyUsage {
+    agentSlug: string;
+    totalTokens: number;
+    dailyLimit: number | null;
+    usagePercent: number | null;
+}
+
+export interface TokenUsageSummary {
+    providers: ProviderDailyUsage[];
+    agents: AgentDailyUsage[];
+}
+
+export interface TokenUsageDataPoint {
+    bucket: string;
+    agentSlug: string;
+    totalTokens: number;
+}
+
+export interface TokenUsageHistory {
+    period: string;
+    dataPoints: TokenUsageDataPoint[];
 }
