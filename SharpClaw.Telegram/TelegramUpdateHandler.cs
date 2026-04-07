@@ -58,35 +58,33 @@ public sealed class TelegramUpdateHandler(
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
         var messageCt = linkedCts.Token;
 
-        if (text.Equals("/start", StringComparison.OrdinalIgnoreCase) ||
-            text.Equals("/new", StringComparison.OrdinalIgnoreCase))
+        if (IsCommand(text, "start") || IsCommand(text, "new"))
         {
             await StartNewSessionAsync(chatId, messageCt);
             return;
         }
 
-        if (text.Equals("/sessions", StringComparison.OrdinalIgnoreCase) ||
-            text.Equals("/list", StringComparison.OrdinalIgnoreCase))
+        if (IsCommand(text, "sessions") || IsCommand(text, "list"))
         {
             await ListSessionsAsync(chatId, messageCt);
             return;
         }
 
-        if (text.StartsWith("/summary", StringComparison.OrdinalIgnoreCase))
+        if (TryMatchCommandPrefix(text, "summary", out var summaryArg))
         {
-            await HandleSessionCommandAsync(chatId, text, "/summary", SessionCommandKind.Summary, messageCt);
+            await HandleSessionCommandAsync(chatId, summaryArg, "summary", SessionCommandKind.Summary, messageCt);
             return;
         }
 
-        if (text.StartsWith("/delete", StringComparison.OrdinalIgnoreCase))
+        if (TryMatchCommandPrefix(text, "delete", out var deleteArg))
         {
-            await HandleSessionCommandAsync(chatId, text, "/delete", SessionCommandKind.Delete, messageCt);
+            await HandleSessionCommandAsync(chatId, deleteArg, "delete", SessionCommandKind.Delete, messageCt);
             return;
         }
 
-        if (text.StartsWith("/connect", StringComparison.OrdinalIgnoreCase))
+        if (TryMatchCommandPrefix(text, "connect", out var connectArg))
         {
-            await HandleSessionCommandAsync(chatId, text, "/connect", SessionCommandKind.Connect, messageCt);
+            await HandleSessionCommandAsync(chatId, connectArg, "connect", SessionCommandKind.Connect, messageCt);
             return;
         }
 
@@ -156,7 +154,7 @@ public sealed class TelegramUpdateHandler(
         }
 
         lines.Add("");
-        lines.Add("Use /summary N, /connect N, or /delete N");
+        lines.Add("Use .summary N, .connect N, or .delete N");
 
         await botClient.SendMessage(chatId, string.Join('\n', lines),
             parseMode: ParseMode.Markdown, cancellationToken: ct);
@@ -164,12 +162,11 @@ public sealed class TelegramUpdateHandler(
 
     private enum SessionCommandKind { Summary, Delete, Connect }
 
-    private async Task HandleSessionCommandAsync(long chatId, string text, string command, SessionCommandKind kind, CancellationToken ct)
+    private async Task HandleSessionCommandAsync(long chatId, string argument, string commandName, SessionCommandKind kind, CancellationToken ct)
     {
-        var arg = text.Length > command.Length ? text[command.Length..].Trim() : string.Empty;
-        if (string.IsNullOrWhiteSpace(arg) || !int.TryParse(arg, out var index) || index < 1)
+        if (string.IsNullOrWhiteSpace(argument) || !int.TryParse(argument, out var index) || index < 1)
         {
-            await botClient.SendMessage(chatId, $"Usage: {command} <number>\nUse /sessions to see the list.",
+            await botClient.SendMessage(chatId, $"Usage: .{commandName} <number>\nUse .sessions to see the list.",
                 cancellationToken: ct);
             return;
         }
@@ -270,6 +267,26 @@ public sealed class TelegramUpdateHandler(
 
     private static string Truncate(string text, int maxLength)
         => text.Length <= maxLength ? text : text[..maxLength] + "…";
+
+    private static bool IsCommand(string text, string command)
+        => text.Equals("/" + command, StringComparison.OrdinalIgnoreCase) ||
+           text.Equals("." + command, StringComparison.OrdinalIgnoreCase);
+
+    private static bool TryMatchCommandPrefix(string text, string command, out string argument)
+    {
+        foreach (var prefix in new[] { "/", "." })
+        {
+            var full = prefix + command;
+            if (text.StartsWith(full, StringComparison.OrdinalIgnoreCase))
+            {
+                argument = text.Length > full.Length ? text[full.Length..].Trim() : string.Empty;
+                return true;
+            }
+        }
+
+        argument = string.Empty;
+        return false;
+    }
 
     private async Task<string?> EnsureSessionAsync(long chatId, CancellationToken ct)
     {
