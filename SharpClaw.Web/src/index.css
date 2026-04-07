@@ -368,6 +368,15 @@ body {
   border-color: rgba(58, 111, 160, 0.16);
 }
 
+.session-pill.session-pill-agent {
+  color: var(--accent);
+  background: rgba(74, 108, 247, 0.14);
+  border-color: rgba(74, 108, 247, 0.24);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .session-item.active .session-pill {
   background: rgba(74, 108, 247, 0.12);
   border-color: rgba(74, 108, 247, 0.22);

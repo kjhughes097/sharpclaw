@@ -421,6 +421,9 @@ public sealed class SessionStore : IDisposable
                 { "github.read_*", "auto_approve" },
                 { "github.search_*", "auto_approve" },
                 { "duckduckgo.*", "auto_approve" },
+                { "builtin.read_file", "auto_approve" },
+                { "builtin.write_file", "auto_approve" },
+                { "builtin.run_command", "ask" },
                 { "*", "ask" },
             },
             SystemPrompt: """
@@ -1290,6 +1293,19 @@ public sealed class SessionStore : IDisposable
         cmd.Parameters.AddWithValue("sid", sessionId);
         cmd.Parameters.AddWithValue("role", message.Role.ToString());
         cmd.Parameters.AddWithValue("content", message.Content);
+        cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Updates the agent assignment for an existing session.
+    /// </summary>
+    public void UpdateSessionAgent(string sessionId, string agentSlug)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "UPDATE sessions SET agent_slug = @slug WHERE session_id = @sid";
+        cmd.Parameters.AddWithValue("slug", agentSlug);
+        cmd.Parameters.AddWithValue("sid", sessionId);
         cmd.ExecuteNonQuery();
     }
 

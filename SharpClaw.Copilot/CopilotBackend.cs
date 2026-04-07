@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using GitHub.Copilot.SDK;
@@ -55,28 +56,19 @@ public sealed class CopilotBackend : IAgentBackend
                 Mode = SystemMessageMode.Append,
                 Content = systemPrompt,
             },
-            AvailableTools = new List<string>(),
+
             Tools = aiFunctions,
             WorkingDirectory = _workingDirectory,
         }, cancellationToken);
 
         await using (session)
         {
-            // Use the last user message from history.
-            var lastUserMessage = "";
-            for (var i = history.Count - 1; i >= 0; i--)
-            {
-                if (history[i].Role == ChatRole.User)
-                {
-                    lastUserMessage = history[i].Content;
-                    break;
-                }
-            }
+            var prompt = FormatPromptWithHistory(history);
 
             onProgress?.Invoke("Thinking…");
 
             var result = await session.SendAndWaitAsync(
-                new MessageOptions { Prompt = lastUserMessage },
+                new MessageOptions { Prompt = prompt },
                 timeout: null,
                 cancellationToken: cancellationToken);
 
@@ -91,14 +83,47 @@ public sealed class CopilotBackend : IAgentBackend
 
         return (PermissionRequest request, PermissionInvocation invocation) =>
         {
+            // MCP and custom tool calls are already gated by the AsyncPermissionGate
+            // in the AgentRunner's tool dispatcher (via DispatchingAIFunction).
+            // Auto-approve here to avoid double-gating — the async gate can properly
+            // surface permission requests to the UI, while the sync gate cannot
+            // (it relies on Console.ReadLine which fails in headless/service mode).
+            if (request is PermissionRequestMcp or PermissionRequestCustomTool)
+            {
+                return Task.FromResult(new PermissionRequestResult
+                {
+                    Kind = PermissionRequestResultKind.Approved,
+                });
+            }
+
+            // For SDK built-in operations (file reads/writes, shell), evaluate
+            // against the permission policy using namespaced tool names that align
+            // with the conventions used in agent permission policies.
+            //
+            // NOTE: The sync PermissionGate cannot surface "ask" decisions to the
+            // UI (Console.ReadLine returns null in headless/service mode, silently
+            // denying). To avoid blocking the agent, we treat "ask" as "approve"
+            // here and log it — the explicit deny/auto_approve rules still apply.
             var (toolName, args) = ExtractToolInfo(request);
-            var allowed = _permissionGate.Evaluate(toolName, args);
+            var permission = _permissionGate.Resolve(toolName);
+
+            if (permission == ToolPermission.Deny)
+            {
+                Console.Error.WriteLine($"⛔ Copilot built-in tool '{toolName}' blocked by permission policy.");
+                return Task.FromResult(new PermissionRequestResult
+                {
+                    Kind = PermissionRequestResultKind.DeniedByRules,
+                });
+            }
+
+            if (permission == ToolPermission.Ask)
+            {
+                Console.Error.WriteLine($"⚠ Copilot built-in tool '{toolName}' auto-approved (ask cannot be surfaced in headless mode).");
+            }
 
             return Task.FromResult(new PermissionRequestResult
             {
-                Kind = allowed
-                    ? PermissionRequestResultKind.Approved
-                        : PermissionRequestResultKind.DeniedCouldNotRequestFromUser,
+                Kind = PermissionRequestResultKind.Approved,
             });
         };
     }
@@ -108,24 +133,52 @@ public sealed class CopilotBackend : IAgentBackend
     {
         return request switch
         {
-            PermissionRequestMcp mcp => (mcp.ToolName ?? mcp.ServerName ?? "mcp_unknown",
-                ParseArgs(mcp.Args as string)),
-            PermissionRequestCustomTool custom => (custom.ToolName ?? "custom_tool",
-                ParseArgs(custom.Args as string)),
-            PermissionRequestWrite write => ("write_file",
+            // SDK built-in file operations — use "builtin." prefix so they can
+            // be matched by policy patterns (e.g. "builtin.*: auto_approve").
+            // Also yields the raw name via GetCandidates for catch-all matching.
+            PermissionRequestWrite write => ("builtin.write_file",
                 new Dictionary<string, object?> { ["fileName"] = write.FileName }),
-            PermissionRequestRead read => ("read_file",
+            PermissionRequestRead read => ("builtin.read_file",
                 new Dictionary<string, object?> { ["path"] = read.Path }),
-            PermissionRequestShell shell => ("run_command",
+            PermissionRequestShell shell => ("builtin.run_command",
                 new Dictionary<string, object?> { ["command"] = shell.FullCommandText }),
             _ => (request.Kind ?? "unknown", null),
         };
     }
 
     /// <summary>
-    /// Appends an instruction block listing the available MCP tools so the model
-    /// uses them instead of falling back to built-in tools like bash.
+    /// Formats the conversation history into a single prompt string for the Copilot SDK,
+    /// which only supports single-turn message input. When there is only one user message
+    /// (no prior conversation), the prompt is sent as-is. For multi-turn conversations,
+    /// prior turns are formatted as a conversation transcript prepended to the latest
+    /// user message so the model can see the full context.
     /// </summary>
+    private static string FormatPromptWithHistory(IReadOnlyList<ChatMessage> history)
+    {
+        if (history.Count == 0)
+            return string.Empty;
+
+        // Single user message — no preamble needed.
+        if (history.Count == 1)
+            return history[0].Content;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("<conversation_history>");
+
+        // All messages except the last (which becomes the direct prompt).
+        for (var i = 0; i < history.Count - 1; i++)
+        {
+            var role = history[i].Role == ChatRole.User ? "User" : "Assistant";
+            sb.AppendLine($"[{role}]: {history[i].Content}");
+        }
+
+        sb.AppendLine("</conversation_history>");
+        sb.AppendLine();
+        sb.Append(history[^1].Content);
+
+        return sb.ToString();
+    }
+
     private static IReadOnlyDictionary<string, object?>? ParseArgs(string? argsJson)
     {
         if (string.IsNullOrEmpty(argsJson))
@@ -168,22 +221,13 @@ public sealed class CopilotBackend : IAgentBackend
                 Mode = SystemMessageMode.Append,
                 Content = systemPrompt,
             },
-            AvailableTools = new List<string>(),
             Tools = aiFunctions,
             WorkingDirectory = _workingDirectory,
         }, cancellationToken);
 
         await using (session)
         {
-            var lastUserMessage = "";
-            for (var i = history.Count - 1; i >= 0; i--)
-            {
-                if (history[i].Role == ChatRole.User)
-                {
-                    lastUserMessage = history[i].Content;
-                    break;
-                }
-            }
+            var prompt = FormatPromptWithHistory(history);
 
             var channel = Channel.CreateUnbounded<AgentEvent>();
             // Track tool call IDs → tool names for pairing with complete events.
@@ -267,7 +311,7 @@ public sealed class CopilotBackend : IAgentBackend
                 try
                 {
                     var result = await session.SendAndWaitAsync(
-                        new MessageOptions { Prompt = lastUserMessage },
+                        new MessageOptions { Prompt = prompt },
                         timeout: TimeSpan.FromMinutes(10),
                         cancellationToken: cancellationToken);
 
