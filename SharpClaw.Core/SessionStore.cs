@@ -1466,7 +1466,12 @@ public sealed class SessionStore : IDisposable
         var lines = new List<string>();
         foreach (var message in conversation.Messages)
         {
-            var role = message.Role == ChatRole.User ? "User" : "Assistant";
+            var role = message.Role switch
+            {
+                ChatRole.User => "User",
+                ChatRole.Assistant => "Assistant",
+                _ => message.Role.ToString(),
+            };
             lines.Add($"{role}: {message.Content}");
         }
         return string.Join("\n\n", lines);

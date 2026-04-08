@@ -33,13 +33,14 @@ public sealed partial class KnowledgeService(SessionStore store, ILogger<Knowled
         var tags = ExtractTags(transcript, personaName);
         var now = DateTimeOffset.UtcNow;
         var safeTitle = SanitizeFileName(summary.Title);
-        var filename = $"{now:yyyy-MM-dd}-{sessionId}-{safeTitle}.md";
+        var shortId = sessionId.Length > 8 ? sessionId[..8] : sessionId;
+        var filename = $"{now:yyyy-MM-dd}-{shortId}-{safeTitle}.md";
         var filePath = Path.Combine(knowledgeDir, filename);
 
         var content = FormatKnowledgeFile(summary, tags, sessionId, agentSlug, personaName, now);
         File.WriteAllText(filePath, content, Encoding.UTF8);
 
-        logger.LogInformation("Knowledge file created: {FilePath}", filePath);
+        logger.LogInformation("Knowledge file created: {FilePath}", Path.Combine(KnowledgeFolderName, filename));
         return Path.Combine(KnowledgeFolderName, filename);
     }
 
@@ -258,6 +259,7 @@ public sealed partial class KnowledgeService(SessionStore store, ILogger<Knowled
     private static string SanitizeFileName(string name)
     {
         var sanitized = InvalidFileCharsRegex().Replace(name, "-");
+        sanitized = sanitized.Replace(' ', '-');
         sanitized = sanitized.Trim('-');
         return sanitized.Length > 40 ? sanitized[..40].TrimEnd('-') : sanitized;
     }
