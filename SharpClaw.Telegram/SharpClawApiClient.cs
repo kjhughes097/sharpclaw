@@ -293,6 +293,20 @@ public sealed class SharpClawApiClient(HttpClient httpClient, ILogger<SharpClawA
         }
     }
 
+    public async Task<bool> ArchiveSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        try
+        {
+            var response = await httpClient.PostAsync($"api/sessions/{sessionId}/archive", null, ct);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to archive session '{SessionId}'", sessionId);
+            return false;
+        }
+    }
+
     private static JsonElement GetPayloadOrRoot(JsonElement root)
     {
         if (root.ValueKind == JsonValueKind.Object &&

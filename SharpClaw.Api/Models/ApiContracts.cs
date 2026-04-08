@@ -82,6 +82,8 @@ public sealed record SessionDto(
     string AgentId,
     DateTimeOffset CreatedAt,
     DateTimeOffset LastActivityAt,
+    bool IsArchived,
+    DateTimeOffset? ArchivedAt,
     IReadOnlyList<MessageDto> Messages,
     IReadOnlyList<IReadOnlyList<StoredEventLogItemDto>> EventLogs) : IApiPayload;
 
@@ -232,3 +234,21 @@ public sealed record WorkspaceEntryDto(
 public sealed record WorkspaceBrowseResponse(
     string Path,
     IReadOnlyList<WorkspaceEntryDto> Entries) : IApiPayload;
+
+public sealed record SessionArchivedResponse(
+    string SessionId,
+    bool Archived,
+    string? KnowledgeFile) : IApiPayload;
+
+public sealed record KnowledgeEntryDto(
+    string Filename,
+    string Title,
+    string? SessionId,
+    string? Agent,
+    string? Persona,
+    DateTimeOffset? ArchivedAt,
+    IReadOnlyList<string> Tags,
+    string Summary) : IApiPayload;
+
+public sealed record KnowledgeListResponse(
+    IReadOnlyList<KnowledgeEntryDto> Entries) : IApiPayload;

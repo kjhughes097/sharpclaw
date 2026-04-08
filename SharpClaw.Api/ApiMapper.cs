@@ -144,6 +144,8 @@ internal static class ApiMapper
             session.AgentSlug,
             session.CreatedAt,
             session.LastActivityAt,
+            session.IsArchived,
+            session.ArchivedAt,
             conversation?.Messages.Select(message => new MessageDto(
                 message.Role == ChatRole.User ? "user" : "assistant",
                 message.Content)).ToList() ?? [],

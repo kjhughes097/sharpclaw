@@ -11,6 +11,7 @@ public sealed class SessionRuntimeService(
     SessionStore store,
     BackendRegistry backendRegistry,
     BackendSettingsService backendSettingsService,
+    KnowledgeService knowledgeService,
     ILogger<SessionRuntimeService> logger)
 {
     private readonly ConcurrentDictionary<string, AgentRunner> _runners = new();
@@ -142,6 +143,44 @@ public sealed class SessionRuntimeService(
         await CleanupSessionAsync(sessionId);
 
         return new ApiResponse<IApiPayload>(StatusCodes.Status200OK, new SessionDeletedResponse(sessionId, true));
+    }
+
+    public async Task<ApiResponse<IApiPayload>> ArchiveSessionAsync(string sessionId)
+    {
+        var session = store.ListSessions().FirstOrDefault(item => item.SessionId == sessionId);
+        if (session is null)
+            return new ApiResponse<IApiPayload>(StatusCodes.Status404NotFound, new ErrorResponse($"Session '{sessionId}' not found."));
+
+        if (session.IsArchived)
+            return new ApiResponse<IApiPayload>(StatusCodes.Status409Conflict, new ErrorResponse($"Session '{sessionId}' is already archived."));
+
+        if (HasActiveStreams(sessionId))
+        {
+            return new ApiResponse<IApiPayload>(
+                StatusCodes.Status409Conflict,
+                new ErrorResponse($"Session '{sessionId}' is currently streaming and cannot be archived yet."));
+        }
+
+        if (!store.ArchiveSession(sessionId))
+            return new ApiResponse<IApiPayload>(StatusCodes.Status404NotFound, new ErrorResponse($"Session '{sessionId}' not found."));
+
+        // Generate knowledge summary and store it
+        var agentsBySlug = store.ListAgents().ToDictionary(a => a.Slug, StringComparer.OrdinalIgnoreCase);
+        var personaName = agentsBySlug.TryGetValue(session.AgentSlug, out var agentRecord) ? agentRecord.Name : session.AgentSlug;
+
+        string? knowledgeFile = null;
+        try
+        {
+            knowledgeFile = knowledgeService.GenerateAndStore(sessionId, session.AgentSlug, personaName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to generate knowledge file for session '{SessionId}'", sessionId);
+        }
+
+        await CleanupSessionAsync(sessionId);
+
+        return new ApiResponse<IApiPayload>(StatusCodes.Status200OK, new SessionArchivedResponse(sessionId, true, knowledgeFile));
     }
 
     public ApiResponse<IApiPayload> ResolvePermission(string sessionId, string requestId, bool allow)

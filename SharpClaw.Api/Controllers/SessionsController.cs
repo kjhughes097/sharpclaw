@@ -73,6 +73,16 @@ public sealed class SessionsController(SessionStore store, SessionRuntimeService
     public Task StreamMessage(string id, string msgId)
         => runtimeService.StreamEventsAsync(id, msgId, HttpContext);
 
+    [HttpPost("sessions/{id}/archive")]
+    [ProducesResponseType<SessionArchivedResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ErrorResponse>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ArchiveSession(string id)
+    {
+        var response = await runtimeService.ArchiveSessionAsync(id);
+        return StatusCode(response.StatusCode, response.Payload);
+    }
+
     [HttpPost("sessions/{id}/permissions/{requestId}")]
     [ProducesResponseType<PermissionResolvedResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ErrorResponse>(StatusCodes.Status404NotFound)]

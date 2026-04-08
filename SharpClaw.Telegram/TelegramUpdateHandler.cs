@@ -88,6 +88,12 @@ public sealed class TelegramUpdateHandler(
             return;
         }
 
+        if (TryMatchCommandPrefix(text, "archive", out var archiveArg))
+        {
+            await HandleSessionCommandAsync(chatId, archiveArg, "archive", SessionCommandKind.Archive, messageCt);
+            return;
+        }
+
         var sessionId = await EnsureSessionAsync(chatId, messageCt);
         if (sessionId is null)
         {
@@ -167,7 +173,7 @@ public sealed class TelegramUpdateHandler(
             parseMode: ParseMode.Markdown, cancellationToken: ct);
     }
 
-    private enum SessionCommandKind { Summary, Delete, Connect }
+    private enum SessionCommandKind { Summary, Delete, Connect, Archive }
 
     private async Task HandleSessionCommandAsync(long chatId, string argument, string commandName, SessionCommandKind kind, CancellationToken ct)
     {
@@ -204,6 +210,9 @@ public sealed class TelegramUpdateHandler(
                 break;
             case SessionCommandKind.Connect:
                 await ConnectToSessionAsync(chatId, session, ct);
+                break;
+            case SessionCommandKind.Archive:
+                await ArchiveSessionByCommandAsync(chatId, session, ct);
                 break;
         }
     }
@@ -266,6 +275,26 @@ public sealed class TelegramUpdateHandler(
         sessionStore.SetSession(chatId, session.SessionId);
         await botClient.SendMessage(chatId,
             $"🔗 Connected to session with *{EscapeMarkdown(session.Persona)}* ({EscapeMarkdown(session.AgentId)}). Send a message to continue the conversation.",
+            parseMode: ParseMode.Markdown, cancellationToken: ct);
+    }
+
+    private async Task ArchiveSessionByCommandAsync(long chatId, SessionSummary session, CancellationToken ct)
+    {
+        var archived = await sharpClawClient.ArchiveSessionAsync(session.SessionId, ct);
+        if (!archived)
+        {
+            await SendErrorAsync(chatId, "Could not archive the session. It may be currently streaming or already archived.", ct);
+            return;
+        }
+
+        if (sessionStore.TryGetSession(chatId, out var currentSessionId) &&
+            string.Equals(currentSessionId, session.SessionId, StringComparison.Ordinal))
+        {
+            sessionStore.RemoveSession(chatId);
+        }
+
+        await botClient.SendMessage(chatId,
+            $"📦 Session with *{EscapeMarkdown(session.Persona)}* has been archived\\. A knowledge summary has been generated\\.",
             parseMode: ParseMode.Markdown, cancellationToken: ct);
     }
 
