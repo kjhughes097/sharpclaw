@@ -1,4 +1,4 @@
-import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, HeartbeatSettings, UpdateHeartbeatSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest, TokenUsageSummary, TokenUsageHistory, WorkspaceBrowseResponse } from './types';
+import type { Persona, Session, PersistedSession, AgentDefinition, AgentEvent, AgentUpsertRequest, BackendModelListResponse, McpDefinition, McpUpsertRequest, TelegramSettings, TelegramWorkerToken, UpdateTelegramSettingsRequest, BackendSettings, UpdateBackendSettingsRequest, AppSettings, UpdateAppSettingsRequest, HeartbeatSettings, UpdateHeartbeatSettingsRequest, AuthStatus, SetupAuthRequest, LoginRequest, TokenUsageSummary, TokenUsageHistory, WorkspaceBrowseResponse, SessionArchivedResponse, KnowledgeListResponse } from './types';
 
 const BASE = '/api';  // All API routes are under /api/
 
@@ -365,6 +365,28 @@ export async function fetchWorkspaceContents(path?: string): Promise<WorkspaceBr
     const params = path ? `?path=${encodeURIComponent(path)}` : '';
     const res = await fetch(`${BASE}/workspace/browse${params}`, { headers: headers() });
     if (!res.ok) throw new Error(await readError(res, `GET /workspace/browse: ${res.status}`));
+    return res.json();
+}
+
+export async function archiveSession(sessionId: string): Promise<SessionArchivedResponse> {
+    const res = await fetch(`${BASE}/sessions/${encodeURIComponent(sessionId)}/archive`, {
+        method: 'POST',
+        headers: headers(),
+    });
+    if (!res.ok) throw new Error(await readError(res, `POST /sessions/${sessionId}/archive: ${res.status}`));
+    return res.json();
+}
+
+export async function fetchKnowledge(): Promise<KnowledgeListResponse> {
+    const res = await fetch(`${BASE}/knowledge`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /knowledge: ${res.status}`));
+    return res.json();
+}
+
+export async function fetchRelatedKnowledge(tags: string[]): Promise<KnowledgeListResponse> {
+    const params = tags.length > 0 ? `?tags=${encodeURIComponent(tags.join(','))}` : '';
+    const res = await fetch(`${BASE}/knowledge/related${params}`, { headers: headers() });
+    if (!res.ok) throw new Error(await readError(res, `GET /knowledge/related: ${res.status}`));
     return res.json();
 }
 
