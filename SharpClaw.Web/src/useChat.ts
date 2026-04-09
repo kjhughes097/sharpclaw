@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { Session, ChatMessage, PersistedSession, PersistedStreamItem, StreamItem, AgentEvent, ToolResultEvent } from './types';
-import { createSession, deleteSession as deletePersistedSession, fetchSession, fetchSessions, sendMessage, streamEvents } from './api';
+import { createSession, deleteSession as deletePersistedSession, archiveSession as archivePersistedSession, fetchSession, fetchSessions, sendMessage, streamEvents } from './api';
 
 const DEFAULT_AGENT_ID = 'ade';
 const DEFAULT_PERSONA_NAME = 'Ade';
@@ -11,6 +11,7 @@ export interface SessionState {
     createdAt: string;
     lastActivityAt: string;
     isDraft: boolean;
+    isArchived: boolean;
     messages: ChatMessage[];
     /** Stream items for the currently-streaming assistant turn */
     streamItems: StreamItem[];
@@ -51,6 +52,7 @@ function toSessionState(session: PersistedSession, counter: React.MutableRefObje
         createdAt: session.createdAt,
         lastActivityAt: session.lastActivityAt,
         isDraft: false,
+        isArchived: session.isArchived ?? false,
         messages: session.messages,
         streamItems: [],
         eventLogs: restoreEventLogs(session.messages, session.eventLogs, counter),
@@ -134,6 +136,7 @@ export function useChat(enabled: boolean) {
             createdAt,
             lastActivityAt: createdAt,
             isDraft: true,
+            isArchived: false,
             messages: [],
             streamItems: [],
             eventLogs: [],
@@ -206,6 +209,28 @@ export function useChat(enabled: boolean) {
             return next;
         });
     }, [active, sessions]);
+
+    const archiveSession = useCallback(async (sessionId: string) => {
+        const sessionIndex = sessions.findIndex(session => session.session.sessionId === sessionId);
+        if (sessionIndex < 0)
+            return;
+
+        const session = sessions[sessionIndex];
+        if (session.streaming)
+            throw new Error('This chat is still streaming. Wait for it to finish before archiving it.');
+        if (session.isDraft)
+            throw new Error('Cannot archive a draft session.');
+        if (session.isArchived)
+            throw new Error('This session is already archived.');
+
+        await archivePersistedSession(sessionId);
+
+        setSessions(prev => prev.map(s =>
+            s.session.sessionId === sessionId
+                ? { ...s, isArchived: true }
+                : s
+        ));
+    }, [sessions]);
 
     const send = useCallback(async (text: string) => {
         if (!active || active.streaming) return;
@@ -374,5 +399,5 @@ export function useChat(enabled: boolean) {
         }
     }, [active]);
 
-    return { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, send };
+    return { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, archiveSession, send };
 }

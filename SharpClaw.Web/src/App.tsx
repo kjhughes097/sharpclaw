@@ -31,7 +31,7 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [currentView, setCurrentView] = useState<'chat' | 'agents' | 'backends' | 'mcps' | 'telegram' | 'app' | 'heartbeat' | 'token-usage' | 'workspace'>('chat');
-  const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, send } = useChat(authed === true);
+  const { sessions, active, activeIdx, startSession, setDraftPersona, selectSession, deleteSession, archiveSession, send } = useChat(authed === true);
   const fluentTheme = theme === 'dark' ? webDarkTheme : webLightTheme;
 
   // Apply theme to <html>
@@ -134,6 +134,10 @@ export function App() {
     setCurrentView('chat');
   }, [deleteSession]);
 
+  const handleArchiveSession = useCallback(async (sessionId: string) => {
+    await archiveSession(sessionId);
+  }, [archiveSession]);
+
   const handleChangeDraftPersona = useCallback((agentId: string, personaName: string) => {
     if (activeIdx < 0) return;
     setDraftPersona(activeIdx, agentId, personaName);
@@ -211,6 +215,7 @@ export function App() {
           activeIdx={activeIdx}
           onSelect={handleSelectSession}
           onDeleteSession={handleDeleteSession}
+          onArchiveSession={handleArchiveSession}
           onNewSession={handleNewSession}
           onShowAgents={handleShowAgents}
           onShowBackends={handleShowBackends}

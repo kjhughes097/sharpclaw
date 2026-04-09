@@ -167,6 +167,8 @@ export interface PersistedSession {
     agentId: string;
     createdAt: string;
     lastActivityAt: string;
+    isArchived: boolean;
+    archivedAt: string | null;
     messages: ChatMessage[];
     eventLogs: PersistedStreamItem[][];
 }
@@ -290,4 +292,27 @@ export interface WorkspaceEntry {
 export interface WorkspaceBrowseResponse {
     path: string;
     entries: WorkspaceEntry[];
+}
+
+/* ── Knowledge types ─────────────────────────────────────────────────────── */
+
+export interface KnowledgeEntry {
+    filename: string;
+    title: string;
+    sessionId: string | null;
+    agent: string | null;
+    persona: string | null;
+    archivedAt: string | null;
+    tags: string[];
+    summary: string;
+}
+
+export interface KnowledgeListResponse {
+    entries: KnowledgeEntry[];
+}
+
+export interface SessionArchivedResponse {
+    sessionId: string;
+    archived: boolean;
+    knowledgeFile: string | null;
 }

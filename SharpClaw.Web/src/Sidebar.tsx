@@ -1,5 +1,5 @@
 import type { MouseEvent } from 'react';
-import { Delete16Regular, Dismiss20Regular } from '@fluentui/react-icons';
+import { Archive16Regular, Delete16Regular, Dismiss20Regular } from '@fluentui/react-icons';
 import type { StreamItem } from './types';
 import clawIcon from './sharpclaw-pincer-detailed.svg';
 
@@ -9,6 +9,7 @@ interface SidebarProps {
     messages: { role: string; content?: string }[];
     createdAt: string;
     lastActivityAt: string;
+    isArchived: boolean;
     eventLogs?: StreamItem[][];
     streamItems?: StreamItem[];
     streaming: boolean;
@@ -16,6 +17,7 @@ interface SidebarProps {
   activeIdx: number;
   onSelect: (idx: number) => void;
   onDeleteSession: (sessionId: string) => Promise<void>;
+  onArchiveSession: (sessionId: string) => Promise<void>;
   onNewSession: () => void;
   onShowAgents: () => void;
   onShowBackends: () => void;
@@ -160,7 +162,7 @@ function sessionAge(lastActivityAt: string): string {
   return `${years}y ago`;
 }
 
-export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewSession, onShowAgents, onShowBackends, onShowMcps, onShowTelegram, onShowApp, onShowHeartbeat, onShowTokenUsage, onShowWorkspace, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
+export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onArchiveSession, onNewSession, onShowAgents, onShowBackends, onShowMcps, onShowTelegram, onShowApp, onShowHeartbeat, onShowTokenUsage, onShowWorkspace, theme, onToggleTheme, isOpen, onClose, currentView }: SidebarProps) {
   const handleDeleteClick = async (
     event: MouseEvent<HTMLButtonElement>,
     sessionId: string,
@@ -183,6 +185,37 @@ export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewS
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       window.alert(`Failed to delete chat: ${message}`);
+    }
+  };
+
+  const handleArchiveClick = async (
+    event: MouseEvent<HTMLButtonElement>,
+    sessionId: string,
+    title: string,
+    streaming: boolean,
+    isArchived: boolean,
+  ) => {
+    event.stopPropagation();
+
+    if (streaming) {
+      window.alert('This chat is still streaming. Wait for it to finish before archiving it.');
+      return;
+    }
+
+    if (isArchived) {
+      window.alert('This chat is already archived.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Archive this chat?\n\n${title}\n\nA knowledge summary will be generated and the session will be marked as archived.`);
+    if (!confirmed)
+      return;
+
+    try {
+      await onArchiveSession(sessionId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      window.alert(`Failed to archive chat: ${message}`);
     }
   };
 
@@ -231,27 +264,41 @@ export function Sidebar({ sessions, activeIdx, onSelect, onDeleteSession, onNewS
           return (
             <div
               key={s.session.sessionId}
-              className={`session-item ${currentView === 'chat' && i === activeIdx ? 'active' : ''}`}
+              className={`session-item ${currentView === 'chat' && i === activeIdx ? 'active' : ''} ${s.isArchived ? 'archived' : ''}`}
               onClick={() => onSelect(i)}
               title={sessionTooltip(s.createdAt, s.lastActivityAt)}
             >
               <div className="session-row">
-                <span className="session-title">{title}</span>
-                <button
-                  type="button"
-                  className="session-delete-btn"
-                  aria-label={`Delete chat ${title}`}
-                  title={s.streaming ? 'Cannot delete a chat while it is streaming' : 'Delete chat'}
-                  onClick={event => void handleDeleteClick(event, s.session.sessionId, title, s.streaming)}
-                >
-                  <Delete16Regular />
-                </button>
+                <span className="session-title">{s.isArchived ? '📦 ' : ''}{title}</span>
+                <span className="session-action-btns">
+                  {!s.isArchived && (
+                    <button
+                      type="button"
+                      className="session-archive-btn"
+                      aria-label={`Archive chat ${title}`}
+                      title={s.streaming ? 'Cannot archive a chat while it is streaming' : 'Archive chat'}
+                      onClick={event => void handleArchiveClick(event, s.session.sessionId, title, s.streaming, s.isArchived)}
+                    >
+                      <Archive16Regular />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="session-delete-btn"
+                    aria-label={`Delete chat ${title}`}
+                    title={s.streaming ? 'Cannot delete a chat while it is streaming' : 'Delete chat'}
+                    onClick={event => void handleDeleteClick(event, s.session.sessionId, title, s.streaming)}
+                  >
+                    <Delete16Regular />
+                  </button>
+                </span>
               </div>
               <span className="session-persona">
                 {sessionMeta(s.messages, s.session.persona)}
               </span>
               <div className="session-pills">
                 <span className="session-pill session-pill-agent">{s.session.persona}</span>
+                {s.isArchived && <span className="session-pill session-pill-archived">Archived</span>}
                 <span className="session-pill session-pill-time">{sessionAge(s.lastActivityAt)}</span>
                 <span className="session-pill">{messageCountLabel(s.messages)}</span>
                 <span className="session-pill">{tokenCountLabel(s.messages, s.eventLogs, s.streamItems)}</span>

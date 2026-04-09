@@ -329,6 +329,58 @@ body {
   color: #c53a3a;
 }
 
+.session-action-btns {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.session-archive-btn {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.session-archive-btn svg {
+  display: block;
+  margin: auto;
+}
+
+.session-item:hover .session-archive-btn,
+.session-item:focus-within .session-archive-btn,
+.session-item.active .session-archive-btn {
+  opacity: 1;
+}
+
+.session-archive-btn:hover {
+  background: rgba(74, 108, 247, 0.12);
+  color: var(--accent);
+}
+
+.session-item.archived {
+  opacity: 0.65;
+}
+
+.session-item.archived:hover {
+  opacity: 0.85;
+}
+
+.session-pill.session-pill-archived {
+  color: #b07d10;
+  background: rgba(176, 125, 16, 0.12);
+  border-color: rgba(176, 125, 16, 0.24);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .session-item .session-persona {
   font-size: 11px;
   color: var(--text-tool);

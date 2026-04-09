@@ -4,7 +4,7 @@ using NpgsqlTypes;
 
 namespace SharpClaw.Core;
 
-public sealed record StoredSession(string SessionId, string AgentSlug, DateTimeOffset CreatedAt, DateTimeOffset LastActivityAt);
+public sealed record StoredSession(string SessionId, string AgentSlug, DateTimeOffset CreatedAt, DateTimeOffset LastActivityAt, bool IsArchived, DateTimeOffset? ArchivedAt);
 public sealed record StoredEventLogItem(AgentEvent Event, ToolResultEvent? Result);
 public sealed record HeartbeatSettings(bool Enabled, int IntervalSeconds, int StuckThresholdSeconds, bool AutoCleanupEnabled, int AutoCleanupThresholdSeconds);
 
@@ -210,6 +210,8 @@ public sealed class SessionStore : IDisposable
             ALTER TABLE backend_settings ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NOT NULL DEFAULT 1000000;
             ALTER TABLE agents ADD COLUMN IF NOT EXISTS daily_token_limit BIGINT NULL;
             ALTER TABLE mcps ADD COLUMN IF NOT EXISTS url TEXT NULL;
+            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE;
+            ALTER TABLE sessions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL;
 
             CREATE TABLE IF NOT EXISTS token_usage_alerts (
                 id SERIAL PRIMARY KEY,
@@ -1173,10 +1175,12 @@ public sealed class SessionStore : IDisposable
             SELECT s.session_id,
                    s.agent_slug,
                    s.created_at,
-                   COALESCE(MAX(m.created_at), s.created_at) AS last_activity_at
+                   COALESCE(MAX(m.created_at), s.created_at) AS last_activity_at,
+                   s.is_archived,
+                   s.archived_at
             FROM sessions s
             LEFT JOIN messages m ON m.session_id = s.session_id
-            GROUP BY s.session_id, s.agent_slug, s.created_at
+            GROUP BY s.session_id, s.agent_slug, s.created_at, s.is_archived, s.archived_at
             ORDER BY last_activity_at DESC, s.created_at DESC
             """;
 
@@ -1188,7 +1192,9 @@ public sealed class SessionStore : IDisposable
                 SessionId: reader.GetString(0),
                 AgentSlug: reader.GetString(1),
                 CreatedAt: reader.GetFieldValue<DateTimeOffset>(2),
-                LastActivityAt: reader.GetFieldValue<DateTimeOffset>(3)));
+                LastActivityAt: reader.GetFieldValue<DateTimeOffset>(3),
+                IsArchived: reader.GetBoolean(4),
+                ArchivedAt: reader.IsDBNull(5) ? null : reader.GetFieldValue<DateTimeOffset>(5)));
         }
 
         return sessions;
@@ -1430,6 +1436,45 @@ public sealed class SessionStore : IDisposable
         cmd.CommandText = "UPDATE sessions SET routing_complete = TRUE WHERE session_id = @sid";
         cmd.Parameters.AddWithValue("sid", sessionId);
         cmd.ExecuteNonQuery();
+    }
+
+    /// <summary>
+    /// Marks a session as archived. Returns false if the session does not exist.
+    /// </summary>
+    public bool ArchiveSession(string sessionId)
+    {
+        using var conn = _dataSource.OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE sessions
+            SET is_archived = TRUE, archived_at = NOW()
+            WHERE session_id = @sid AND is_archived = FALSE
+            """;
+        cmd.Parameters.AddWithValue("sid", sessionId);
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
+    /// <summary>
+    /// Returns the messages for a session as a plain text conversation transcript.
+    /// </summary>
+    public string? GetSessionTranscript(string sessionId)
+    {
+        var conversation = Load(sessionId);
+        if (conversation is null || conversation.Messages.Count == 0)
+            return null;
+
+        var lines = new List<string>();
+        foreach (var message in conversation.Messages)
+        {
+            var role = message.Role switch
+            {
+                ChatRole.User => "User",
+                ChatRole.Assistant => "Assistant",
+                _ => message.Role.ToString(),
+            };
+            lines.Add($"{role}: {message.Content}");
+        }
+        return string.Join("\n\n", lines);
     }
 
     public void SaveEventLog(string sessionId, int assistantIndex, IReadOnlyList<StoredEventLogItem> items)
