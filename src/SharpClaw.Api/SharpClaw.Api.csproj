@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../SharpClaw.Core/SharpClaw.Core.csproj" />
+    <ProjectReference Include="../SharpClaw.Llm/SharpClaw.Llm.csproj" />
+    <ProjectReference Include="../SharpClaw.Copilot/SharpClaw.Copilot.csproj" />
+  </ItemGroup>
+</Project>

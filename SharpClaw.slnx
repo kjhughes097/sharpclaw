@@ -1,10 +1,7 @@
 <Solution>
-  <Project Path="SharpClaw.Anthropic/SharpClaw.Anthropic.csproj" />
-  <Project Path="SharpClaw.Api/SharpClaw.Api.csproj" />
-  <Project Path="SharpClaw.Copilot/SharpClaw.Copilot.csproj" />
-  <Project Path="SharpClaw.Core/SharpClaw.Core.csproj" />
-  <Project Path="SharpClaw.OpenAI/SharpClaw.OpenAI.csproj" />
-  <Project Path="SharpClaw.OpenRouter/SharpClaw.OpenRouter.csproj" />
-  <Project Path="SharpClaw.RebuildHook/SharpClaw.RebuildHook.csproj" />
-  <Project Path="SharpClaw.Telegram/SharpClaw.Telegram.csproj" />
+  <Project Path="src/SharpClaw.Core/SharpClaw.Core.csproj" />
+  <Project Path="src/SharpClaw.Api/SharpClaw.Api.csproj" />
+  <Project Path="src/SharpClaw.Llm/SharpClaw.Llm.csproj" />
+  <Project Path="src/SharpClaw.Copilot/SharpClaw.Copilot.csproj" />
+  <Project Path="src/SharpClaw.Telegram/SharpClaw.Telegram.csproj" />
 </Solution>

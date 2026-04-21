@@ -332,10 +332,9 @@ The script:
 6. Writes an nginx site configuration that:
    - Serves the compiled frontend
    - Proxies `/api/` to the backend with SSE streaming support
-7. Writes `/etc/sharpclaw/env` from your `.env` values (owned `root:sharpclaw`, mode `640`)
-8. Writes `/etc/systemd/system/sharpclaw-api.service`
-9. Optionally writes `/etc/systemd/system/sharpclaw-telegram.service` when Telegram is enabled
-10. Enables and starts `sharpclaw-api.service` (and `sharpclaw-telegram.service` when configured) plus `nginx`
+7. Writes `/etc/systemd/system/sharpclaw.service` (reads `/opt/sharpclaw/.env` at runtime)
+8. Optionally writes `/etc/systemd/system/sharpclaw-telegram.service` when Telegram is enabled
+9. Enables and starts `sharpclaw.service` (and `sharpclaw-telegram.service` when configured) plus `nginx`
 
 > **Note:** Run the script again at any time to redeploy after a code change.  The script stops the running service, republishes, redeploys, and restarts.
 
@@ -345,9 +344,9 @@ The script:
 |---|---|
 | `/opt/sharpclaw/api` | Published .NET API binary |
 | `/opt/sharpclaw/telegram` | Published Telegram worker binary |
+| `/opt/sharpclaw/.env` | Environment file (secrets, API keys, workspace root) |
 | `/var/www/sharpclaw` | Compiled React frontend |
-| `/etc/sharpclaw/env` | Environment file (secrets, auth settings, DB connection) |
-| `/etc/systemd/system/sharpclaw-api.service` | API systemd unit |
+| `/etc/systemd/system/sharpclaw.service` | API systemd unit |
 | `/etc/systemd/system/sharpclaw-telegram.service` | Telegram worker systemd unit (optional) |
 | `/etc/nginx/sites-available/sharpclaw` (Debian/Ubuntu) | nginx site config |
 | `/etc/nginx/conf.d/sharpclaw.conf` (RHEL/Fedora) | nginx site config |
@@ -363,10 +362,10 @@ Browse to `http://localhost` (port 80, served by nginx).
 
 ```bash
 # API service
-sudo systemctl status  sharpclaw-api
-sudo systemctl restart sharpclaw-api
-sudo systemctl stop    sharpclaw-api
-sudo journalctl -u     sharpclaw-api -f
+sudo systemctl status  sharpclaw
+sudo systemctl restart sharpclaw
+sudo systemctl stop    sharpclaw
+sudo journalctl -u     sharpclaw -f
 
 # Telegram worker service (if enabled)
 sudo systemctl status  sharpclaw-telegram
@@ -382,11 +381,11 @@ sudo journalctl -u     nginx -f
 
 ### Editing the Environment File
 
-The environment file at `/etc/sharpclaw/env` holds all secrets and configuration for the running service, including the service `PATH` used by `npx`-based MCP subprocesses.  Edit it directly for runtime changes:
+The environment file at `/opt/sharpclaw/.env` holds all secrets and configuration for the running service.  Edit it directly for runtime changes:
 
 ```bash
-sudo $EDITOR /etc/sharpclaw/env
-sudo systemctl restart sharpclaw-api
+sudo $EDITOR /opt/sharpclaw/.env
+sudo systemctl restart sharpclaw
 sudo systemctl restart sharpclaw-telegram
 ```
 

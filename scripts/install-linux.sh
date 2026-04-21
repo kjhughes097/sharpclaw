@@ -1,262 +1,191 @@
 #!/usr/bin/env bash
-# install-linux.sh
+# ---------------------------------------------------------------------------
+# install-linux.sh — Build and install SharpClaw (API + Web) on a Linux host.
 #
-# Installs the prerequisites needed to run SharpClaw locally on Linux
-# without Docker.  Supported distributions:
-#   - Debian / Ubuntu (apt)
-#   - RHEL / Fedora / CentOS Stream (dnf)
-#
-# What this script does:
-#   1. Installs .NET 10 SDK
-#   2. Installs Node.js 22 LTS and npm
-#   3. Installs PostgreSQL 16
-#   4. Creates the PostgreSQL role and database defined in .env
-#      (reads POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB from .env if present)
-#
-# Note:
-#   - This script does NOT install Docker.
-#   - The seeded DuckDuckGo MCP uses `docker run -i --rm mcp/duckduckgo`, so
-#     install Docker separately if you want DuckDuckGo search available in
-#     local Linux runs.
+# Prerequisites (installed automatically if missing):
+#   - .NET 10 SDK  (https://dot.net/download)
+#   - Node.js 22+  (https://nodejs.org)
+#   - nginx         (apt install nginx) — optional, for reverse proxy
 #
 # Usage:
-#   chmod +x scripts/install-linux.sh
-#   sudo ./scripts/install-linux.sh
-
+#   sudo ./scripts/install-linux.sh [--install-dir /opt/sharpclaw]
+# ---------------------------------------------------------------------------
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+INSTALL_DIR="/opt/sharpclaw"
+REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+SHARPCLAW_USER="sharpclaw"
+SERVICE_NAME="sharpclaw"
 
-# ── Colour helpers ────────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --install-dir) INSTALL_DIR="$2"; shift 2 ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
 
-info()    { echo -e "${GREEN}[install]${NC} $*"; }
-warn()    { echo -e "${YELLOW}[install]${NC} $*"; }
-error()   { echo -e "${RED}[install]${NC} $*" >&2; }
-die()     { error "$*"; exit 1; }
-
-# ── Require root ─────────────────────────────────────────────────────────────
-if [[ "$EUID" -ne 0 ]]; then
-    die "This script must be run as root (or with sudo)."
-fi
-
-# ── Detect package manager ────────────────────────────────────────────────────
-if command -v apt-get &>/dev/null; then
-    PKG_MANAGER="apt"
-elif command -v dnf &>/dev/null; then
-    PKG_MANAGER="dnf"
-else
-    die "Unsupported package manager. Only apt (Debian/Ubuntu) and dnf (RHEL/Fedora) are supported."
-fi
-
-info "Detected package manager: $PKG_MANAGER"
-
-# ── Load .env for database settings ──────────────────────────────────────────
-ENV_FILE="$REPO_ROOT/.env"
-
-if [[ -f "$ENV_FILE" ]]; then
-    info "Loading database settings from $ENV_FILE"
-    # shellcheck disable=SC1090
-    set -o allexport
-    source "$ENV_FILE"
-    set +o allexport
-else
-    die ".env not found at $ENV_FILE.
-Copy .env.example to .env and fill in the required values before running this script:
-  cp .env.example .env && \$EDITOR .env"
-fi
-
-[[ -n "${POSTGRES_USER:-}" ]]     || die "POSTGRES_USER is not set in $ENV_FILE."
-[[ -n "${POSTGRES_PASSWORD:-}" ]] || die "POSTGRES_PASSWORD is not set in $ENV_FILE."
-[[ -n "${POSTGRES_DB:-}" ]]       || die "POSTGRES_DB is not set in $ENV_FILE."
-
-# ── Install .NET 10 SDK ───────────────────────────────────────────────────────
-install_dotnet_apt() {
-    info "Installing .NET 10 SDK (apt)..."
-    apt-get update -y
-
-    # Use Microsoft's official script for reliability across Ubuntu/Debian versions.
-    if ! command -v dotnet &>/dev/null || ! dotnet --list-sdks 2>/dev/null | grep -q '^10\.'; then
-        local tmp_pkg
-        tmp_pkg="$(mktemp /tmp/dotnet-install.XXXXXX.sh)"
-        if command -v curl &>/dev/null; then
-            curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$tmp_pkg"
-        elif command -v wget &>/dev/null; then
-            wget -qO "$tmp_pkg" https://dot.net/v1/dotnet-install.sh
-        else
-            # Fall back to apt package if network tools are unavailable.
-            apt-get install -y dotnet-sdk-10.0 || die "Failed to install .NET 10 SDK."
-            return
-        fi
-        chmod +x "$tmp_pkg"
-        DOTNET_INSTALL_DIR="/usr/local/share/dotnet"
-        "$tmp_pkg" --channel 10.0 --install-dir "$DOTNET_INSTALL_DIR"
-        rm -f "$tmp_pkg"
-
-        # Ensure dotnet is on PATH system-wide.
-        if ! grep -qF "$DOTNET_INSTALL_DIR" /etc/environment 2>/dev/null; then
-            CURRENT_PATH="$(grep '^PATH=' /etc/environment 2>/dev/null | sed 's/^PATH=["'"'"']*//' | sed 's/["'"'"']*$//')"
-            if [[ -n "$CURRENT_PATH" ]]; then
-                sed -i "s|^PATH=.*|PATH=\"$DOTNET_INSTALL_DIR:$CURRENT_PATH\"|" /etc/environment
-            else
-                echo "PATH=\"$DOTNET_INSTALL_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"" >> /etc/environment
-            fi
-        fi
-        export PATH="$DOTNET_INSTALL_DIR:$PATH"
-    else
-        info ".NET 10 SDK already installed."
-    fi
-}
-
-install_dotnet_dnf() {
-    info "Installing .NET 10 SDK (dnf)..."
-    dnf install -y dotnet-sdk-10.0 || {
-        warn "dotnet-sdk-10.0 not available in default repos; using Microsoft install script."
-        local tmp_pkg
-        tmp_pkg="$(mktemp /tmp/dotnet-install.XXXXXX.sh)"
-        curl -fsSL https://dot.net/v1/dotnet-install.sh -o "$tmp_pkg"
-        chmod +x "$tmp_pkg"
-        DOTNET_INSTALL_DIR="/usr/local/share/dotnet"
-        "$tmp_pkg" --channel 10.0 --install-dir "$DOTNET_INSTALL_DIR"
-        rm -f "$tmp_pkg"
-        export PATH="$DOTNET_INSTALL_DIR:$PATH"
-        echo "export PATH=\"$DOTNET_INSTALL_DIR:\$PATH\"" > /etc/profile.d/dotnet.sh
-    }
-}
-
-if [[ "$PKG_MANAGER" == "apt" ]]; then
-    install_dotnet_apt
-else
-    install_dotnet_dnf
-fi
-
-if command -v dotnet &>/dev/null; then
-    info "dotnet version: $(dotnet --version)"
-else
-    warn "dotnet not found on current PATH. Open a new shell or source /etc/environment before running the backend."
-fi
-
-# ── Install Node.js 22 LTS and npm ────────────────────────────────────────────
-install_node_apt() {
-    info "Installing Node.js 22 LTS (apt)..."
-    if ! command -v node &>/dev/null || [[ "$(node --version 2>/dev/null | cut -d. -f1 | tr -d 'v')" -lt 18 ]]; then
-        apt-get install -y curl ca-certificates gnupg
-        curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-        apt-get install -y nodejs
-    else
-        info "Node.js $(node --version) already installed."
-    fi
-}
-
-install_node_dnf() {
-    info "Installing Node.js 22 LTS (dnf)..."
-    if ! command -v node &>/dev/null || [[ "$(node --version 2>/dev/null | cut -d. -f1 | tr -d 'v')" -lt 18 ]]; then
-        curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
-        dnf install -y nodejs
-    else
-        info "Node.js $(node --version) already installed."
-    fi
-}
-
-if [[ "$PKG_MANAGER" == "apt" ]]; then
-    install_node_apt
-else
-    install_node_dnf
-fi
-
-info "node version : $(node --version)"
-info "npm version  : $(npm --version)"
-
-# ── Install PostgreSQL 16 ─────────────────────────────────────────────────────
-install_postgres_apt() {
-    info "Installing PostgreSQL 16 (apt)..."
-    if ! command -v psql &>/dev/null; then
-        apt-get install -y curl ca-certificates lsb-release
-        install -d /usr/share/postgresql-common/pgdg
-        curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-        . /etc/os-release
-        echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
-https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
-            > /etc/apt/sources.list.d/pgdg.list
-        apt-get update -y
-        apt-get install -y postgresql-16
-    else
-        info "PostgreSQL already installed: $(psql --version)"
-    fi
-
-    systemctl enable postgresql || true
-    systemctl start postgresql  || true
-}
-
-install_postgres_dnf() {
-    info "Installing PostgreSQL 16 (dnf)..."
-    if ! command -v psql &>/dev/null; then
-        dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-$(rpm -E %{rhel})-x86_64/pgdg-redhat-repo-latest.noarch.rpm
-        dnf -qy module disable postgresql 2>/dev/null || true
-        dnf install -y postgresql16-server
-        /usr/pgsql-16/bin/postgresql-16-setup initdb
-        systemctl enable postgresql-16
-        systemctl start postgresql-16
-    else
-        info "PostgreSQL already installed: $(psql --version)"
-    fi
-}
-
-if [[ "$PKG_MANAGER" == "apt" ]]; then
-    install_postgres_apt
-else
-    install_postgres_dnf
-fi
-
-# ── Create PostgreSQL role and database ───────────────────────────────────────
-info "Configuring PostgreSQL role '${POSTGRES_USER}' and database '${POSTGRES_DB}'..."
-
-# Run as the postgres system user.
-sudo -u postgres psql -v ON_ERROR_STOP=1 <<SQL
-DO \$\$
-BEGIN
-  IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '${POSTGRES_USER}') THEN
-    CREATE ROLE "${POSTGRES_USER}" WITH LOGIN PASSWORD '${POSTGRES_PASSWORD}';
-    RAISE NOTICE 'Role "${POSTGRES_USER}" created.';
-  ELSE
-    ALTER ROLE "${POSTGRES_USER}" WITH PASSWORD '${POSTGRES_PASSWORD}';
-    RAISE NOTICE 'Role "${POSTGRES_USER}" already exists – password updated.';
-  END IF;
-END
-\$\$;
-
-SELECT 'CREATE DATABASE "${POSTGRES_DB}" OWNER "${POSTGRES_USER}"'
-WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${POSTGRES_DB}') \gexec
-SQL
-
-info "PostgreSQL setup complete."
-
-# ── Summary ───────────────────────────────────────────────────────────────────
+echo "==> SharpClaw installer"
+echo "    Repository : $REPO_DIR"
+echo "    Install to : $INSTALL_DIR"
 echo ""
-echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN} SharpClaw prerequisites installed successfully${NC}"
-echo -e "${GREEN}══════════════════════════════════════════════════════════════${NC}"
+
+# ---------- Install .NET SDK if missing ----------
+if ! command -v dotnet >/dev/null 2>&1; then
+  echo "==> .NET SDK not found — installing .NET 10..."
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -qq
+    apt-get install -y -qq dotnet-sdk-10.0
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y dotnet-sdk-10.0
+  else
+    echo "    Package manager not detected (apt/dnf). Installing via dotnet-install script..."
+    curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+    chmod +x /tmp/dotnet-install.sh
+    /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet
+    ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet
+    rm -f /tmp/dotnet-install.sh
+  fi
+  command -v dotnet >/dev/null 2>&1 || { echo "ERROR: .NET SDK installation failed."; exit 1; }
+fi
+
+# ---------- Install Node.js if missing ----------
+if ! command -v node >/dev/null 2>&1; then
+  echo "==> Node.js not found — installing Node.js 22 LTS..."
+  if command -v apt-get >/dev/null 2>&1; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y -qq nodejs
+  elif command -v dnf >/dev/null 2>&1; then
+    curl -fsSL https://rpm.nodesource.com/setup_22.x | bash -
+    dnf install -y nodejs
+  else
+    echo "ERROR: Cannot auto-install Node.js. Install Node.js 20+ manually."; exit 1
+  fi
+  command -v node >/dev/null 2>&1 || { echo "ERROR: Node.js installation failed."; exit 1; }
+fi
+
+echo "==> .NET $(dotnet --version)"
+echo "==> Node $(node --version)"
+echo ""
+
+# ---------- Create service user ----------
+if ! id "$SHARPCLAW_USER" &>/dev/null; then
+  echo "==> Creating system user: $SHARPCLAW_USER"
+  useradd --system --shell /usr/sbin/nologin --home-dir "$INSTALL_DIR" "$SHARPCLAW_USER"
+fi
+
+# ---------- Add sharpclaw to invoking user's group ----------
+# This allows the service to read/write files in the user's home directory
+# when WorkspaceRoot points there.
+if [[ -n "${SUDO_USER:-}" ]] && id "$SUDO_USER" &>/dev/null; then
+  OWNER_GROUP=$(id -gn "$SUDO_USER")
+  if ! id -nG "$SHARPCLAW_USER" | grep -qw "$OWNER_GROUP"; then
+    echo "==> Adding $SHARPCLAW_USER to group: $OWNER_GROUP"
+    usermod -aG "$OWNER_GROUP" "$SHARPCLAW_USER"
+  fi
+fi
+
+# ---------- Stop running services if they exist ----------
+SERVICES_STOPPED=false
+for svc in "${SERVICE_NAME}.service" "${SERVICE_NAME}-api.service" "${SERVICE_NAME}-telegram.service"; do
+  if systemctl is-active --quiet "$svc" 2>/dev/null; then
+    echo "==> Stopping $svc..."
+    systemctl stop "$svc" 2>/dev/null || true
+    # Wait for the unit to fully deactivate
+    for i in $(seq 1 15); do
+      systemctl is-active --quiet "$svc" 2>/dev/null || break
+      sleep 1
+    done
+    SERVICES_STOPPED=true
+  fi
+done
+
+# Kill any remaining SharpClaw.Api processes not managed by systemd
+if pgrep -f "SharpClaw\.Api" >/dev/null 2>&1; then
+  echo "==> Killing lingering SharpClaw.Api processes..."
+  pkill -f "SharpClaw\.Api" 2>/dev/null || true
+  sleep 2
+  # Force kill if still alive
+  pkill -9 -f "SharpClaw\.Api" 2>/dev/null || true
+  sleep 1
+fi
+
+# ---------- Build .NET API ----------
+echo "==> Building SharpClaw API (Release)..."
+dotnet publish "$REPO_DIR/src/SharpClaw.Api/SharpClaw.Api.csproj" \
+  -c Release \
+  -o "$INSTALL_DIR/api" \
+  --nologo
+
+# ---------- Build Telegram worker ----------
+echo "==> Building SharpClaw Telegram worker (Release)..."
+dotnet publish "$REPO_DIR/src/SharpClaw.Telegram/SharpClaw.Telegram.csproj" \
+  -c Release \
+  -o "$INSTALL_DIR/telegram" \
+  --nologo
+
+# ---------- Build Web frontend ----------
+echo "==> Building SharpClaw Web..."
+pushd "$REPO_DIR/src/SharpClaw.Web" > /dev/null
+npm ci --no-audit --no-fund
+npm run build
+popd > /dev/null
+
+mkdir -p "$INSTALL_DIR/web"
+cp -r "$REPO_DIR/src/SharpClaw.Web/build/." "$INSTALL_DIR/web/"
+
+# ---------- Copy agents ----------
+echo "==> Copying agent definitions..."
+mkdir -p "$INSTALL_DIR/agents"
+cp -r "$REPO_DIR/agents/." "$INSTALL_DIR/agents/"
+
+# ---------- Data directory ----------
+mkdir -p "$INSTALL_DIR/data"
+
+# ---------- Environment file ----------
+if [[ ! -f "$INSTALL_DIR/.env" ]]; then
+  echo "==> Creating default .env from template..."
+  cp "$REPO_DIR/.env.example" "$INSTALL_DIR/.env"
+  chmod 600 "$INSTALL_DIR/.env"
+  echo "    *** Edit $INSTALL_DIR/.env with your API keys ***"
+fi
+
+# ---------- appsettings override ----------
+cat > "$INSTALL_DIR/api/appsettings.Production.json" <<EOF
+{
+  "SharpClaw": {
+    "DataRoot": "$INSTALL_DIR/data",
+    "AgentsDir": "$INSTALL_DIR/agents"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  }
+}
+EOF
+
+# ---------- Ownership ----------
+echo "==> Setting ownership to $SHARPCLAW_USER..."
+chown -R "$SHARPCLAW_USER:$SHARPCLAW_USER" "$INSTALL_DIR"
+
+# ---------- Restart enabled services ----------
+echo "==> Restarting services..."
+for svc in "${SERVICE_NAME}.service" "${SERVICE_NAME}-telegram.service"; do
+  if systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+    systemctl start "$svc" 2>/dev/null || true
+  fi
+done
+echo "    Services restarted."
+
+echo ""
+echo "==> Build complete."
+echo "    API published to : $INSTALL_DIR/api"
+echo "    Web built to     : $INSTALL_DIR/web"
+echo "    Agents copied to : $INSTALL_DIR/agents"
+echo "    Data directory   : $INSTALL_DIR/data"
 echo ""
 echo "Next steps:"
-echo "  1. Start the backend:"
-echo "       ./scripts/start-backend.sh"
-echo ""
-echo "  2. Start the frontend dev server (in a separate terminal):"
-echo "       ./scripts/start-frontend.sh"
-echo ""
-echo "  3. (Optional) Run the Telegram worker:"
-echo "       configure token/settings in SharpClaw UI: Configure > Telegram"
-echo "       export SHARPCLAW_API_URL=http://localhost:5000"
-echo "       export SHARPCLAW_API_TOKEN=<jwt-bearer-token>"
-echo "       dotnet run --project SharpClaw.Telegram"
-echo ""
-echo "  4. (Optional) Install Docker if you want the built-in DuckDuckGo MCP:"
-echo "       the seeded MCP launches with: docker run -i --rm mcp/duckduckgo"
-echo ""
-echo "  See the 'Running Locally on Linux' section of README.md for details."
-echo ""
+echo "  1. Edit $INSTALL_DIR/.env with your API keys"
+echo "  2. Run: sudo ./scripts/install-service-linux.sh"
+echo "  3. Configure nginx (see below) or run scripts/start-backend.sh for dev"
