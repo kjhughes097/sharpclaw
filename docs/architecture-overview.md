@@ -1,194 +1,238 @@
 # Architecture Overview
 
-SharpClaw is a modern personal agent framework built on .NET 10 that provides a scalable, secure, and extensible platform for AI-powered assistants. This document outlines the high-level architecture and core design principles.
+SharpClaw is built as a modular, multi-component system designed for personal AI agent management with enterprise-level security and extensibility.
 
 ## System Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│                 │    │                 │    │                 │
-│   Web Frontend  │◄──►│   REST API      │◄──►│   PostgreSQL    │
-│   (React SPA)   │    │   (.NET Core)   │    │   Database      │
-│                 │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
+│   React Web UI │    │  .NET 10 Web API │    │   PostgreSQL    │
+│                 │◄──►│                  │◄──►│    Database     │
+│  - Chat UI      │    │  - Agent Runtime │    │  - Sessions     │
+│  - File Browser │    │  - MCP Manager   │    │  - Messages     │
+│  - Settings     │    │  - Streaming     │    │  - Agents       │
+└─────────────────┘    └──────────────────┘    └─────────────────┘
                                 │
                                 ▼
-                       ┌─────────────────┐
-                       │                 │
-                       │  Agent Runtime  │
-                       │                 │
-                       └─────────────────┘
+                       ┌──────────────────┐
+                       │  Backend Providers│
+                       │  - Anthropic     │
+                       │  - OpenAI        │
+                       │  - OpenRouter    │
+                       │  - GitHub Copilot│
+                       └──────────────────┘
                                 │
-              ┌─────────────────┼─────────────────┐
-              ▼                 ▼                 ▼
-    ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-    │                 │ │                 │ │                 │
-    │ LLM Backends    │ │ MCP Servers     │ │ Telegram Bot    │
-    │ (Multi-provider)│ │ (Tools & APIs)  │ │ (Optional)      │
-    │                 │ │                 │ │                 │
-    └─────────────────┘ └─────────────────┘ └─────────────────┘
+                                ▼
+                       ┌──────────────────┐
+                       │  MCP Servers     │
+                       │  - File Tools    │
+                       │  - Web Search    │
+                       │  - Custom Tools  │
+                       └──────────────────┘
 ```
 
 ## Core Components
 
-### 1. Frontend Layer (SharpClaw.Web)
-- **Technology**: React with TypeScript
-- **Purpose**: Web-based chat interface for agent interaction
-- **Features**: 
-  - JWT-based authentication
-  - Real-time conversation streaming
-  - Agent management UI
-  - Mobile-responsive design
-  - Light/dark theme support
+### 1. Web API (`SharpClaw.Api`)
 
-### 2. API Layer (SharpClaw.Api)
-- **Technology**: ASP.NET Core REST API
-- **Purpose**: Business logic and data orchestration
-- **Responsibilities**:
-  - Agent lifecycle management
-  - Session and conversation handling
-  - Backend provider coordination
-  - Tool permission enforcement
-  - User authentication and authorization
+**Purpose**: Central coordination hub for all agent operations and client requests.
 
-### 3. Core Framework (SharpClaw.Core)
-- **Purpose**: Shared abstractions and domain models
-- **Key Components**:
-  - `IAgentBackend` - LLM provider abstraction
-  - `SessionStore` - PostgreSQL data access layer
-  - `AgentRunner` - Agent execution orchestration
-  - `PermissionGate` - Tool execution security
+**Key Services**:
+- `SessionRuntimeService` - Manages active agent conversations and streaming
+- `BackendRegistry` - Coordinates multiple LLM providers
+- `KnowledgeService` - Handles session archiving and knowledge extraction
+- `AuthService` - JWT-based authentication and user management
 
-### 4. Backend Providers
-Pluggable LLM integrations with unified interface:
-- **SharpClaw.Anthropic** - Claude models via Anthropic API
-- **SharpClaw.OpenAI** - GPT models via OpenAI API
-- **SharpClaw.OpenRouter** - Multi-model access via OpenRouter
-- **SharpClaw.Copilot** - GitHub Copilot SDK integration
+**Architecture Patterns**:
+- **Dependency Injection**: All services registered as singletons for performance
+- **Streaming Architecture**: Server-Sent Events for real-time message delivery
+- **Stateless Design**: Session state persisted in database, not memory
+
+### 2. Core Framework (`SharpClaw.Core`)
+
+**Purpose**: Shared business logic and abstractions for agent execution.
+
+**Key Components**:
+- `AgentRunner` - Orchestrates agent execution with MCP tool integration
+- `SessionStore` - PostgreSQL data access layer with schema management
+- `IAgentBackend` - Abstraction for LLM provider integration
+- `PermissionGate` - Security layer for tool execution approval
+
+**Design Decisions**:
+- **Provider Pattern**: Unified interface across different LLM backends
+- **Permission-Based Security**: Tool execution requires explicit approval policies
+- **Database-First**: PostgreSQL schema automatically created and migrated
+
+### 3. Backend Providers
+
+**Supported LLMs**:
+- **`SharpClaw.Anthropic`** - Claude models via Anthropic API
+- **`SharpClaw.OpenAI`** - GPT models via OpenAI API  
+- **`SharpClaw.OpenRouter`** - Multiple models via OpenRouter proxy
+- **`SharpClaw.Copilot`** - GitHub Copilot integration
+
+**Common Interface**:
+```csharp
+public interface IAgentBackend
+{
+    Task<AgentResponse> ProcessAsync(AgentRequest request, CancellationToken ct);
+    IAsyncEnumerable<AgentEvent> ProcessStreamingAsync(AgentRequest request, CancellationToken ct);
+}
+```
+
+### 4. Agent System
+
+**Agent Definition**: Agents are defined in markdown files with YAML frontmatter:
+
+```yaml
+---
+name: Cody
+description: Senior software architect and full-stack developer
+backend: anthropic
+model: claude-haiku-4-5-20251001
+mcpServers:
+  - filesystem
+  - duckduckgo
+permissionPolicy:
+  filesystem.read_file: auto_approve
+  duckduckgo.*: auto_approve
+isEnabled: true
+---
+# Agent system prompt content...
+```
+
+**Agent Routing**: The `ade` agent acts as a dispatcher, routing requests to specialist agents based on the task requirements.
 
 ### 5. MCP Integration
-Model Context Protocol for secure tool execution:
-- Protocol-compliant tool providers
-- Agent-scoped permission policies
-- Sandboxed execution environment
-- Automatic approval/manual review workflows
 
-### 6. Data Layer
-PostgreSQL database providing:
-- Agent definitions and configurations
-- Conversation history and sessions
-- Backend provider settings
-- Tool execution logs
-- User authentication data
+**Model Context Protocol**: Standardized interface for tool execution with security controls.
 
-### 7. Session Management & Knowledge System
-Advanced session lifecycle and knowledge management:
-- **Session Archiving** - Mark completed sessions as archived with timestamps
-- **Knowledge Generation** - Auto-generate Markdown summaries from archived sessions
-- **Knowledge Storage** - Persist session summaries in workspace `knowledge/` folder
-- **Session Organization** - Separate active from archived sessions in UI
-- **Knowledge Retrieval** - Browse and search previously archived session summaries
+**MCP Server Management**:
+- Dynamic server registration and lifecycle management
+- Permission policies control tool access per agent
+- Sandboxed execution environment for security
 
-### 8. Workspace Integration
-Secure file system access and management:
-- **Workspace Browser** - Web UI for navigating workspace files and directories
-- **Path Security** - Validation ensures access remains within workspace boundaries
-- **File Metadata** - Display file sizes, modification dates, and permissions
-- **Agent File Access** - MCP tools can securely access workspace files
-- **Directory Operations** - Support for file/folder navigation and content viewing
+**Tool Categories**:
+- **File System**: Read/write workspace files with path validation
+- **Web Search**: DuckDuckGo integration for information retrieval
+- **Custom Tools**: Extensible framework for domain-specific tools
 
-## Architectural Principles
+## Data Architecture
 
-### 1. **Separation of Concerns**
-- Clear boundaries between presentation, business logic, and data layers
-- Backend providers isolated behind common interface
-- Tool execution decoupled through MCP protocol
+### Session Lifecycle
 
-### 2. **Extensibility**
-- Plugin architecture for LLM backends
-- MCP standard for tool integration
-- Configuration-driven agent definitions
+1. **Creation**: User starts conversation → new session record created
+2. **Execution**: Messages exchanged → stored in messages table
+3. **Tool Usage**: MCP tools executed → events logged in session_event_logs
+4. **Archiving**: Session completed → archived with knowledge summary generated
 
-### 3. **Security by Design**
-- JWT-based authentication with proper token lifecycle
-- Permission-gated tool execution
-- Database parameter sanitization
-- Input validation and output sanitization
+### Knowledge Management
 
-### 4. **Scalability**
-- Stateless API design for horizontal scaling
-- Efficient database schema with proper indexing
-- Async/await throughout for non-blocking operations
-- Connection pooling and resource management
+**Session Archiving**:
+- Completed sessions automatically archived with `is_archived = true`
+- Knowledge summaries generated and stored in workspace `knowledge/` folder
+- Markdown format for searchability and version control integration
 
-### 5. **Developer Experience**
-- Type-safe implementations throughout
-- Comprehensive error handling and logging
-- Docker-based development and deployment
-- OpenAPI specification for API documentation
+**Workspace Integration**:
+- Secure file browser with path traversal protection
+- Agent file access restricted to workspace directory tree
+- File operations logged and tracked for audit purposes
 
-## Data Flow
+## Security Architecture
 
-### Agent Conversation Flow
-1. **User Input** → Web frontend captures user message
-2. **API Processing** → REST API validates and stores message
-3. **Agent Execution** → Agent runner loads agent configuration and history
-4. **Backend Interaction** → Appropriate LLM backend processes the conversation
-5. **Tool Execution** → MCP tools executed based on model requests and permissions
-6. **Response Generation** → Final response generated and streamed back
-7. **Persistence** → Conversation state saved to database
+### Authentication & Authorization
 
-### Agent Management Flow
-1. **Agent Definition** → Markdown-based agent configuration
-2. **Registration** → API loads and validates agent definition
-3. **Backend Assignment** → Agent linked to appropriate LLM backend
-4. **Tool Permissions** → MCP permission policies configured
-5. **Activation** → Agent becomes available for conversations
+**JWT-Based Auth**:
+- Stateless authentication using signed JSON Web Tokens
+- Configurable token expiration and refresh policies
+- User management with password hashing (bcrypt)
 
-## Technology Stack
+**Permission System**:
+```csharp
+public enum ToolPermission
+{
+    Deny,           // Block tool execution
+    AutoApprove,    // Execute without prompt
+    RequireApproval // Prompt user for approval
+}
+```
 
-### Backend
-- **.NET 10** - Modern C# with latest language features
-- **ASP.NET Core** - High-performance web framework
-- **PostgreSQL 16** - Robust relational database
-- **Npgsql** - High-performance PostgreSQL driver
+### Tool Security
 
-### Frontend
-- **React 18** - Modern UI framework with hooks
-- **TypeScript** - Type safety and enhanced developer experience
-- **Vite** - Fast build tool and dev server
+**MCP Sandboxing**:
+- Each MCP server runs in isolated process
+- File system access restricted to workspace directory
+- Network access controlled per tool and agent
 
-### Infrastructure
-- **Docker** - Containerized deployment
-- **Docker Compose** - Multi-container orchestration
-- **JWT** - Stateless authentication
-- **OpenAPI** - API documentation and client generation
+**Path Validation**:
+- All file operations validated against workspace root
+- Path traversal attacks prevented with canonical path resolution
+- Access logging for audit and debugging
 
-## Design Trade-offs
+## Performance Architecture
 
-### Monolithic vs Microservices
-**Choice**: Monolithic API with modular internal architecture
+### Database Optimization
 
-**Rationale**:
-- Simpler deployment and debugging for personal/small team use
-- Lower operational overhead
-- Clear boundaries maintained through interfaces
-- Can evolve to microservices if needed
+**Connection Management**:
+- `NpgsqlDataSource` connection pooling for efficient resource usage
+- Prepared statements for common queries
+- Database schema migrations handled automatically
 
-### Database Choice
-**Choice**: PostgreSQL over NoSQL alternatives
+**Query Patterns**:
+- Efficient session listing with agent metadata joins
+- Event log storage using JSONB for flexible schema
+- Indexed token usage tracking for analytics
 
-**Rationale**:
-- Strong consistency requirements for conversation history
-- Complex relational queries needed for agent management
-- JSON support provides flexibility where needed
-- Mature ecosystem and tooling
+### Streaming Performance
 
-### Frontend Architecture
-**Choice**: Single Page Application over Server-Side Rendering
+**Real-Time Communication**:
+- Server-Sent Events for low-latency message streaming  
+- Chunked response processing for large model outputs
+- Connection management for handling multiple concurrent sessions
 
-**Rationale**:
-- Real-time chat requires persistent connection
-- Better user experience for interactive features
-- Simpler deployment model with API separation
-- Mobile-responsive design easier to achieve
+## Configuration Architecture
+
+### Environment-Based Config
+
+**Docker Compose Integration**:
+```yaml
+SHARPCLAW_DB_CONNECTION: "Host=db;Database=sharpclaw;..."
+ANTHROPIC_API_KEY: "sk-..."
+OPENAI_API_KEY: "sk-..."
+```
+
+**Flexible Deployment**:
+- Environment variable override support
+- Docker secrets integration for production
+- Development vs production configuration profiles
+
+### Runtime Configuration
+
+**Dynamic Settings**: Backend API keys, integration settings, and workspace paths configurable via API without restart.
+
+**Database-Stored Config**: App settings, integration toggles, and user preferences persisted in PostgreSQL.
+
+## Extension Points
+
+### Adding New Backends
+
+1. Implement `IAgentBackendProvider` interface
+2. Register in dependency injection container
+3. Add configuration UI in React frontend
+4. Backend automatically available to all agents
+
+### Custom MCP Servers
+
+1. Implement MCP protocol specification
+2. Register server definition in database
+3. Configure agent permission policies
+4. Tools immediately available to authorized agents
+
+### New Agent Types
+
+1. Create markdown definition in `agents/` folder
+2. Define MCP servers and permission policies
+3. Agent automatically loaded and available
+4. Routing logic in `ade` agent updated as needed
+
+This architecture provides a solid foundation for personal AI agent management while maintaining the flexibility to extend and customize for specific use cases.

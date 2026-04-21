@@ -1,170 +1,224 @@
 # Database Design
 
-SharpClaw uses PostgreSQL as its primary data store, providing persistent storage for agents, conversations, configuration, and system metadata. This document details the database schema design and the reasoning behind key decisions.
+SharpClaw uses PostgreSQL as its primary data store with a schema designed for conversation management, agent configuration, and extensible metadata storage.
 
 ## Schema Overview
 
-The database consists of several core tables organized around the main entities:
+The database schema is automatically created and migrated by the `SessionStore` class on application startup, ensuring consistency across deployments.
 
-```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   agents    │    │  sessions   │    │  messages   │
-│             │◄───│             │◄───│             │
-│ • slug (PK) │    │ • session_id│    │ • id (PK)   │
-│ • name      │    │ • agent_slug│    │ • role      │
-│ • backend   │    │ • created_at│    │ • content   │
-│ • model     │    └─────────────┘    └─────────────┘
-│ • system_   │
-│   prompt    │
-└─────────────┘
+```sql
+-- Core conversation data
+sessions → messages → session_event_logs
+
+-- Agent and tool configuration  
+agents ↔ mcps (many-to-many via agent configuration)
+
+-- System configuration
+auth_users, app_settings, integration_settings, backend_settings
+
+-- Analytics and monitoring
+token_usage, heartbeat data
 ```
 
 ## Core Tables
 
-### agents
-**Purpose**: Stores agent definitions and configurations
+### Sessions Table
 
-```sql
-CREATE TABLE agents (
-    id SERIAL PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,              -- Agent identifier (e.g., "cody", "ade")
-    name TEXT NOT NULL,                     -- Human-readable name
-    description TEXT NOT NULL DEFAULT '',   -- Agent description
-    backend TEXT NOT NULL DEFAULT 'anthropic', -- LLM provider
-    model TEXT NOT NULL DEFAULT '',         -- Specific model name
-    mcp_servers TEXT NOT NULL DEFAULT '[]', -- JSON array of MCP servers
-    permission_policy TEXT NOT NULL DEFAULT '{}', -- JSON permission rules
-    system_prompt TEXT NOT NULL,            -- Agent's system prompt
-    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-
-**Key Design Decisions**:
-- `slug` as natural key for API references (more readable than numeric IDs)
-- `mcp_servers` as JSON array for flexibility in MCP assignments
-- `permission_policy` as JSON for complex permission rules
-- `system_prompt` as TEXT to support large prompts
-
-### sessions
-**Purpose**: Conversation threads between users and agents
+**Purpose**: Tracks individual conversation sessions between users and agents.
 
 ```sql
 CREATE TABLE sessions (
-    session_id TEXT NOT NULL,               -- UUID session identifier
-    agent_slug TEXT NOT NULL,               -- References agents.slug
+    session_id TEXT NOT NULL PRIMARY KEY,
+    agent_slug TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    is_archived BOOLEAN NOT NULL DEFAULT FALSE,  -- Archive status flag
-    archived_at TIMESTAMPTZ NULL,          -- Timestamp when archived
-    PRIMARY KEY (session_id)
+    last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+    archived_at TIMESTAMPTZ NULL
 );
 ```
 
 **Key Design Decisions**:
-- UUID session IDs for security and uniqueness
-- Direct reference to agent slug for efficient lookups
-- No explicit user_id (single-user system currently)
-- **Archive support**: `is_archived` flag with optional `archived_at` timestamp for session lifecycle management
-- **Knowledge integration**: Archived sessions can generate knowledge summaries
+- **Text-based session IDs** for URL-friendly identifiers
+- **Agent slug reference** (not foreign key) for flexibility in agent management
+- **Archiving support** with timestamps for session lifecycle management
+- **Activity tracking** for session timeout and cleanup policies
 
-### messages
-**Purpose**: Individual messages within conversations
+**Usage Patterns**:
+- Sessions created on first user message to an agent
+- `last_activity_at` updated on every message exchange
+- Archiving triggered manually or via automated policies
+- Archived sessions retain full history but are marked as complete
+
+### Messages Table
+
+**Purpose**: Stores the conversational message history for each session.
 
 ```sql
 CREATE TABLE messages (
     id SERIAL PRIMARY KEY,
-    session_id TEXT NOT NULL,               -- References sessions.session_id
-    role TEXT NOT NULL,                     -- "user", "assistant", "system"
-    content TEXT NOT NULL,                  -- Message content
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,        -- 'user' | 'assistant' | 'system'
+    content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     FOREIGN KEY (session_id) REFERENCES sessions(session_id)
 );
 ```
 
-**Key Design Decisions**:
-- `role` follows OpenAI/Anthropic message format conventions
-- Foreign key constraint ensures referential integrity
-- Simple TEXT content (complex formatting handled at application layer)
+**Design Rationale**:
+- **Simple message storage** with role-based categorization
+- **Referential integrity** ensures messages belong to valid sessions
+- **Chronological ordering** via auto-incrementing ID and timestamp
+- **Flexible content storage** supports text, markdown, and future rich content
 
-## Supporting Tables
+**Message Roles**:
+- `user` - Human input messages
+- `assistant` - Agent responses and tool outputs  
+- `system` - Internal system messages and notifications
 
-### mcps (Model Context Protocol Servers)
-**Purpose**: Registry of available MCP tool servers
+### Session Event Logs Table
 
-```sql
-CREATE TABLE mcps (
-    id SERIAL PRIMARY KEY,
-    slug TEXT NOT NULL UNIQUE,              -- MCP server identifier
-    name TEXT NOT NULL,                     -- Human-readable name
-    description TEXT NOT NULL DEFAULT '',   -- Server description
-    command TEXT NOT NULL,                  -- Executable command
-    args JSONB NOT NULL DEFAULT '[]'::jsonb, -- Command arguments as JSON
-    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-
-**Key Design Decisions**:
-- JSONB for command arguments (efficient JSON operations)
-- Separate from agents table for many-to-many relationship
-- `command` and `args` allow dynamic MCP server launching
-
-### session_event_logs
-**Purpose**: Detailed execution logs for debugging and analysis
+**Purpose**: Detailed logging of agent execution events, tool calls, and internal operations.
 
 ```sql
 CREATE TABLE session_event_logs (
     id SERIAL PRIMARY KEY,
     session_id TEXT NOT NULL,
-    assistant_index INT NOT NULL,           -- Which assistant turn
-    items JSONB NOT NULL DEFAULT '[]'::jsonb, -- Event log items
+    assistant_index INT NOT NULL,     -- Message sequence number
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (session_id, assistant_index),
     FOREIGN KEY (session_id) REFERENCES sessions(session_id)
 );
 ```
 
-**Key Design Decisions**:
-- JSONB for flexible event storage (tools calls, permissions, etc.)
-- `assistant_index` tracks multiple agent turns within a session
-- Unique constraint prevents duplicate logs for same turn
+**Event Storage Design**:
+- **JSONB format** for flexible event data structure
+- **Assistant indexing** links events to specific agent responses
+- **Structured logging** enables debugging and analytics
+- **Unique constraints** prevent duplicate event logs
 
-### backend_settings
-**Purpose**: LLM provider configuration and API keys
+**Event Types Stored**:
+```json
+{
+  "events": [
+    {
+      "type": "tool_call",
+      "tool": "filesystem.read_file", 
+      "args": { "path": "/workspace/file.txt" },
+      "timestamp": "2024-01-15T10:30:00Z"
+    },
+    {
+      "type": "permission_request",
+      "tool": "filesystem.write_file",
+      "status": "approved",
+      "timestamp": "2024-01-15T10:31:00Z"
+    }
+  ]
+}
+```
+
+## Configuration Tables
+
+### Agents Table
+
+**Purpose**: Defines available AI agents with their configuration and capabilities.
 
 ```sql
-CREATE TABLE backend_settings (
-    backend TEXT NOT NULL PRIMARY KEY,      -- Provider name (anthropic, openai, etc.)
-    is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
-    api_key TEXT NULL,                      -- Encrypted API key
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE agents (
+    id SERIAL PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    backend TEXT NOT NULL DEFAULT 'anthropic',  -- Backend provider
+    model TEXT NOT NULL DEFAULT '',             -- Specific model name
+    mcp_servers TEXT NOT NULL DEFAULT '[]',     -- JSON array of MCP server slugs
+    permission_policy TEXT NOT NULL DEFAULT '{}', -- JSON permission rules
+    system_prompt TEXT NOT NULL,               -- Agent instructions
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
-**Key Design Decisions**:
-- Provider name as primary key (fixed set of providers)
-- `is_enabled` allows selective provider activation
-- API keys stored encrypted (application-level encryption)
+**Configuration Design**:
+- **Slug-based identification** for URL-friendly agent references
+- **JSON configuration fields** for flexible metadata storage
+- **Backend abstraction** supports multiple LLM providers
+- **Permission policies** define tool access rules per agent
 
-### auth_users
-**Purpose**: User authentication for web interface
+**Example Agent Configuration**:
+```json
+{
+  "slug": "cody",
+  "name": "Cody", 
+  "backend": "anthropic",
+  "model": "claude-haiku-4-5-20251001",
+  "mcp_servers": ["filesystem", "duckduckgo"],
+  "permission_policy": {
+    "filesystem.read_file": "auto_approve",
+    "filesystem.write_file": "require_approval",
+    "duckduckgo.*": "auto_approve"
+  }
+}
+```
+
+### MCP Servers Table
+
+**Purpose**: Defines available Model Context Protocol servers for tool execution.
+
+```sql
+CREATE TABLE mcps (
+    id SERIAL PRIMARY KEY,
+    slug TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    command TEXT NOT NULL,                    -- Executable command
+    args JSONB NOT NULL DEFAULT '[]'::jsonb, -- Command arguments
+    is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+**MCP Server Configuration**:
+- **Command-based execution** with configurable arguments
+- **JSONB args storage** for complex parameter passing
+- **Enable/disable toggles** for server management
+- **Slug-based references** from agent configurations
+
+**Example MCP Server**:
+```json
+{
+  "slug": "filesystem",
+  "name": "File System Tools",
+  "command": "npx",
+  "args": ["@modelcontextprotocol/server-filesystem", "/workspace"],
+  "is_enabled": true
+}
+```
+
+## Authentication & Settings
+
+### Auth Users Table
+
+**Purpose**: User authentication with hashed passwords for web interface access.
 
 ```sql
 CREATE TABLE auth_users (
     username TEXT NOT NULL PRIMARY KEY,
-    password_hash TEXT NOT NULL,            -- bcrypt hashed password
+    password_hash TEXT NOT NULL,             -- bcrypt hashed
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```
 
-**Key Design Decisions**:
-- Username as primary key (single-user focused system)
-- bcrypt password hashing for security
-- Simple table structure (no roles/permissions yet)
+**Security Design**:
+- **bcrypt password hashing** with configurable work factor
+- **Username-based authentication** (no email requirement)
+- **Timestamp tracking** for account management
+- **Simple schema** suitable for personal use scenarios
 
-### app_settings
-**Purpose**: Application configuration key-value store
+### App Settings Table
+
+**Purpose**: Dynamic application configuration stored in the database.
 
 ```sql
 CREATE TABLE app_settings (
@@ -174,120 +228,130 @@ CREATE TABLE app_settings (
 );
 ```
 
-**Key Design Decisions**:
-- Generic key-value store for application settings
-- TEXT values (JSON parsing at application layer when needed)
-- Used for workspace path, heartbeat settings, etc.
+**Configuration Keys**:
+- `workspace_path` - Root directory for file operations
+- `heartbeat_enabled` - Health monitoring toggle
+- `heartbeat_interval_seconds` - Health check frequency
+- `heartbeat_stuck_threshold_seconds` - Timeout detection
+- `heartbeat_auto_cleanup_enabled` - Automatic cleanup toggle
 
-### token_usage
-**Purpose**: Track LLM API usage for cost monitoring
+### Integration Settings Table
+
+**Purpose**: Configuration for external integrations (Telegram, etc.).
+
+```sql
+CREATE TABLE integration_settings (
+    integration TEXT NOT NULL PRIMARY KEY,   -- 'telegram'
+    is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    bot_token TEXT NULL,                     -- Encrypted token storage
+    allowed_user_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    allowed_usernames JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+### Backend Settings Table
+
+**Purpose**: LLM provider API configuration and credentials.
+
+```sql
+CREATE TABLE backend_settings (
+    backend TEXT NOT NULL PRIMARY KEY,      -- 'anthropic' | 'openai' | etc.
+    is_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    api_key TEXT NULL,                      -- Encrypted API key storage
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+```
+
+## Analytics Tables
+
+### Token Usage Table
+
+**Purpose**: Track LLM API usage for cost monitoring and analytics.
 
 ```sql
 CREATE TABLE token_usage (
     id SERIAL PRIMARY KEY,
-    provider TEXT NOT NULL,                 -- LLM provider name
+    provider TEXT NOT NULL,                 -- Backend provider name
     agent_slug TEXT NOT NULL,              -- Which agent used tokens
     usage_date DATE NOT NULL DEFAULT CURRENT_DATE,
     input_tokens BIGINT NOT NULL DEFAULT 0,
-    output_tokens BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0, 
     total_tokens BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_token_usage_provider_date ON token_usage (provider, usage_date);
+CREATE INDEX idx_token_usage_agent_date ON token_usage (agent_slug, usage_date);
 ```
 
-**Key Design Decisions**:
-- Separate tracking by provider and agent
-- Daily aggregation via `usage_date`
-- BIGINT for large token counts
+**Usage Analytics Design**:
+- **Daily aggregation** for cost tracking and reporting
+- **Provider-specific tracking** for multi-LLM usage analysis
+- **Agent-level attribution** for usage optimization
+- **Efficient indexing** for dashboard queries and reporting
 
-## Indexes and Performance
+## Schema Migration Strategy
 
-### Automatic Indexes
-- Primary keys automatically indexed
-- Unique constraints create indexes
+### Automatic Migration
 
-### Recommended Additional Indexes
+The `SessionStore` constructor includes migration logic for schema evolution:
+
 ```sql
--- Session lookup by agent
-CREATE INDEX idx_sessions_agent_slug ON sessions(agent_slug);
+-- Handle column renames for backward compatibility
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS model TEXT NOT NULL DEFAULT '';
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
--- Message ordering within sessions
-CREATE INDEX idx_messages_session_created ON messages(session_id, created_at);
-
--- Token usage aggregation
-CREATE INDEX idx_token_usage_provider_date ON token_usage(provider, usage_date);
-
--- Event log lookup
-CREATE INDEX idx_event_logs_session ON session_event_logs(session_id);
+-- Add new archiving capabilities
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ NULL;
 ```
 
-## Data Integrity
+**Migration Philosophy**:
+- **Additive changes only** - new columns added with sensible defaults
+- **Backward compatibility** - existing data remains valid
+- **Automatic execution** - no manual migration steps required
+- **Idempotent operations** - safe to run multiple times
 
-### Foreign Key Constraints
-- `messages.session_id` → `sessions.session_id`
-- `session_event_logs.session_id` → `sessions.session_id`
+### Data Consistency
 
-### Business Logic Constraints
-- Agent slugs must be unique and URL-safe
-- Session IDs must be UUIDs
-- Message roles must be valid ("user", "assistant", "system")
-- Backend settings must reference valid provider names
+**Referential Integrity**:
+- Foreign key constraints ensure data consistency
+- Cascade rules prevent orphaned records
+- Validation at application and database layers
 
-## JSON Data Patterns
+**JSON Validation**:
+- JSONB fields validated at application layer before storage
+- Schema validation for complex configuration objects
+- Default values prevent null reference exceptions
 
-### Agent MCP Servers
-```json
-["filesystem", "github", "duckduckgo"]
-```
+## Performance Considerations
 
-### Permission Policies
-```json
-{
-  "filesystem.read_*": "auto_approve",
-  "filesystem.write_*": "ask",
-  "github.*": "auto_approve",
-  "*": "deny"
-}
-```
+### Indexing Strategy
 
-### Event Log Items
-```json
-[
-  {
-    "type": "tool_call",
-    "tool": "filesystem",
-    "function": "read_file",
-    "args": {"path": "/workspace/file.txt"}
-  },
-  {
-    "type": "tool_result", 
-    "content": "File contents...",
-    "status": "success"
-  }
-]
-```
+**Primary Access Patterns**:
+- Session lookup by ID (primary key)
+- Message chronological ordering (auto-increment + timestamp)
+- Token usage aggregation by date/provider (composite indexes)
+- Agent lookup by slug (unique constraint)
 
-## Migration Strategy
+**Query Optimization**:
+- Connection pooling via `NpgsqlDataSource`
+- Prepared statements for frequent queries
+- JSONB indexing for configuration searches (future enhancement)
 
-### Schema Evolution
-- Use PostgreSQL `CREATE TABLE IF NOT EXISTS` for backward compatibility
-- Add new columns with `ALTER TABLE` in future versions
-- JSON fields provide schema flexibility without migrations
+### Storage Efficiency
 
-### Data Migration
-- Built-in agent seeding from markdown files
-- Default settings initialization
-- Graceful handling of missing configuration
+**Data Types**:
+- `TEXT` for variable-length strings (efficient in PostgreSQL)
+- `JSONB` for structured data with query capabilities
+- `TIMESTAMPTZ` for timezone-aware timestamps
+- `BIGINT` for token counters supporting large values
 
-## Backup and Maintenance
+**Growth Management**:
+- Archival strategy for old sessions and messages
+- Token usage aggregation to prevent unbounded growth
+- Event log rotation policies (configurable)
 
-### Backup Strategy
-- Regular PostgreSQL dumps for full backup
-- Point-in-time recovery via WAL archiving
-- Configuration backup includes environment variables
-
-### Maintenance Tasks
-- Regular vacuum/analyze for performance
-- Token usage cleanup (retention policies)
-- Session archival for old conversations
-- Event log rotation for disk space management
+This database design provides a robust foundation for SharpClaw's conversation management while maintaining flexibility for future enhancements and integrations.

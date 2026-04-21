@@ -1,362 +1,324 @@
 # Agent System
 
-The SharpClaw agent system provides a flexible, secure, and extensible framework for running AI assistants. This document details the architecture, lifecycle, and key components of the agent execution engine.
+SharpClaw's agent system provides a flexible framework for managing multiple AI personalities with different capabilities, tool access, and routing logic.
 
 ## Agent Architecture
 
-```
-┌─────────────────┐
-│   Agent Runner  │
-│                 │
-├─────────────────┤
-│ • Agent Persona │
-│ • MCP Clients   │
-│ • Tool Schemas  │
-│ • Backend       │
-│ • Permissions   │
-└─────────────────┘
-         │
-         ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│                 │    │                 │    │                 │
-│ Permission Gate │◄──►│ Tool Dispatcher │◄──►│ MCP Servers     │
-│                 │    │                 │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+### Agent Definition Format
 
-## Core Components
-
-### AgentPersona
-**Purpose**: Defines the agent's identity, capabilities, and configuration
-
-```csharp
-public sealed record AgentPersona(
-    string Slug,                    // Unique identifier (e.g., "cody")
-    string Name,                    // Display name
-    string Description,             // Human-readable description
-    string Backend,                 // LLM provider (anthropic, openai, etc.)
-    string Model,                   // Specific model name
-    IReadOnlyList<string> McpServers, // Assigned MCP tool servers
-    IReadOnlyDictionary<string, ToolPermission> PermissionPolicy, // Tool permissions
-    string SystemPrompt,            // Core behavior instructions
-    bool IsEnabled                  // Whether agent is active
-);
-```
-
-**Key Features**:
-- **Immutable design** for thread safety
-- **Type-safe configuration** prevents runtime errors
-- **Flexible permission system** with granular control
-- **Backend abstraction** allows provider switching
-
-### AgentRunner
-**Purpose**: Orchestrates the complete agent lifecycle and execution
-
-**Responsibilities**:
-1. **Initialization**:
-   - Connect to configured MCP servers
-   - Build unified tool schema
-   - Create permission gate with agent policies
-   - Initialize backend provider
-   
-2. **Execution**:
-   - Stream conversation turns with real-time events
-   - Coordinate tool execution with permission checking
-   - Handle backend-specific conversation protocols
-   
-3. **Cleanup**:
-   - Properly dispose MCP connections
-   - Clean up backend resources
-
-```csharp
-public sealed class AgentRunner : IAsyncDisposable
-{
-    // Core lifecycle methods
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
-    public IAsyncEnumerable<AgentEvent> StreamAsync(...)
-    public async ValueTask DisposeAsync()
-}
-```
-
-## Agent Definition Format
-
-Agents are defined using Markdown files with YAML front matter:
+Agents are defined using markdown files with YAML frontmatter, stored in the `agents/` directory:
 
 ```markdown
 ---
 name: Cody
-description: Software architect and developer
-backend: copilot
-model: claude-opus-4.6
+description: Senior software architect and full-stack developer
+backend: anthropic
+model: claude-haiku-4-5-20251001
 mcpServers:
   - filesystem
-  - github
   - duckduckgo
 permissionPolicy:
-  filesystem.read_*: auto_approve
-  filesystem.write_*: ask
-  github.*: auto_approve
+  filesystem.read_file: auto_approve
+  filesystem.write_file: require_approval
   duckduckgo.*: auto_approve
-  "*": ask
 isEnabled: true
 ---
 
-You are Cody, a skilled software architect and developer.
-Your expertise spans C#, TypeScript, and Python...
+You are Cody, a senior software architect and full-stack developer...
+
+## Personality
+- Direct and practical — you focus on working code, not theory
+- You prefer simple, readable solutions over clever abstractions
+
+## Expertise  
+- .NET / C#, TypeScript, React, Python, Bash
+- System design and API architecture
 ```
 
-### Configuration Options
+### Agent Configuration Fields
 
-#### Backend Selection
-- **anthropic**: Claude models via Anthropic API
-- **openai**: GPT models via OpenAI API  
-- **openrouter**: Multi-model access via OpenRouter
-- **copilot**: GitHub Copilot SDK integration
+**Required Fields**:
+- `name` - Display name for the agent
+- `description` - Brief description of the agent's role
+- `backend` - LLM provider (`anthropic`, `openai`, `openrouter`, `copilot`)
+- `model` - Specific model identifier for the backend
+- `mcpServers` - Array of MCP server slugs for tool access
+- `permissionPolicy` - Tool permission rules (see Security section)
+- `isEnabled` - Whether the agent is active
 
-#### Permission Policies
-- **auto_approve**: Execute tool without confirmation
-- **ask**: Request user permission before execution
-- **deny**: Explicitly block tool usage
-
-Pattern matching supports wildcards:
-- `filesystem.read_*` - All filesystem read operations
-- `github.*` - All GitHub operations
-- `*` - Default fallback for unspecified tools
-
-## Agent Lifecycle
-
-### 1. Loading Phase
-```csharp
-// Load agent definition from markdown
-var persona = await AgentPersona.LoadFromFileAsync("agents/cody.md");
-
-// Create runner with MCP servers and backend factory
-var runner = new AgentRunner(
-    persona,
-    mcpServers,
-    backendFactory,
-    workspacePath,
-    logger
-);
-```
-
-### 2. Initialization Phase
-```csharp
-// Connect MCP servers and prepare tools
-await runner.InitializeAsync();
-
-// Agent is now ready for conversations
-var tools = runner.Tools; // Available tool schemas
-```
-
-### 3. Execution Phase
-```csharp
-// Stream conversation turn with real-time events
-await foreach (var agentEvent in runner.StreamAsync(
-    systemPrompt: persona.SystemPrompt,
-    tools: runner.Tools,
-    history: conversationHistory,
-    toolDispatcher: toolDispatcher))
-{
-    switch (agentEvent.EventType)
-    {
-        case AgentEventType.ContentDelta:
-            // Stream response tokens to user
-            break;
-        case AgentEventType.ToolCallStart:
-            // Tool execution beginning
-            break;
-        case AgentEventType.PermissionRequest:
-            // User approval needed
-            break;
-    }
-}
-```
-
-### 4. Cleanup Phase
-```csharp
-// Automatic cleanup of resources
-await runner.DisposeAsync();
-```
-
-## Tool Integration
-
-### MCP Server Connection
-Each agent can connect to multiple MCP (Model Context Protocol) servers:
-
-```csharp
-// MCP servers provide tools through protocol
-var mcpServers = new[]
-{
-    new McpServerRecord("filesystem", "File system operations", "mcp-filesystem", []),
-    new McpServerRecord("github", "GitHub integration", "mcp-github", ["--token", token])
-};
-
-// Tools automatically aggregated from all connected servers
-var allTools = await AggregateToolsFromServers(mcpServers);
-```
-
-### Permission Gate
-Tool execution is controlled by configurable permission policies:
-
-```csharp
-public sealed class PermissionGate
-{
-    // Synchronous permission checking
-    public ToolPermissionResult CheckPermission(string toolName)
-    
-    // Asynchronous permission with user interaction
-    public async Task<ToolPermissionResult> CheckPermissionAsync(string toolName)
-}
-```
-
-Permission results:
-- **Granted**: Execute immediately
-- **Denied**: Block execution
-- **PendingApproval**: Wait for user confirmation
-
-### Tool Dispatcher
-Coordinates tool execution with permission checking:
-
-```csharp
-Func<ToolCall, CancellationToken, Task<ToolCallResult>> toolDispatcher = 
-    async (toolCall, ct) =>
-    {
-        // 1. Check permissions
-        var permission = await permissionGate.CheckPermissionAsync(toolCall.Function);
-        
-        if (permission.IsGranted)
-        {
-            // 2. Find appropriate MCP client
-            var client = FindMcpClientForTool(toolCall.Function);
-            
-            // 3. Execute tool via MCP protocol
-            var result = await client.CallToolAsync(toolCall.Function, toolCall.Arguments, ct);
-            
-            return new ToolCallResult(result.Content);
-        }
-        
-        return new ToolCallResult($"Permission denied for {toolCall.Function}");
-    };
-```
-
-## Event Streaming
-
-Agents communicate progress through real-time event streaming:
-
-```csharp
-public enum AgentEventType
-{
-    ContentDelta,           // Token being generated
-    ToolCallStart,         // Tool execution beginning  
-    ToolCallEnd,           // Tool execution completed
-    PermissionRequest,     // User approval needed
-    Error,                 // Error occurred
-    Done                   // Turn completed
-}
-```
-
-### Event Processing
-```csharp
-await foreach (var agentEvent in runner.StreamAsync(...))
-{
-    switch (agentEvent)
-    {
-        case { EventType: AgentEventType.ContentDelta, Content: var text }:
-            await stream.WriteAsync(text); // Real-time text streaming
-            break;
-            
-        case { EventType: AgentEventType.ToolCallStart, ToolCall: var call }:
-            logger.LogInformation("Executing tool: {Tool}", call.Function);
-            break;
-            
-        case { EventType: AgentEventType.PermissionRequest, PermissionRequest: var req }:
-            var approved = await PromptUserAsync(req.ToolName);
-            req.Respond(approved ? ToolPermissionResult.Granted : ToolPermissionResult.Denied);
-            break;
-    }
-}
-```
-
-## Error Handling
-
-### Graceful Degradation
-- **MCP server failures**: Continue with available tools
-- **Permission denials**: Return informative error messages
-- **Backend errors**: Retry with exponential backoff
-- **Tool execution failures**: Log and continue conversation
-
-### Recovery Strategies
-```csharp
-try
-{
-    await runner.InitializeAsync();
-}
-catch (McpServerConnectionException ex)
-{
-    logger.LogWarning("MCP server {Server} unavailable: {Error}", ex.ServerName, ex.Message);
-    // Continue with available servers
-}
-catch (BackendInitializationException ex)
-{
-    logger.LogError("Backend {Backend} failed to initialize: {Error}", ex.Backend, ex.Message);
-    // Fall back to default backend or fail gracefully
-}
-```
-
-## Performance Considerations
-
-### Connection Pooling
-- MCP clients reused across conversation turns
-- Backend connections cached and pooled
-- Database connections managed by SessionStore
-
-### Memory Management
-- Conversation history truncation for large sessions
-- Streaming responses to minimize memory usage
-- Proper disposal of resources via IAsyncDisposable
-
-### Concurrency
-- Multiple agents can run simultaneously
-- Thread-safe session management
-- Async/await throughout for non-blocking operations
-
-## Security Model
-
-### Sandboxed Execution
-- MCP servers run in isolated processes
-- File system access limited by tool permissions
-- Network access controlled via MCP protocol
-
-### Permission Enforcement
-- Tool calls validated against agent permission policy
-- User confirmation required for sensitive operations
-- Audit trail for all tool executions
-
-### Input Validation
-- Tool arguments validated by MCP protocol
-- System prompt injection protection
-- Database queries parameterized for safety
-
-## Agent Routing
-
-SharpClaw includes a special routing agent (Ade) that can delegate to specialist agents:
-
-```markdown
----
-name: Ade
-description: General assistant who routes to specialists when appropriate
+**Backend-Specific Models**:
+```yaml
+# Anthropic
 backend: anthropic
 model: claude-haiku-4-5-20251001
----
 
-If another specialist agent is clearly a better fit for the task, 
-hand the work off by returning a routing decision:
+# OpenAI  
+backend: openai
+model: gpt-4o-mini
 
-{ "agent": "cody", "rewritten_prompt": "Create a REST API for..." }
+# OpenRouter
+backend: openrouter  
+model: anthropic/claude-3.5-haiku
+
+# GitHub Copilot
+backend: copilot
+model: gpt-4o
 ```
 
-This enables:
-- **Intelligent task routing** based on agent expertise
-- **Seamless user experience** with automatic delegation
-- **Specialized agent capabilities** without user knowledge of internals
+## Agent Execution Flow
+
+### 1. Request Routing
+
+All user requests first go through the **Ade** (routing agent) which determines the most appropriate agent to handle the request:
+
+```mermaid
+graph TD
+    A[User Request] --> B[Ade Routing Agent]
+    B --> C{Best Agent?}
+    C -->|Self| D[Ade Handles Direct]
+    C -->|Specialist| E[Route to Specialist]
+    E --> F[Specialist Agent]
+    F --> G[Response to User]
+    D --> G
+```
+
+**Ade's Routing Logic**:
+```markdown
+If another specialist agent is clearly a better fit for the task, hand the work off to that agent by returning a routing decision. If no specialist is a better fit, keep the task yourself.
+
+Reply with **only** a JSON object — no markdown fences, no extra text:
+{ "agent": "<agent-id>", "rewritten_prompt": "<clarified version of the user request>" }
+
+Rules:
+- If a specialist agent is a substantially better fit, pick the single most relevant specialist agent.
+- Rewrite the prompt to be clear and actionable for the chosen specialist.  
+- If you can handle the task well yourself, return `{ "agent": null, "rewritten_prompt": null }`.
+```
+
+### 2. Agent Initialization
+
+When an agent is selected, the system:
+
+1. **Loads agent definition** from database (populated from markdown files)
+2. **Validates backend availability** and API credentials
+3. **Initializes MCP servers** specified in agent configuration
+4. **Sets up permission gates** based on the agent's permission policy
+5. **Creates execution context** with conversation history
+
+### 3. Message Processing
+
+The `AgentRunner` orchestrates the conversation flow:
+
+```csharp
+public sealed class AgentRunner
+{
+    public async Task<AgentResponse> ProcessAsync(
+        AgentRequest request,
+        CancellationToken ct)
+    {
+        // 1. Load conversation history
+        var history = await LoadHistoryAsync(request.SessionId);
+        
+        // 2. Initialize backend and MCP servers
+        var backend = GetBackend(request.Agent.Backend);
+        var mcpClients = await InitializeMcpServersAsync(request.Agent);
+        
+        // 3. Process with tool integration
+        return await backend.ProcessAsync(request, ct);
+    }
+}
+```
+
+### 4. Tool Integration
+
+Agents can use MCP tools through permission-gated execution:
+
+1. **Tool Discovery**: Available tools loaded from configured MCP servers
+2. **Permission Check**: Tool usage validated against agent's permission policy
+3. **Execution**: Approved tools executed in sandboxed environment
+4. **Response Integration**: Tool results incorporated into agent response
+
+## Current Agent Roster
+
+### Ade (Routing Agent)
+
+**Role**: General assistant and request router
+- **Backend**: Anthropic Claude Haiku (cost-optimized for routing)
+- **Tools**: DuckDuckGo web search
+- **Primary Function**: Determine best agent for each request
+- **Fallback Behavior**: Handle general queries when no specialist fits
+
+### Cody (Software Developer)
+
+**Role**: Senior software architect and full-stack developer  
+- **Backend**: Anthropic Claude Haiku
+- **Tools**: File system access, web search
+- **Expertise**: .NET/C#, TypeScript, React, Python, system design
+- **Personality**: Direct, practical, focused on working code
+
+### Noah (Knowledge Manager)
+
+**Role**: Information organization and knowledge base management
+- **Backend**: Anthropic Claude Haiku  
+- **Tools**: File system access, web search
+- **Expertise**: Documentation, research, data organization
+- **Primary Function**: Maintain and query organizational knowledge
+
+### Debbie (Data Analyst)
+
+**Role**: Data analysis and visualization specialist
+- **Backend**: Anthropic Claude Haiku
+- **Tools**: File system access for data files
+- **Expertise**: Statistical analysis, data visualization, reporting
+- **Use Cases**: Analytics, reporting, data insights
+
+### Remy (Systems Administrator)
+
+**Role**: DevOps and system administration
+- **Backend**: Anthropic Claude Haiku
+- **Tools**: File system access, system commands
+- **Expertise**: Server management, deployment, monitoring
+- **Use Cases**: Infrastructure, automation, troubleshooting
+
+## Permission System
+
+### Permission Levels
+
+```csharp
+public enum ToolPermission
+{
+    Deny,           // Block tool execution entirely
+    AutoApprove,    // Execute without user confirmation
+    RequireApproval // Prompt user for approval before execution
+}
+```
+
+### Permission Policy Configuration
+
+Permission policies use glob patterns for flexible tool matching:
+
+```yaml
+permissionPolicy:
+  # Specific tool permissions
+  filesystem.read_file: auto_approve
+  filesystem.write_file: require_approval
+  filesystem.delete_file: deny
+  
+  # Wildcard permissions  
+  duckduckgo.*: auto_approve
+  dangerous.*: deny
+  
+  # Default policy (if not specified)
+  "*": require_approval
+```
+
+### Security Implementation
+
+**Permission Gate Process**:
+1. Agent requests tool execution
+2. `PermissionGate` checks agent's policy for tool pattern
+3. If `auto_approve`: Execute immediately  
+4. If `require_approval`: Prompt user via UI
+5. If `deny`: Block execution and notify agent
+6. User response (approve/deny) cached for session
+
+**Path Validation** (File System Tools):
+- All file operations restricted to workspace directory
+- Path traversal attacks prevented with canonical path resolution
+- Symbolic link following controlled and logged
+
+## Agent Lifecycle Management
+
+### Agent Loading
+
+**Startup Process**:
+1. **Scan agents directory** for `.md` files on application start
+2. **Parse YAML frontmatter** and validate configuration
+3. **Seed database** with agent definitions (insert/update)
+4. **Validate backends** and MCP server availability
+5. **Mark agents enabled/disabled** based on configuration
+
+### Runtime Management
+
+**Dynamic Configuration**:
+- Agent settings can be updated via API without restart
+- MCP servers can be added/removed dynamically  
+- Permission policies updated in real-time
+- Backend switching supported (with model compatibility checks)
+
+**Health Monitoring**:
+- Backend API connectivity checked periodically
+- MCP server health monitored with automatic restart
+- Agent performance metrics tracked (response time, error rates)
+- Token usage monitored per agent for cost tracking
+
+### Session Isolation
+
+**Conversation Context**:
+- Each agent maintains separate conversation history per session
+- Tool execution context isolated between sessions
+- Permission decisions scoped to individual sessions
+- No cross-session data leakage between conversations
+
+## Extending the Agent System
+
+### Adding New Agents
+
+1. **Create agent definition**:
+   ```bash
+   # Create new agent file
+   vim agents/alex.md
+   ```
+
+2. **Define configuration**:
+   ```yaml
+   ---
+   name: Alex
+   description: Marketing and content specialist
+   backend: openai
+   model: gpt-4o-mini
+   mcpServers:
+     - duckduckgo
+     - social-media
+   permissionPolicy:
+     duckduckgo.*: auto_approve
+     social-media.post: require_approval
+   isEnabled: true
+   ---
+   ```
+
+3. **Restart application** - agent automatically loaded and available
+
+### Custom Backend Integration
+
+1. **Implement `IAgentBackendProvider`**:
+   ```csharp
+   public class CustomBackendProvider : IAgentBackendProvider
+   {
+       public string BackendId => "custom";
+       public Task<IAgentBackend> CreateAsync(string apiKey) { ... }
+   }
+   ```
+
+2. **Register in dependency injection**:
+   ```csharp
+   builder.Services.AddSingleton<IAgentBackendProvider, CustomBackendProvider>();
+   ```
+
+3. **Configure in agent definition**:
+   ```yaml
+   backend: custom
+   model: custom-model-name
+   ```
+
+### Advanced Agent Patterns
+
+**Specialist Routing**: Create domain-specific routing agents that delegate to sub-specialists within their domain.
+
+**Tool Chaining**: Design agents with complementary tool sets that can work together on complex tasks.
+
+**Context Handoff**: Implement session context sharing between related agents for multi-step workflows.
+
+**Dynamic Tool Loading**: Configure agents with conditional MCP servers based on session context or user preferences.
+
+The agent system provides a robust foundation for creating specialized AI assistants while maintaining security, performance, and extensibility for diverse use cases.

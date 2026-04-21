@@ -1,52 +1,59 @@
 # SharpClaw Documentation
 
-Welcome to the comprehensive SharpClaw documentation. This directory contains detailed technical documentation about the architecture, design decisions, and implementation of the SharpClaw personal agent framework.
+SharpClaw is a personal AI agent framework built with .NET 10 and React, supporting multiple LLM backends and Model Context Protocol (MCP) integrations.
 
-## Table of Contents
+## Documentation Index
 
-### Architecture & Design
-- [Architecture Overview](./architecture-overview.md) - High-level system architecture and component relationships
-- [Database Design](./database-design.md) - PostgreSQL schema and data modeling decisions
-- [Agent System](./agent-system.md) - Core agent architecture and lifecycle
-- [Backend Providers](./backend-providers.md) - Multi-LLM backend abstraction layer
-- [MCP Integration](./mcp-integration.md) - Model Context Protocol tool execution system
+### Core Architecture
+- **[Architecture Overview](architecture-overview.md)** - System design and component relationships
+- **[Project Structure](project-structure.md)** - Codebase organization and conventions
 
 ### Components
-- [API Layer](./api-layer.md) - REST API architecture and endpoints
-- [Web Frontend](./web-frontend.md) - React-based user interface
-- [Authentication](./authentication.md) - JWT-based auth system
-- [Session Management](./session-management.md) - Conversation persistence and lifecycle
-- [Telegram Integration](./telegram-integration.md) - Telegram bot implementation
+- **[Agent System](agent-system.md)** - Agent definitions, routing, and execution
+- **[API Layer](api-layer.md)** - REST endpoints and services
+- **[Database Design](database-design.md)** - PostgreSQL schema and data models
+- **[MCP Integration](mcp-integration.md)** - Model Context Protocol tool execution
+- **[Backend Providers](backend-providers.md)** - LLM integration (Anthropic, OpenAI, etc.)
 
-### Latest Features
-- [Develop Branch Features](./features-develop.md) - Session archiving, knowledge management, and workspace browser
+### Features
+- **[Session Management](session-management.md)** - Conversation handling and archiving
+- **[Workspace Browser](workspace-browser.md)** - Secure file system access
+- **[Authentication](authentication.md)** - JWT-based auth system
+- **[Telegram Integration](telegram-integration.md)** - Bot interface
 
-### Development
-- [Project Structure](./project-structure.md) - Codebase organization and conventions
-- [Development Setup](./development-setup.md) - Local development environment
-- [Deployment Guide](./deployment-guide.md) - Production deployment options
-- [Configuration](./configuration.md) - Environment variables and settings
+### Operations
+- **[Configuration](configuration.md)** - Settings and environment setup
+- **[Deployment](deployment.md)** - Docker Compose and production setup
+- **[Monitoring](monitoring.md)** - Health checks and diagnostics
 
-### Design Decisions
-- [Technology Choices](./technology-choices.md) - Why .NET, PostgreSQL, React, etc.
-- [Security Design](./security-design.md) - Security architecture and considerations
-- [Performance & Scaling](./performance-scaling.md) - Performance optimization strategies
+## Quick Start
 
-## Quick Reference
+1. **Clone and configure**:
+   ```bash
+   git clone https://github.com/kjhughes097/SharpClaw.git
+   cd SharpClaw
+   cp .env.example .env
+   # Edit .env with your settings
+   ```
 
-### Key Concepts
-- **Agent**: An AI assistant with specific persona, backend model, and tool permissions
-- **Session**: A conversation thread between user and agent with persistent history
-- **Backend**: LLM provider abstraction (Anthropic, OpenAI, OpenRouter, GitHub Copilot)
-- **MCP Server**: Tool provider following Model Context Protocol for safe execution
-- **Permission Policy**: Agent-specific rules for tool execution approval
+2. **Start with Docker Compose**:
+   ```bash
+   docker compose up --build -d
+   ```
 
-### Core Components
-- **SharpClaw.Core**: Framework abstractions and domain models
-- **SharpClaw.Api**: REST API and business logic
-- **SharpClaw.Web**: React frontend application
-- **SharpClaw.{Provider}**: LLM backend implementations
-- **SharpClaw.Telegram**: Telegram bot service
+3. **Access the application**:
+   - Web UI: http://localhost:3000
+   - API: http://localhost:5000
+   - API docs: http://localhost:5000/scalar/v1
 
-### Getting Started
-For a quick start, see the main [README.md](../README.md) in the root directory.
+## Architecture Overview
+
+SharpClaw uses a modular architecture with:
+
+- **Frontend**: React SPA for real-time chat interface
+- **Backend**: .NET 10 API with SSE streaming for real-time responses
+- **Database**: PostgreSQL for persistent data storage
+- **Integration**: MCP servers for tool execution and external integrations
+- **Multi-LLM**: Support for Anthropic, OpenAI, OpenRouter, and GitHub Copilot
+
+The system is designed for personal use with enterprise-level security and extensibility.
