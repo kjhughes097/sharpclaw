@@ -1,59 +1,82 @@
 # SharpClaw Documentation
 
-SharpClaw is a personal AI agent framework built with .NET 10 and React, supporting multiple LLM backends and Model Context Protocol (MCP) integrations.
+**SharpClaw** is a personal agent framework built on .NET 10 with React frontend. It uses **file-based storage** for simplicity and supports multiple AI backends.
 
-## Documentation Index
+## 📚 Documentation
 
-### Core Architecture
-- **[Architecture Overview](architecture-overview.md)** - System design and component relationships
-- **[Project Structure](project-structure.md)** - Codebase organization and conventions
+- [**Architecture Overview**](./architecture-overview.md) - System design, components, and technical decisions
+- [**File-Based Storage**](./file-based-storage.md) - How conversations, projects, and data are stored
+- [**Agent System**](./agent-system.md) - Complete guide to all 8 agents and their roles
+- [**API Reference**](./api-reference.md) - REST endpoints, streaming, and integration
 
-### Components
-- **[Agent System](agent-system.md)** - Agent definitions, routing, and execution
-- **[API Layer](api-layer.md)** - REST endpoints and services
-- **[Database Design](database-design.md)** - PostgreSQL schema and data models
-- **[MCP Integration](mcp-integration.md)** - Model Context Protocol tool execution
-- **[Backend Providers](backend-providers.md)** - LLM integration (Anthropic, OpenAI, etc.)
-
-### Features
-- **[Session Management](session-management.md)** - Conversation handling and archiving
-- **[Workspace Browser](workspace-browser.md)** - Secure file system access
-- **[Authentication](authentication.md)** - JWT-based auth system
-- **[Telegram Integration](telegram-integration.md)** - Bot interface
-
-### Operations
-- **[Configuration](configuration.md)** - Settings and environment setup
-- **[Deployment](deployment.md)** - Docker Compose and production setup
-- **[Monitoring](monitoring.md)** - Health checks and diagnostics
-
-## Quick Start
+## 🚀 Quick Start
 
 1. **Clone and configure**:
    ```bash
-   git clone https://github.com/kjhughes097/SharpClaw.git
+   git clone https://github.com/kjhughes097/SharpClaw
    cd SharpClaw
    cp .env.example .env
-   # Edit .env with your settings
+   # Edit .env with your API keys
    ```
 
-2. **Start with Docker Compose**:
+2. **Run with Docker**:
    ```bash
    docker compose up --build -d
    ```
 
-3. **Access the application**:
-   - Web UI: http://localhost:3000
+3. **Access the UI**:
+   - Web interface: http://localhost:3000
    - API: http://localhost:5000
-   - API docs: http://localhost:5000/scalar/v1
 
-## Architecture Overview
+## 🏗️ Architecture Summary
 
-SharpClaw uses a modular architecture with:
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   React Web     │───▶│   .NET API      │───▶│  File Storage   │
+│   Frontend      │    │   Backend       │    │   (Markdown)    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │  AI Backends    │
+                       │ Anthropic/OpenAI│
+                       │ OpenRouter/     │
+                       │ GitHub Copilot  │
+                       └─────────────────┘
+```
 
-- **Frontend**: React SPA for real-time chat interface
-- **Backend**: .NET 10 API with SSE streaming for real-time responses
-- **Database**: PostgreSQL for persistent data storage
-- **Integration**: MCP servers for tool execution and external integrations
-- **Multi-LLM**: Support for Anthropic, OpenAI, OpenRouter, and GitHub Copilot
+## 🎯 Key Features
 
-The system is designed for personal use with enterprise-level security and extensibility.
+- **8 Specialist Agents** - Router (Ade) + 7 specialists for different domains
+- **File-Based Storage** - No database required, everything stored as files
+- **Multi-LLM Support** - Anthropic, OpenAI, OpenRouter, GitHub Copilot
+- **Project Organization** - Conversations organized into projects and chats
+- **Real-time Streaming** - Server-Sent Events for live conversation updates
+- **Workspace Integration** - Secure file system access for agents
+
+## 📁 Storage Layout
+
+```
+workspace-root/
+├── projects/
+│   ├── general/
+│   │   ├── context.md
+│   │   ├── log.md
+│   │   └── chats/
+│   │       └── [chat-slug]/
+│   │           ├── messages.json
+│   │           ├── context.md
+│   │           ├── log.md
+│   │           └── usage.json
+│   └── [project-slug]/
+│       └── ...
+├── memory/
+│   └── agents/
+│       ├── cody/
+│       ├── paige/
+│       └── ...
+└── content/
+    ├── drafts/
+    ├── published/
+    └── social/
+```
