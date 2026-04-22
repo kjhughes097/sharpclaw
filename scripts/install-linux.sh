@@ -14,7 +14,7 @@ set -euo pipefail
 
 INSTALL_DIR="/opt/sharpclaw"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SHARPCLAW_USER="sharpclaw"
+SHARPCLAW_USER="${SHARPCLAW_USER:-sharpclaw}"
 SERVICE_NAME="sharpclaw"
 
 while [[ $# -gt 0 ]]; do

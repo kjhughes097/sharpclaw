@@ -17,7 +17,7 @@ INSTALL_DIR="/opt/sharpclaw"
 DOMAIN="_"
 API_PORT="5100"
 WEB_PORT="8097"
-SHARPCLAW_USER="sharpclaw"
+SHARPCLAW_USER="${SHARPCLAW_USER:-sharpclaw}"
 SERVICE_NAME="sharpclaw"
 
 while [[ $# -gt 0 ]]; do
