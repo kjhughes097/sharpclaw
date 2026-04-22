@@ -37,99 +37,128 @@ public sealed class GenericLlmService : ILlmService, IDisposable
 
         for (var round = 0; round <= maxToolRounds; round++)
         {
-            var body = BuildRequestBody(model, systemPrompt, messages, tools);
-            var json = JsonSerializer.Serialize(body, JsonOpts);
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/messages")
+            var retryCount = 0;
+            const int maxRetries = 3;
+            
+            HttpResponseMessage response;
+            while (true)
             {
-                Content = new StringContent(json, Encoding.UTF8, "application/json")
-            };
+                var body = BuildRequestBody(model, systemPrompt, messages, tools);
+                var json = JsonSerializer.Serialize(body, JsonOpts);
 
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-            response.EnsureSuccessStatusCode();
+                using var request = new HttpRequestMessage(HttpMethod.Post, "/v1/messages")
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
 
-            using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var reader = new StreamReader(stream);
+                response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+                
+                // Handle rate limiting with exponential backoff
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    if (retryCount >= maxRetries)
+                    {
+                        yield return new StatusEvent("Max retries exceeded for rate limiting");
+                        response.EnsureSuccessStatusCode(); // This will throw
+                    }
+                    
+                    var retryAfter = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(Math.Pow(2, retryCount + 1));
+                    yield return new StatusEvent($"Rate limited, retrying in {retryAfter.TotalSeconds}s... (attempt {retryCount + 1}/{maxRetries})");
+                    response.Dispose();
+                    await Task.Delay(retryAfter, ct);
+                    retryCount++;
+                    continue;
+                }
+                
+                response.EnsureSuccessStatusCode();
+                break; // Success, exit retry loop
+            }
 
             var textBuffer = new StringBuilder();
             var toolUses = new List<ToolUseAccumulator>();
             string? stopReason = null;
             int inputTokens = 0, outputTokens = 0;
 
-            while (true)
+            using (response)
             {
-                ct.ThrowIfCancellationRequested();
-                var line = await reader.ReadLineAsync(ct);
+                using var stream = await response.Content.ReadAsStreamAsync(ct);
+                using var reader = new StreamReader(stream);
 
-                if (line is null) break;
-                if (line.Length == 0) continue;                    // blank lines between SSE events
-                if (!line.StartsWith("data: ")) continue;
-
-                var data = line["data: ".Length..];
-                if (data == "[DONE]") break;
-
-                using var doc = JsonDocument.Parse(data);
-                var root = doc.RootElement;
-                var eventType = root.GetProperty("type").GetString();
-
-                switch (eventType)
+                while (true)
                 {
-                    case "message_start":
-                        if (root.TryGetProperty("message", out var msg) &&
-                            msg.TryGetProperty("usage", out var startUsage))
-                        {
-                            inputTokens += startUsage.GetProperty("input_tokens").GetInt32();
-                        }
-                        break;
+                    ct.ThrowIfCancellationRequested();
+                    var line = await reader.ReadLineAsync(ct);
 
-                    case "content_block_start":
+                    if (line is null) break;
+                    if (line.Length == 0) continue;                    // blank lines between SSE events
+                    if (!line.StartsWith("data: ")) continue;
+
+                    var data = line["data: ".Length..];
+                    if (data == "[DONE]") break;
+
+                    using var doc = JsonDocument.Parse(data);
+                    var root = doc.RootElement;
+                    var eventType = root.GetProperty("type").GetString();
+
+                    switch (eventType)
                     {
-                        var contentBlock = root.GetProperty("content_block");
-                        var blockType = contentBlock.GetProperty("type").GetString();
-                        if (blockType == "tool_use")
-                        {
-                            toolUses.Add(new ToolUseAccumulator
+                        case "message_start":
+                            if (root.TryGetProperty("message", out var msg) &&
+                                msg.TryGetProperty("usage", out var startUsage))
                             {
-                                Index = root.GetProperty("index").GetInt32(),
-                                Id = contentBlock.GetProperty("id").GetString()!,
-                                Name = contentBlock.GetProperty("name").GetString()!,
-                            });
+                                inputTokens += startUsage.GetProperty("input_tokens").GetInt32();
+                            }
+                            break;
+
+                        case "content_block_start":
+                        {
+                            var contentBlock = root.GetProperty("content_block");
+                            var blockType = contentBlock.GetProperty("type").GetString();
+                            if (blockType == "tool_use")
+                            {
+                                toolUses.Add(new ToolUseAccumulator
+                                {
+                                    Index = root.GetProperty("index").GetInt32(),
+                                    Id = contentBlock.GetProperty("id").GetString()!,
+                                    Name = contentBlock.GetProperty("name").GetString()!,
+                                });
+                            }
+                            break;
                         }
-                        break;
+
+                        case "content_block_delta":
+                        {
+                            var delta = root.GetProperty("delta");
+                            var deltaType = delta.GetProperty("type").GetString();
+
+                            if (deltaType == "text_delta")
+                            {
+                                var text = delta.GetProperty("text").GetString() ?? "";
+                                textBuffer.Append(text);
+                                yield return new TokenEvent(text);
+                            }
+                            else if (deltaType == "input_json_delta")
+                            {
+                                var partialJson = delta.GetProperty("partial_json").GetString() ?? "";
+                                var blockIdx = root.GetProperty("index").GetInt32();
+                                var acc = toolUses.FirstOrDefault(t => t.Index == blockIdx);
+                                acc?.InputJson.Append(partialJson);
+                            }
+                            break;
+                        }
+
+                        case "message_delta":
+                            if (root.TryGetProperty("delta", out var msgDelta) &&
+                                msgDelta.TryGetProperty("stop_reason", out var sr))
+                            {
+                                stopReason = sr.GetString();
+                            }
+                            if (root.TryGetProperty("usage", out var deltaUsage))
+                            {
+                                outputTokens += deltaUsage.GetProperty("output_tokens").GetInt32();
+                            }
+                            break;
                     }
-
-                    case "content_block_delta":
-                    {
-                        var delta = root.GetProperty("delta");
-                        var deltaType = delta.GetProperty("type").GetString();
-
-                        if (deltaType == "text_delta")
-                        {
-                            var text = delta.GetProperty("text").GetString() ?? "";
-                            textBuffer.Append(text);
-                            yield return new TokenEvent(text);
-                        }
-                        else if (deltaType == "input_json_delta")
-                        {
-                            var partialJson = delta.GetProperty("partial_json").GetString() ?? "";
-                            var blockIdx = root.GetProperty("index").GetInt32();
-                            var acc = toolUses.FirstOrDefault(t => t.Index == blockIdx);
-                            acc?.InputJson.Append(partialJson);
-                        }
-                        break;
-                    }
-
-                    case "message_delta":
-                        if (root.TryGetProperty("delta", out var msgDelta) &&
-                            msgDelta.TryGetProperty("stop_reason", out var sr))
-                        {
-                            stopReason = sr.GetString();
-                        }
-                        if (root.TryGetProperty("usage", out var deltaUsage))
-                        {
-                            outputTokens += deltaUsage.GetProperty("output_tokens").GetInt32();
-                        }
-                        break;
                 }
             }
 
