@@ -198,44 +198,84 @@ app.MapPost("/api/chat", async (
     ProjectManager pm,
     MemoryManager mm,
     ToolRegistry tools,
-    IReadOnlyDictionary<string, ILlmService> llmSvcs,
-    ChatRequest req) =>
+    IReadOnlyDictionary<string, ILlmService> llmSvcs) =>
 {
     ctx.Response.ContentType = "text/event-stream";
     ctx.Response.Headers.CacheControl = "no-cache";
     ctx.Response.Headers.Connection = "keep-alive";
     var ct = ctx.RequestAborted;
 
+    // Parse request — supports both JSON and multipart/form-data
+    string message;
+    string? projectSlugParam, chatSlugParam, agentSlugParam;
+    var formFiles = new List<IFormFile>();
+
+    if (ctx.Request.HasFormContentType)
+    {
+        var form = await ctx.Request.ReadFormAsync(ct);
+        message = form["message"].ToString();
+        projectSlugParam = form["projectSlug"].FirstOrDefault();
+        chatSlugParam = form["chatSlug"].FirstOrDefault();
+        agentSlugParam = form["agentSlug"].FirstOrDefault();
+        formFiles.AddRange(form.Files);
+    }
+    else
+    {
+        var req = await ctx.Request.ReadFromJsonAsync<ChatRequest>(ct);
+        if (req is null)
+        {
+            ctx.Response.StatusCode = 400;
+            await ctx.Response.WriteAsJsonAsync(new { error = "Invalid request body" });
+            return;
+        }
+        message = req.Message;
+        projectSlugParam = req.ProjectSlug;
+        chatSlugParam = req.ChatSlug;
+        agentSlugParam = req.AgentSlug;
+    }
+
     // Resolve project (default to "general")
-    var projectSlug = req.ProjectSlug ?? "general";
+    var projectSlug = projectSlugParam ?? "general";
     if (pm.GetProject(projectSlug) is null)
         pm.CreateProject(projectSlug);
 
     // Resolve or create chat
     string chatSlug;
-    if (req.ChatSlug is not null)
+    if (chatSlugParam is not null)
     {
-        chatSlug = req.ChatSlug;
+        chatSlug = chatSlugParam;
     }
     else
     {
-        var title = req.Message.Length > 50 ? req.Message[..50] : req.Message;
+        var title = message.Length > 50 ? message[..50] : message;
         var chat = cm.CreateChat(projectSlug, title);
         chatSlug = chat.Slug;
     }
 
-    // Save user message
-    cm.AppendMessage(projectSlug, chatSlug, new ChatMessage(ChatRole.User, req.Message));
+    // Route to specialist agent (need agent slug before saving files)
+    var currentAgent = cm.GetChat(projectSlug, chatSlug)?.LastAgent;
+    ILlmService routerLlm = llmSvcs.GetValueOrDefault("llm") ?? llmSvcs.Values.First();
+    var agent = agentSlugParam is not null
+        ? router.GetAgent(agentSlugParam) ?? await router.RouteAsync(message, currentAgent, routerLlm, ct)
+        : await router.RouteAsync(message, currentAgent, routerLlm, ct);
+
+    // Save uploaded files to agent's files directory
+    var attachments = new List<ChatAttachment>();
+    foreach (var file in formFiles)
+    {
+        await using var stream = file.OpenReadStream();
+        var attachment = await ChatManager.SaveAttachmentAsync(
+            dataRoot, agent.Slug, file.FileName, file.ContentType, stream, ct);
+        attachments.Add(attachment);
+    }
+
+    // Save user message (with attachment metadata if any)
+    var userMsg = new ChatMessage(ChatRole.User, message,
+        Attachments: attachments.Count > 0 ? attachments : null);
+    cm.AppendMessage(projectSlug, chatSlug, userMsg);
 
     // Emit chat slug so frontend knows which chat we're in
     await WriteSseEvent(ctx.Response, "chat_info", new { projectSlug, chatSlug });
-
-    // Route to specialist agent
-    var currentAgent = cm.GetChat(projectSlug, chatSlug)?.LastAgent;
-    ILlmService routerLlm = llmSvcs.GetValueOrDefault("llm") ?? llmSvcs.Values.First();
-    var agent = req.AgentSlug is not null
-        ? router.GetAgent(req.AgentSlug) ?? await router.RouteAsync(req.Message, currentAgent, routerLlm, ct)
-        : await router.RouteAsync(req.Message, currentAgent, routerLlm, ct);
 
     await WriteSseEvent(ctx.Response, "status", new { message = $"Routing to {agent.Name}..." });
 
@@ -308,7 +348,7 @@ app.MapPost("/api/chat", async (
     {
         try
         {
-            var summary = $"- User: {(req.Message.Length > 100 ? req.Message[..100] + "..." : req.Message)}\n- Agent response: {(responseContent.Length > 100 ? responseContent.ToString()[..100] + "..." : responseContent.ToString())}";
+            var summary = $"- User: {(message.Length > 100 ? message[..100] + "..." : message)}\n- Agent response: {(responseContent.Length > 100 ? responseContent.ToString()[..100] + "..." : responseContent.ToString())}";
             mm.AppendChatLog(projectSlug, chatSlug, agent.Name, summary);
             mm.AppendProjectLog(projectSlug, agent.Name, summary);
         }

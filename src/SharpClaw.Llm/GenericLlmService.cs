@@ -216,10 +216,87 @@ public sealed class GenericLlmService : ILlmService, IDisposable
 
     private static List<ApiMessage> ConvertHistory(IReadOnlyList<ChatMessage> history)
     {
-        return history.Select(m => new ApiMessage(
-            m.Role == ChatRole.Assistant ? "assistant" : "user",
-            m.Content
-        )).ToList();
+        return history.Select(m =>
+        {
+            var role = m.Role == ChatRole.Assistant ? "assistant" : "user";
+
+            if (m.Attachments is not { Count: > 0 })
+                return new ApiMessage(role, m.Content);
+
+            // Build multi-part content blocks for messages with attachments
+            var contentBlocks = new List<object>();
+
+            foreach (var att in m.Attachments)
+            {
+                if (!File.Exists(att.StoragePath))
+                    continue;
+
+                if (att.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+                {
+                    var bytes = File.ReadAllBytes(att.StoragePath);
+                    var base64 = Convert.ToBase64String(bytes);
+                    contentBlocks.Add(new Dictionary<string, object>
+                    {
+                        ["type"] = "image",
+                        ["source"] = new Dictionary<string, object>
+                        {
+                            ["type"] = "base64",
+                            ["media_type"] = att.MimeType,
+                            ["data"] = base64,
+                        },
+                    });
+                }
+                else if (att.MimeType == "application/pdf")
+                {
+                    var bytes = File.ReadAllBytes(att.StoragePath);
+                    var base64 = Convert.ToBase64String(bytes);
+                    contentBlocks.Add(new Dictionary<string, object>
+                    {
+                        ["type"] = "document",
+                        ["source"] = new Dictionary<string, object>
+                        {
+                            ["type"] = "base64",
+                            ["media_type"] = att.MimeType,
+                            ["data"] = base64,
+                        },
+                    });
+                }
+                else
+                {
+                    // Text/code files — inline the content; other binary — note the path
+                    try
+                    {
+                        var text = File.ReadAllText(att.StoragePath);
+                        if (text.Length > 100_000)
+                            text = text[..100_000] + "\n\n[...truncated at 100K characters]";
+                        contentBlocks.Add(new Dictionary<string, object>
+                        {
+                            ["type"] = "text",
+                            ["text"] = $"[File: {att.FileName}]\n{text}",
+                        });
+                    }
+                    catch
+                    {
+                        contentBlocks.Add(new Dictionary<string, object>
+                        {
+                            ["type"] = "text",
+                            ["text"] = $"[Attached file: {att.FileName} ({att.MimeType}) — stored at {att.StoragePath}. Use read_file to access it.]",
+                        });
+                    }
+                }
+            }
+
+            if (!string.IsNullOrEmpty(m.Content))
+            {
+                contentBlocks.Add(new Dictionary<string, object>
+                {
+                    ["type"] = "text",
+                    ["text"] = m.Content,
+                });
+            }
+
+            return new ApiMessage(role, contentBlocks);
+        }).ToList();
     }
 
     private static Dictionary<string, object> BuildRequestBody(

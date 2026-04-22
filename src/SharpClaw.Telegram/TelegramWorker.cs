@@ -100,7 +100,21 @@ public sealed class TelegramWorker : BackgroundService
 
     private async Task HandleUpdateAsync(ITelegramBotClient bot, Update update, CancellationToken ct)
     {
-        if (update.Message is not { Text: { Length: > 0 } text } message)
+        if (update.Message is not { } message)
+            return;
+
+        // Extract text from message or caption (for file messages)
+        var text = message.Text ?? message.Caption ?? "";
+
+        // Determine if this message has a file attachment
+        var hasFile = message.Photo is { Length: > 0 }
+            || message.Document is not null
+            || message.Audio is not null
+            || message.Video is not null
+            || message.Voice is not null;
+
+        // Skip messages with no text and no file
+        if (text.Length == 0 && !hasFile)
             return;
 
         var chatId = message.Chat.Id;
@@ -123,7 +137,7 @@ public sealed class TelegramWorker : BackgroundService
 
         try
         {
-            await ProcessMessageAsync(bot, chatId, text, ct);
+            await ProcessMessageAsync(bot, message, chatId, text, ct);
         }
         catch (Exception ex)
         {
@@ -136,7 +150,7 @@ public sealed class TelegramWorker : BackgroundService
         }
     }
 
-    private async Task ProcessMessageAsync(ITelegramBotClient bot, long chatId, string text, CancellationToken ct)
+    private async Task ProcessMessageAsync(ITelegramBotClient bot, Message message, long chatId, string text, CancellationToken ct)
     {
         // Telegram auto-sends /start when a user first opens the bot
         if (text.StartsWith('/'))
@@ -199,6 +213,21 @@ public sealed class TelegramWorker : BackgroundService
         var project = _projectMap.GetValueOrDefault(chatId, _options.DefaultProject);
         _chatMap.TryGetValue(chatId, out var chatSlug);
 
+        // Download any file attachments from the Telegram message
+        var attachments = new List<(string FileName, string MimeType, Stream Content)>();
+        try
+        {
+            await DownloadAttachmentsAsync(bot, message, attachments, ct);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to download attachment from chat {ChatId}", chatId);
+        }
+
+        // If message is file-only with no text, provide a default prompt
+        if (string.IsNullOrWhiteSpace(messageText) && attachments.Count > 0)
+            messageText = "I've sent you a file. Please review it.";
+
         // Stream the response, collecting chunks for periodic edits
         var response = new StringBuilder();
         var lastEditLength = 0;
@@ -243,7 +272,12 @@ public sealed class TelegramWorker : BackgroundService
                     // Telegram rate limit or markdown parse error — skip this edit
                 }
             },
-            ct);
+            ct,
+            attachments: attachments.Count > 0 ? attachments : null);
+
+        // Dispose attachment streams
+        foreach (var (_, _, stream) in attachments)
+            await stream.DisposeAsync();
 
         // Save chat slug and last agent for continuity
         if (newChatSlug is not null)
@@ -376,4 +410,74 @@ public sealed class TelegramWorker : BackgroundService
         < 1_000_000 => $"{tokens / 1000.0:F0}k",
         _ => $"{tokens / 1_000_000.0:F1}M"
     };
+
+    /// <summary>
+    /// Downloads file attachments from a Telegram message into memory streams.
+    /// Supports photos, documents, audio, video, and voice messages.
+    /// </summary>
+    private static async Task DownloadAttachmentsAsync(
+        ITelegramBotClient bot,
+        Message message,
+        List<(string FileName, string MimeType, Stream Content)> attachments,
+        CancellationToken ct)
+    {
+        // Photo — take the largest resolution
+        if (message.Photo is { Length: > 0 } photos)
+        {
+            var largest = photos[^1]; // last element is highest resolution
+            var ms = new MemoryStream();
+            var file = await bot.GetFile(largest.FileId, ct);
+            await bot.DownloadFile(file.FilePath!, ms, ct);
+            ms.Position = 0;
+            var fileName = $"photo-{largest.FileId[..8]}.jpg";
+            attachments.Add((fileName, "image/jpeg", ms));
+        }
+
+        // Document (any file type)
+        if (message.Document is { } doc)
+        {
+            var ms = new MemoryStream();
+            var file = await bot.GetFile(doc.FileId, ct);
+            await bot.DownloadFile(file.FilePath!, ms, ct);
+            ms.Position = 0;
+            var fileName = doc.FileName ?? $"document-{doc.FileId[..8]}";
+            var mimeType = doc.MimeType ?? "application/octet-stream";
+            attachments.Add((fileName, mimeType, ms));
+        }
+
+        // Audio
+        if (message.Audio is { } audio)
+        {
+            var ms = new MemoryStream();
+            var file = await bot.GetFile(audio.FileId, ct);
+            await bot.DownloadFile(file.FilePath!, ms, ct);
+            ms.Position = 0;
+            var fileName = audio.FileName ?? $"audio-{audio.FileId[..8]}.mp3";
+            var mimeType = audio.MimeType ?? "audio/mpeg";
+            attachments.Add((fileName, mimeType, ms));
+        }
+
+        // Video
+        if (message.Video is { } video)
+        {
+            var ms = new MemoryStream();
+            var file = await bot.GetFile(video.FileId, ct);
+            await bot.DownloadFile(file.FilePath!, ms, ct);
+            ms.Position = 0;
+            var fileName = video.FileName ?? $"video-{video.FileId[..8]}.mp4";
+            var mimeType = video.MimeType ?? "video/mp4";
+            attachments.Add((fileName, mimeType, ms));
+        }
+
+        // Voice message
+        if (message.Voice is { } voice)
+        {
+            var ms = new MemoryStream();
+            var file = await bot.GetFile(voice.FileId, ct);
+            await bot.DownloadFile(file.FilePath!, ms, ct);
+            ms.Position = 0;
+            var mimeType = voice.MimeType ?? "audio/ogg";
+            attachments.Add(($"voice-{voice.FileId[..8]}.ogg", mimeType, ms));
+        }
+    }
 }

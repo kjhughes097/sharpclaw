@@ -36,19 +36,45 @@ public sealed class SharpClawApiClient
         string? chatSlug,
         string? agentSlug,
         Func<string, Task>? onChunk,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyList<(string FileName, string MimeType, Stream Content)>? attachments = null)
     {
-        var payload = JsonSerializer.Serialize(new
+        HttpContent httpContent;
+
+        if (attachments is { Count: > 0 })
         {
-            message,
-            projectSlug,
-            chatSlug,
-            agentSlug,
-        });
+            var form = new MultipartFormDataContent();
+            form.Add(new StringContent(message), "message");
+            form.Add(new StringContent(projectSlug), "projectSlug");
+            if (chatSlug is not null)
+                form.Add(new StringContent(chatSlug), "chatSlug");
+            if (agentSlug is not null)
+                form.Add(new StringContent(agentSlug), "agentSlug");
+
+            foreach (var (fileName, mimeType, content) in attachments)
+            {
+                var streamContent = new StreamContent(content);
+                streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
+                form.Add(streamContent, "files", fileName);
+            }
+
+            httpContent = form;
+        }
+        else
+        {
+            var payload = JsonSerializer.Serialize(new
+            {
+                message,
+                projectSlug,
+                chatSlug,
+                agentSlug,
+            });
+            httpContent = new StringContent(payload, Encoding.UTF8, "application/json");
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/chat")
         {
-            Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+            Content = httpContent,
         };
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);

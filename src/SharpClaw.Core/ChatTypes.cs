@@ -3,8 +3,11 @@ namespace SharpClaw.Core;
 /// <summary>Chat message role.</summary>
 public enum ChatRole { User, Assistant }
 
+/// <summary>A file attached to a chat message.</summary>
+public sealed record ChatAttachment(string FileName, string MimeType, string StoragePath);
+
 /// <summary>A single message in a conversation.</summary>
-public sealed record ChatMessage(ChatRole Role, string Content, string? AgentSlug = null);
+public sealed record ChatMessage(ChatRole Role, string Content, string? AgentSlug = null, IReadOnlyList<ChatAttachment>? Attachments = null);
 
 /// <summary>Schema advertised to the LLM for a callable tool.</summary>
 public sealed record ToolSchema(string Name, string Description, string InputSchemaJson);

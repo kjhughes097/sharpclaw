@@ -241,4 +241,35 @@ public sealed class ChatManager
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true
     };
+
+    /// <summary>
+    /// Saves an attachment file to the agent's files directory and returns the attachment metadata.
+    /// Files are stored at {dataRoot}/memory/agents/{agentSlug}/files/{filename}.
+    /// </summary>
+    public static async Task<ChatAttachment> SaveAttachmentAsync(
+        string dataRoot, string agentSlug, string fileName, string mimeType, Stream content, CancellationToken ct = default)
+    {
+        // Sanitize filename to prevent path traversal
+        var safeName = Path.GetFileName(fileName);
+        if (string.IsNullOrWhiteSpace(safeName))
+            safeName = $"file-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}";
+
+        var agentFilesDir = Path.Combine(dataRoot, "memory", "agents", agentSlug, "files");
+        Directory.CreateDirectory(agentFilesDir);
+
+        // Deduplicate: if file already exists, add a timestamp suffix
+        var targetPath = Path.Combine(agentFilesDir, safeName);
+        if (File.Exists(targetPath))
+        {
+            var nameWithout = Path.GetFileNameWithoutExtension(safeName);
+            var ext = Path.GetExtension(safeName);
+            safeName = $"{nameWithout}-{DateTimeOffset.UtcNow:HHmmss}{ext}";
+            targetPath = Path.Combine(agentFilesDir, safeName);
+        }
+
+        await using var fileStream = new FileStream(targetPath, FileMode.Create, FileAccess.Write);
+        await content.CopyToAsync(fileStream, ct);
+
+        return new ChatAttachment(safeName, mimeType, targetPath);
+    }
 }
