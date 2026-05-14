@@ -1,0 +1,54 @@
+# Build results
+bin/
+obj/
+dist/
+build/
+
+# Visual Studio
+.vs/
+.vscode/
+*.user
+*.suo
+*.sln.iml
+.idea/
+
+# Node / npm (for Docusaurus)
+node_modules/
+.npm
+package-lock.json
+yarn.lock
+
+# NuGet
+.nuget/
+packages/
+*.nupkg
+*.snupkg
+
+# Local development
+appsettings.Development.json
+appsettings.Local.json
+*.local.*
+.env
+.env.local
+
+# OS-specific
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# IDE artifacts
+.editorconfig.local
+*.code-workspace
+
+# Test coverage
+coverage/
+.coverage
+
+# Docker
+docker-compose.override.yml
