@@ -3,7 +3,7 @@ services:
     image: otel/opentelemetry-collector-contrib:0.100.0
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
-      - ./docker/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
     ports:
       - "4317:4317"   # OTLP gRPC
       - "4318:4318"   # OTLP HTTP
@@ -24,7 +24,7 @@ services:
     image: grafana/tempo:2.7.2
     command: ["-config.file=/etc/tempo.yaml"]
     volumes:
-      - ./docker/tempo-config.yaml:/etc/tempo.yaml:ro
+      - ./tempo-config.yaml:/etc/tempo.yaml:ro
       - tempo-data:/tmp/tempo
     ports:
       - "3200:3200"   # Tempo HTTP
@@ -34,7 +34,7 @@ services:
     image: grafana/mimir:2.15.0
     command: ["-config.file=/etc/mimir.yaml", "-target=all"]
     volumes:
-      - ./docker/mimir-config.yaml:/etc/mimir.yaml:ro
+      - ./mimir-config.yaml:/etc/mimir.yaml:ro
       - mimir-data:/data
     ports:
       - "9009:9009"
@@ -48,7 +48,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     volumes:
-      - ./docker/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - grafana-data:/var/lib/grafana
     depends_on:
       - loki

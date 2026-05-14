@@ -30,6 +30,7 @@ appsettings.Local.json
 *.local.*
 .env
 .env.local
+.sharpclaw.pid
 
 # OS-specific
 .DS_Store

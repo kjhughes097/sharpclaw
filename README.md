@@ -137,6 +137,21 @@ The service listens on `http://localhost:5100` with `ASPNETCORE_ENVIRONMENT=Deve
 dotnet test
 ```
 
+### Local Control Script
+
+Use the root script to run common workflows from one command:
+
+```bash
+./sharpclaw.sh start    # SharpClaw + Grafana stack
+./sharpclaw.sh stop     # SharpClaw + Grafana stack
+./sharpclaw.sh restart  # SharpClaw + Grafana stack
+./sharpclaw.sh status   # service + stack status
+./sharpclaw.sh logs     # open Grafana logs UI filtered to service_name="SharpClaw"
+./sharpclaw.sh logs service  # SharpClaw local process log (optional)
+./sharpclaw.sh test     # dotnet test
+./sharpclaw.sh docs     # docs dev server on http://localhost:3001
+```
+
 ## LLM Providers
 
 ### Copilot Provider
