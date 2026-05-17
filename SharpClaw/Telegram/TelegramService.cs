@@ -20,6 +20,7 @@ public sealed class TelegramService(
     TelegramAgentRouter router,
     IAgentRegistry agentRegistry,
     IOptions<TelegramOptions> telegramOptions,
+    IOptions<SharpClawOptions> sharpClawOptions,
     ILogger<TelegramService> logger) : BackgroundService
 {
     private readonly HashSet<string> _allowedUsers =
@@ -46,16 +47,30 @@ public sealed class TelegramService(
 
     private async Task HandleUpdateAsync(ITelegramBotClient _, Update update, CancellationToken ct)
     {
-        if (update.Message?.Text is not { } text) return;
+        if (update.Message is not { } message) return;
 
-        var username = update.Message.From?.Username;
+        // Extract text content — either message text or file caption
+        var text = message.Text;
+        string? fileContext = null;
+
+        // Handle documents and photos
+        if (message.Document is not null || message.Photo is not null)
+        {
+            fileContext = await DownloadFileAsync(message, ct);
+            text = message.Caption;
+        }
+
+        // Must have either text or a file to process
+        if (text is null && fileContext is null) return;
+
+        var username = message.From?.Username;
         if (username is null || !_allowedUsers.Contains(username)) return;
 
-        var chatId = update.Message.Chat.Id;
+        var chatId = message.Chat.Id;
         var channelKey = chatId.ToString();
 
         var agentId = router.Resolve(chatId)
-            ?? ResolveFromGroupTitle(update.Message.Chat)
+            ?? ResolveFromGroupTitle(message.Chat)
             ?? (_defaultAgent.Length > 0 ? _defaultAgent : null);
 
         if (agentId is null)
@@ -65,12 +80,15 @@ public sealed class TelegramService(
             return;
         }
 
+        // Build the prompt: combine file context and user text
+        var prompt = BuildPrompt(text, fileContext);
+
         var session = sessionRegistry.GetOrCreate(channelKey, agentId);
 
         // Publish inbound message
         await session.PublishAsync(new AgentMessage(
             session.SessionId, Guid.NewGuid().ToString(),
-            ChannelMessageOrigin.Telegram, agentId, text, DateTimeOffset.UtcNow), ct);
+            ChannelMessageOrigin.Telegram, agentId, prompt, DateTimeOffset.UtcNow), ct);
 
         // Send typing indicator while processing
         using var typingCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -79,7 +97,7 @@ public sealed class TelegramService(
         try
         {
             var schedulingCtx = new SchedulingContext(channelKey, ScheduleChannelType.Telegram, agentId);
-            var (switchedTo, responseText) = await invoker.InvokeAsync(session, text, schedulingCtx, ct);
+            var (switchedTo, responseText) = await invoker.InvokeAsync(session, prompt, schedulingCtx, ct);
 
             if (!string.IsNullOrEmpty(responseText))
                 await botClient.SendMessage(chatId, responseText, parseMode: ParseMode.Html, cancellationToken: ct);
@@ -92,6 +110,79 @@ public sealed class TelegramService(
             await typingCts.CancelAsync();
             try { await typingTask; } catch (OperationCanceledException) { }
         }
+    }
+
+    private async Task<string?> DownloadFileAsync(Message message, CancellationToken ct)
+    {
+        var workspacePath = sharpClawOptions.Value.WorkspacePath;
+        if (string.IsNullOrWhiteSpace(workspacePath))
+        {
+            logger.LogWarning("WorkspacePath not configured — cannot save Telegram file");
+            return null;
+        }
+
+        string? fileId;
+        string fileName;
+
+        if (message.Document is { } doc)
+        {
+            fileId = doc.FileId;
+            fileName = doc.FileName ?? $"document_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
+        }
+        else if (message.Photo is { Length: > 0 } photos)
+        {
+            // Use the largest photo size
+            var largest = photos[^1];
+            fileId = largest.FileId;
+            fileName = $"photo_{DateTime.UtcNow:yyyyMMdd_HHmmss}.jpg";
+        }
+        else
+        {
+            return null;
+        }
+
+        var uploadsDir = Path.Combine(workspacePath, "uploads");
+        Directory.CreateDirectory(uploadsDir);
+
+        // Prefix with timestamp to avoid collisions
+        var safeFileName = $"{DateTime.UtcNow:yyyyMMdd_HHmmss}_{SanitizeFileName(fileName)}";
+        var localPath = Path.Combine(uploadsDir, safeFileName);
+
+        try
+        {
+            var file = await botClient.GetFile(fileId, ct);
+            if (file.FilePath is null)
+            {
+                logger.LogWarning("Telegram returned no file path for FileId {FileId}", fileId);
+                return null;
+            }
+
+            await using var stream = System.IO.File.Create(localPath);
+            await botClient.DownloadFile(file.FilePath, stream, ct);
+
+            logger.LogInformation("Downloaded Telegram file to {Path} ({Size} bytes)", localPath, stream.Length);
+            return $"[File saved: {localPath}]";
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to download Telegram file {FileId}", fileId);
+            return null;
+        }
+    }
+
+    private static string BuildPrompt(string? text, string? fileContext)
+    {
+        if (fileContext is not null && text is not null)
+            return $"{fileContext}\n{text}";
+        if (fileContext is not null)
+            return fileContext;
+        return text!;
+    }
+
+    private static string SanitizeFileName(string fileName)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return string.Concat(fileName.Select(c => invalid.Contains(c) ? '_' : c));
     }
 
     private async Task SendTypingIndicatorAsync(long chatId, CancellationToken ct)
