@@ -61,7 +61,7 @@ public sealed class TelegramService(
         if (agentId is null)
         {
             await botClient.SendMessage(chatId,
-                "No agent selected. Send .{letter} to choose one.", cancellationToken: ct);
+                "No agent selected. Send .{letter} to choose one.", parseMode: ParseMode.Html, cancellationToken: ct);
             return;
         }
 
@@ -82,7 +82,7 @@ public sealed class TelegramService(
             var (switchedTo, responseText) = await invoker.InvokeAsync(session, text, schedulingCtx, ct);
 
             if (!string.IsNullOrEmpty(responseText))
-                await botClient.SendMessage(chatId, responseText, cancellationToken: ct);
+                await botClient.SendMessage(chatId, responseText, parseMode: ParseMode.Html, cancellationToken: ct);
 
             if (switchedTo is not null)
                 router.Map(chatId, switchedTo);

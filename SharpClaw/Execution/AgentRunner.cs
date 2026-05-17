@@ -20,10 +20,23 @@ public sealed class AgentRunner(
     {
         var provider = ResolveProvider(request.Llm);
 
+        logger.LogInformation(
+            "Creating session with provider={Provider}, model={Model}, requestedTools={RequestedTools}, requestedMcps={RequestedMcps}",
+            provider.ProviderName,
+            request.Model ?? "<default>",
+            FormatNames(request.ToolNames),
+            FormatNames(request.McpServerNames));
+
         var adapters = ResolveToolAdapters(request);
         var tools = adapters.Cast<AIFunction>().ToList();
         var mcpServers = ResolveMcpServers(request);
         var systemPrompt = BuildSystemPrompt(request);
+
+        logger.LogInformation(
+            "Resolved session configuration: tools={ToolCount}, mcps={McpCount} ({McpNames})",
+            tools.Count,
+            mcpServers.Count,
+            mcpServers.Count == 0 ? "none" : string.Join(", ", mcpServers.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)));
 
         var llmRequest = new LlmSessionRequest(
             Model: request.Model,
@@ -60,9 +73,30 @@ public sealed class AgentRunner(
     private List<ToolAIFunctionAdapter> ResolveToolAdapters(AgentRunRequest request)
     {
         var toolNames = request.ToolNames;
-        var tools = toolNames is null
-            ? toolRegistry.GetAll().ToList()
-            : toolNames.Select(n => toolRegistry.Get(n)).Where(t => t is not null).Cast<ITool>().ToList();
+        List<ITool> tools;
+
+        if (toolNames is null)
+        {
+            tools = toolRegistry.GetAll().ToList();
+            logger.LogInformation("No tool filter specified; exposing all {Count} tools", tools.Count);
+        }
+        else
+        {
+            var resolved = toolNames.Select(n => toolRegistry.Get(n)).ToList();
+            var missing = toolNames.Where((name, index) => resolved[index] is null).ToList();
+            tools = resolved.Where(t => t is not null).Cast<ITool>().ToList();
+
+            logger.LogInformation(
+                "Requested tools resolved: requested={RequestedCount}, resolved={ResolvedCount}, missing={MissingCount}",
+                toolNames.Count,
+                tools.Count,
+                missing.Count);
+
+            if (missing.Count > 0)
+            {
+                logger.LogWarning("Missing tool registrations: {MissingTools}", string.Join(", ", missing));
+            }
+        }
 
         return tools.Select(t =>
         {
@@ -77,11 +111,41 @@ public sealed class AgentRunner(
         var mcpNames = request.McpServerNames;
         var allServers = mcpRegistry.GetAll();
 
+        logger.LogInformation(
+            "MCP registry contains {Count} server(s): {Names}",
+            allServers.Count,
+            allServers.Count == 0 ? "none" : string.Join(", ", allServers.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)));
+
+        if (mcpNames is not null)
+        {
+            var missing = mcpNames
+                .Where(name => !allServers.ContainsKey(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (missing.Count > 0)
+            {
+                logger.LogWarning("Requested MCP servers not registered: {MissingMcps}", string.Join(", ", missing));
+            }
+        }
+
         var entries = mcpNames is null
             ? allServers.ToList()
             : allServers.Where(kvp => mcpNames.Contains(kvp.Key, StringComparer.OrdinalIgnoreCase)).ToList();
 
+        logger.LogInformation(
+            "Resolved MCP servers: requested={Requested}, resolved={Resolved}",
+            FormatNames(mcpNames),
+            entries.Count == 0 ? "none" : string.Join(", ", entries.Select(x => x.Key).OrderBy(x => x, StringComparer.OrdinalIgnoreCase)));
+
         return entries.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+    }
+
+    private static string FormatNames(IReadOnlyList<string>? names)
+    {
+        if (names is null) return "<all>";
+        if (names.Count == 0) return "<none>";
+        return string.Join(", ", names);
     }
 
     private string? BuildSystemPrompt(AgentRunRequest request)

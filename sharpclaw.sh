@@ -9,6 +9,45 @@ COMPOSE_FILE="${ROOT_DIR}/docker/docker-compose.yml"
 GRAFANA_EXPLORE_LEFT="%7B%22datasource%22%3A%22Loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22SharpClaw%5C%22%7D%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D"
 GRAFANA_URL="http://localhost:3000/explore?orgId=1&left=${GRAFANA_EXPLORE_LEFT}"
 
+resolve_workspace_path() {
+  if [[ -n "${SHARPCLAW_WORKSPACE_PATH:-}" ]]; then
+    echo "${SHARPCLAW_WORKSPACE_PATH}"
+    return 0
+  fi
+
+  local config_paths=(
+    "${ROOT_DIR}/SharpClaw/appsettings.Development.json"
+    "${ROOT_DIR}/SharpClaw/appsettings.json"
+  )
+
+  local config_path
+  for config_path in "${config_paths[@]}"; do
+    [[ -f "${config_path}" ]] || continue
+
+    if command -v jq >/dev/null 2>&1; then
+      local value
+      value="$(jq -r '.SharpClaw.WorkspacePath // ""' "${config_path}" 2>/dev/null || true)"
+      if [[ -n "${value}" ]]; then
+        echo "${value}"
+        return 0
+      fi
+    else
+      local line
+      line="$(grep -m1 '"WorkspacePath"' "${config_path}" || true)"
+      if [[ -n "${line}" ]]; then
+        local parsed
+        parsed="$(sed -E 's/.*"WorkspacePath"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/' <<<"${line}")"
+        if [[ -n "${parsed}" ]]; then
+          echo "${parsed}"
+          return 0
+        fi
+      fi
+    fi
+  done
+
+  return 1
+}
+
 resolve_project() {
   if [[ -f "${ROOT_DIR}/SharpClaw/SharpClaw.csproj" ]]; then
     echo "SharpClaw/SharpClaw.csproj"
@@ -193,10 +232,148 @@ view_docs() {
   )
 }
 
+show_transcript_diagnostics() {
+  local agent="${1:-}"
+  shift || true
+
+  local workspace_override=""
+  local session_id=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --session|-s)
+        shift
+        if [[ $# -eq 0 || -z "${1:-}" ]]; then
+          echo "Missing value for --session"
+          return 1
+        fi
+        session_id="$1"
+        ;;
+      --help|-h)
+        echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>]"
+        return 0
+        ;;
+      *)
+        if [[ -z "${workspace_override}" ]]; then
+          workspace_override="$1"
+        else
+          echo "Unexpected argument: $1"
+          echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>]"
+          return 1
+        fi
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -z "${agent}" ]]; then
+    echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>]"
+    return 1
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "The transcript command requires 'jq'. Install it and retry."
+    return 1
+  fi
+
+  local workspace_path
+  if [[ -n "${workspace_override}" ]]; then
+    workspace_path="${workspace_override}"
+  else
+    workspace_path="$(resolve_workspace_path || true)"
+  fi
+
+  if [[ -z "${workspace_path}" ]]; then
+    echo "Could not resolve workspace path."
+    echo "Pass it explicitly: ./sharpclaw.sh transcript <agent> /path/to/workspace"
+    echo "or set SHARPCLAW_WORKSPACE_PATH."
+    return 1
+  fi
+
+  local sessions_dir="${workspace_path}/${agent}/sessions"
+  if [[ ! -d "${sessions_dir}" ]]; then
+    echo "No transcript directory found for agent '${agent}' at ${sessions_dir}"
+    return 1
+  fi
+
+  local files=()
+  while IFS= read -r file; do
+    files+=("${file}")
+  done < <(find "${sessions_dir}" -type f -name '*.transcript.jsonl' | sort)
+
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "No transcript files found in ${sessions_dir}"
+    return 0
+  fi
+
+  echo "Workspace: ${workspace_path}"
+  echo "Agent: ${agent}"
+  if [[ -n "${session_id}" ]]; then
+    echo "Session filter: ${session_id}"
+  fi
+  echo "Transcript files: ${#files[@]}"
+  echo
+
+  if [[ -n "${session_id}" ]]; then
+    if [[ "${session_id}" == *"/"* ]]; then
+      echo "Session id must not contain '/'."
+      return 1
+    fi
+
+    local session_file="${sessions_dir}/${session_id}.transcript.jsonl"
+    if [[ ! -f "${session_file}" ]]; then
+      echo "No transcript file found for session '${session_id}' at ${session_file}"
+      return 1
+    fi
+
+    files=("${session_file}")
+    echo "Using only ${session_file}"
+    echo
+  fi
+
+  echo "Largest turns (top 10):"
+  cat "${files[@]}" \
+    | jq -r '[.timestampUtc, .sessionId, .turnType, (.content|length)] | @tsv' \
+    | sort -k4,4nr \
+    | head -n 10
+  echo
+
+  echo "Session summary (counts, max payload, avg duration):"
+  cat "${files[@]}" \
+    | jq -s '
+        group_by(.sessionId)
+        | map({
+            sessionId: .[0].sessionId,
+            requests: (map(select(.turnType == "request")) | length),
+            responses: (map(select(.turnType == "response")) | length),
+            maxContentLength: (map(.content | length) | max),
+            avgDurationMs: ([.[] | select(.durationMs != null) | .durationMs] | if length == 0 then 0 else (add / length) end)
+          })
+        | sort_by(.maxContentLength)
+        | reverse
+      '
+  echo
+
+  echo "Latest timeline (last 20 turns):"
+  cat "${files[@]}" \
+    | jq -r '[.timestampUtc, .sessionId, .turnType, (.content|length), (.durationMs // 0)] | @tsv' \
+    | sort -k1,1 \
+    | tail -n 20
+
+  if [[ -n "${session_id}" ]]; then
+    echo
+    echo "Session deep dump (content preview):"
+    cat "${files[@]}" \
+      | jq -r '"\(.timestampUtc) [\(.turnType)] len=\(.content|length) dur=\(.durationMs // 0)" + "\n" + (.content | gsub("\\n"; " ") | .[0:220]) + "\n"' \
+      | sed '/^$/N;/^\n$/D'
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Usage: ./sharpclaw.sh <command>
 Usage: ./sharpclaw.sh logs [ui|service]
+Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>]
 
 Commands:
   start     Start SharpClaw service and Grafana stack
@@ -204,13 +381,14 @@ Commands:
   restart   Restart SharpClaw service and Grafana stack
   status    Show SharpClaw and Grafana stack status
   logs      Open Grafana logs UI (default target: ui)
+  transcript Show transcript diagnostics for an agent (optional --session filter)
   test      Run dotnet tests
   docs      Run Docusaurus docs dev server on port 3001
 EOF
 }
 
 main() {
-  if [[ $# -lt 1 || $# -gt 2 ]]; then
+  if [[ $# -lt 1 || $# -gt 6 ]]; then
     usage
     exit 1
   fi
@@ -230,6 +408,10 @@ main() {
       ;;
     logs)
       show_logs "${2:-ui}"
+      ;;
+    transcript)
+      shift
+      show_transcript_diagnostics "$@"
       ;;
     test)
       run_tests

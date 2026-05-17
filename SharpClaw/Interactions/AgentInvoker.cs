@@ -14,6 +14,7 @@ public sealed class AgentInvoker(
     AgentRunner runner,
     CommandRouter commandRouter,
     AuditService auditService,
+    TranscriptService transcriptService,
     SchedulingContextAccessor schedulingContextAccessor,
     ILogger<AgentInvoker> logger)
 {
@@ -31,7 +32,19 @@ public sealed class AgentInvoker(
         SchedulingContext? channelContext,
         CancellationToken ct)
     {
+        var requestStartedAt = DateTimeOffset.UtcNow;
+
+        await transcriptService.LogAsync(
+            session.AgentId,
+            session.SessionId,
+            "request",
+            prompt,
+            new TranscriptMetadata(
+                Source: channelContext?.ChannelType.ToString()),
+            ct);
+
         // Try commands first (no LLM call)
+        var commandAgentId = session.AgentId;
         var cmdContext = new CommandContext(session.SessionId, prompt, session.AgentId);
         var cmdResult = await commandRouter.TryExecuteAsync(cmdContext, ct);
 
@@ -39,6 +52,20 @@ public sealed class AgentInvoker(
         {
             if (cmdResult.SwitchedToAgent is not null)
                 session.SetAgent(cmdResult.SwitchedToAgent);
+
+            var commandResponseText = cmdResult.ResponseText ?? string.Empty;
+
+            await transcriptService.LogAsync(
+                commandAgentId,
+                session.SessionId,
+                "response",
+                commandResponseText,
+                new TranscriptMetadata(
+                    Source: channelContext?.ChannelType.ToString(),
+                    Success: true,
+                    DurationMs: (DateTimeOffset.UtcNow - requestStartedAt).TotalMilliseconds,
+                    IsCommand: true),
+                ct);
 
             if (cmdResult.ResponseText is not null)
             {
@@ -64,6 +91,16 @@ public sealed class AgentInvoker(
             return (null, errorMsg);
         }
 
+        logger.LogInformation(
+            "Session {SessionId} using agent {Agent} (llm={Llm}, model={Model}, tools={ToolCount}, mcps={McpCount}, skills={SkillCount})",
+            session.SessionId,
+            agent.Name,
+            agent.Llm ?? "copilot",
+            agent.Model ?? "<default>",
+            agent.ToolNames.Count,
+            agent.McpNames.Count,
+            agent.SkillNames.Count);
+
         // Audit the request
         await auditService.LogAsync(session.AgentId, AuditEntryType.Request, prompt, ct);
 
@@ -76,6 +113,8 @@ public sealed class AgentInvoker(
         // First turn: create session; subsequent: reuse
         if (session.LlmSession is null)
         {
+            logger.LogInformation("Creating LLM session for {Agent} in session {SessionId}", agent.Name, session.SessionId);
+
             var request = new AgentRunRequest(
                 Prompt: prompt,
                 Llm: agent.Llm,
@@ -86,6 +125,20 @@ public sealed class AgentInvoker(
             );
             var llmSession = await runner.CreateSessionAsync(request, ct);
             session.SetLlmSession(llmSession);
+
+            logger.LogInformation(
+                "Created LLM session {LlmSessionId} for agent {Agent} in conversation {SessionId}",
+                llmSession.SessionId,
+                agent.Name,
+                session.SessionId);
+        }
+        else
+        {
+            logger.LogInformation(
+                "Reusing LLM session {LlmSessionId} for agent {Agent} in conversation {SessionId}",
+                session.LlmSession.SessionId,
+                agent.Name,
+                session.SessionId);
         }
 
         var result = await runner.SendAsync(session.LlmSession!, prompt, agent.Llm, ct);
@@ -93,6 +146,23 @@ public sealed class AgentInvoker(
         var responseText = result.Success
             ? result.Response
             : $"[Agent error: {result.Error}]";
+
+        await transcriptService.LogAsync(
+            session.AgentId,
+            session.SessionId,
+            "response",
+            responseText ?? string.Empty,
+            new TranscriptMetadata(
+                Source: channelContext?.ChannelType.ToString(),
+                LlmProvider: agent.Llm ?? "copilot",
+                Model: agent.Model,
+                ToolCount: agent.ToolNames.Count,
+                McpCount: agent.McpNames.Count,
+                Success: result.Success,
+                Error: result.Error,
+                DurationMs: (DateTimeOffset.UtcNow - requestStartedAt).TotalMilliseconds,
+                IsCommand: false),
+            ct);
 
         // Audit the response
         await auditService.LogAsync(session.AgentId, AuditEntryType.Response, responseText ?? string.Empty, ct);

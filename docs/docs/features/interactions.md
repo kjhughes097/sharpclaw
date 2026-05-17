@@ -15,18 +15,21 @@ public sealed class AgentInvoker(
     AgentRunner runner,
     CommandRouter commandRouter,
     AuditService auditService,
+    TranscriptService transcriptService,
     ILogger<AgentInvoker> logger)
 ```
 
 ### Flow
 
 1. **Command check** — `CommandRouter.TryExecuteAsync()` handles dot-prefixed commands
-2. **Agent resolution** — looks up the session's current agent in the registry
-3. **Audit** — logs the request via `AuditService`
-4. **Skill injection** — builds system prompt with skill content appended
-5. **Session management** — creates a Copilot session on first message, reuses thereafter
-6. **Execution** — sends prompt via `AgentRunner.SendAsync()`
-7. **Publish** — writes the response to the session's message bus
+2. **Transcript request log** — writes a JSONL request entry via `TranscriptService`
+3. **Agent resolution** — looks up the session's current agent in the registry
+4. **Audit** — logs the request via `AuditService`
+5. **Skill injection** — builds system prompt with skill content appended
+6. **Session management** — creates a Copilot session on first message, reuses thereafter
+7. **Execution** — sends prompt via `AgentRunner.SendAsync()`
+8. **Transcript response log** — writes a JSONL response entry via `TranscriptService`
+9. **Publish** — writes the response to the session's message bus
 
 ### Return Value
 

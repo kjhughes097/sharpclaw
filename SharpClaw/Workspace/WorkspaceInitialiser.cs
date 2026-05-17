@@ -27,6 +27,7 @@ public sealed class WorkspaceInitialiser(
         {
             var agentDir = Path.Combine(root, agent.Name);
             Directory.CreateDirectory(agentDir);
+            Directory.CreateDirectory(Path.Combine(agentDir, "sessions"));
         }
 
         logger.LogInformation("Workspace initialised at {Root}", root);

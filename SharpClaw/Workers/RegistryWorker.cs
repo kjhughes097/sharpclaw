@@ -29,7 +29,10 @@ public sealed class RegistryWorker(
             agentRegistry.Register(agent);
 
         foreach (var (name, config) in mcpLoader.Load())
+        {
             mcpRegistry.Register(name, config);
+            logger.LogInformation("Registered MCP server {Name} (transport={Transport})", name, config.Transport);
+        }
 
         foreach (var skill in skillLoader.Load())
             skillRegistry.Register(skill);

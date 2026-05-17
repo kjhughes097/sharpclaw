@@ -120,6 +120,7 @@ builder.Services.AddSingleton<ICommand, CancelScheduleCommand>();
 // -- Memory & Auditing --
 builder.Services.AddSingleton<MemoryService>();
 builder.Services.AddSingleton<AuditService>();
+builder.Services.AddSingleton<TranscriptService>();
 
 // -- Workspace --
 builder.Services.AddSingleton<WorkspaceInitialiser>();

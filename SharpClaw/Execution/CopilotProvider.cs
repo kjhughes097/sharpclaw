@@ -19,40 +19,80 @@ public sealed class CopilotProvider(ILogger<CopilotProvider> logger) : ILlmProvi
         var client = await GetOrCreateClientAsync(ct);
 
         var tools = request.Tools?.ToList() ?? [];
+        var requestedMcpNames = request.McpServers?.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList() ?? [];
+        logger.LogInformation(
+            "Copilot session setup: model={Model}, resume={Resume}, tools={ToolCount}, mcps={McpCount} ({McpNames})",
+            request.Model ?? "<default>",
+            !string.IsNullOrEmpty(request.ResumeSessionId),
+            tools.Count,
+            requestedMcpNames.Count,
+            requestedMcpNames.Count == 0 ? "none" : string.Join(", ", requestedMcpNames));
+
+        if (request.McpServers is not null)
+        {
+            foreach (var (name, def) in request.McpServers)
+            {
+                if (def.Transport.Equals("http", StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogInformation("MCP {Name} transport=http url={Url}", name, def.Url ?? "<empty>");
+                }
+                else
+                {
+                    logger.LogInformation("MCP {Name} transport=stdio command={Command}", name, def.Command ?? "<empty>");
+                }
+            }
+        }
+
         var mcpServers = request.McpServers is not null
             ? request.McpServers.ToDictionary(kvp => kvp.Key, kvp => ToSdkConfig(kvp.Value))
             : new Dictionary<string, McpServerConfig>();
 
         CopilotSession session;
 
-        if (!string.IsNullOrEmpty(request.ResumeSessionId))
+        try
         {
-            var resumeConfig = new ResumeSessionConfig
+            if (!string.IsNullOrEmpty(request.ResumeSessionId))
             {
-                OnPermissionRequest = PermissionHandler.ApproveAll,
-                Tools = tools,
-                McpServers = mcpServers,
-            };
-            if (!string.IsNullOrEmpty(request.Model))
-                resumeConfig.Model = request.Model;
-            if (request.SystemPrompt is not null)
-                resumeConfig.SystemMessage = new SystemMessageConfig { Content = request.SystemPrompt };
-            session = await client.ResumeSessionAsync(request.ResumeSessionId, resumeConfig, ct);
+                var resumeConfig = new ResumeSessionConfig
+                {
+                    OnPermissionRequest = PermissionHandler.ApproveAll,
+                    Tools = tools,
+                    McpServers = mcpServers,
+                };
+                if (!string.IsNullOrEmpty(request.Model))
+                    resumeConfig.Model = request.Model;
+                if (request.SystemPrompt is not null)
+                    resumeConfig.SystemMessage = new SystemMessageConfig { Content = request.SystemPrompt };
+                session = await client.ResumeSessionAsync(request.ResumeSessionId, resumeConfig, ct);
+            }
+            else
+            {
+                var config = new SessionConfig
+                {
+                    OnPermissionRequest = PermissionHandler.ApproveAll,
+                    Tools = tools,
+                    McpServers = mcpServers,
+                };
+                if (!string.IsNullOrEmpty(request.Model))
+                    config.Model = request.Model;
+                if (request.SystemPrompt is not null)
+                    config.SystemMessage = new SystemMessageConfig { Content = request.SystemPrompt };
+                session = await client.CreateSessionAsync(config, ct);
+            }
         }
-        else
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            var config = new SessionConfig
-            {
-                OnPermissionRequest = PermissionHandler.ApproveAll,
-                Tools = tools,
-                McpServers = mcpServers,
-            };
-            if (!string.IsNullOrEmpty(request.Model))
-                config.Model = request.Model;
-            if (request.SystemPrompt is not null)
-                config.SystemMessage = new SystemMessageConfig { Content = request.SystemPrompt };
-            session = await client.CreateSessionAsync(config, ct);
+            logger.LogError(
+                ex,
+                "Copilot session creation failed (resume={Resume}, tools={ToolCount}, mcps={McpCount}: {McpNames})",
+                !string.IsNullOrEmpty(request.ResumeSessionId),
+                tools.Count,
+                requestedMcpNames.Count,
+                requestedMcpNames.Count == 0 ? "none" : string.Join(", ", requestedMcpNames));
+            throw;
         }
+
+        logger.LogInformation("Copilot session created: {SessionId}", session.SessionId);
 
         // Track tool adapters for scheduling context refresh
         var adapters = tools.OfType<ToolAIFunctionAdapter>().ToList();
