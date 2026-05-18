@@ -157,6 +157,7 @@ public sealed class CopilotProvider(ILogger<CopilotProvider> logger) : ILlmProvi
             {
                 Url = def.Url ?? string.Empty,
                 Headers = def.Headers is not null ? new Dictionary<string, string>(def.Headers) : null,
+                Tools = ["*"],
             };
         }
 
@@ -165,6 +166,7 @@ public sealed class CopilotProvider(ILogger<CopilotProvider> logger) : ILlmProvi
             Command = def.Command ?? string.Empty,
             Args = def.Args?.ToList() ?? [],
             Env = def.Env is not null ? new Dictionary<string, string>(def.Env) : [],
+            Tools = ["*"],
         };
     }
 
