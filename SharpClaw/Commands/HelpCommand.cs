@@ -17,6 +17,8 @@ public sealed class HelpCommand : ICommand
             .lst — List all tools
             .lsmt — List MCP tools for current agent
             .lss — List all skills
+            .schedules — List scheduled tasks
+            .cron — List cron jobs (with expressions)
             .help — Show this help message
             """;
         return Task.FromResult(new CommandResult(true, help));

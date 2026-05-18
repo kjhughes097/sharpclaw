@@ -118,6 +118,7 @@ builder.Services.AddSingleton<ICommand, ListToolsCommand>();
 builder.Services.AddSingleton<ICommand, ListMcpToolsCommand>();
 builder.Services.AddSingleton<ICommand, ListSkillsCommand>();
 builder.Services.AddSingleton<ICommand, ListSchedulesCommand>();
+builder.Services.AddSingleton<ICommand, ListCronCommand>();
 builder.Services.AddSingleton<ICommand, CancelScheduleCommand>();
 
 // -- Memory & Auditing --
