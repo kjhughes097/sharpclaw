@@ -14,8 +14,16 @@ public sealed class RegistryWorker(
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        Reload();
-        logger.LogInformation("SharpClaw registries loaded");
+        try
+        {
+            Reload();
+            logger.LogInformation("SharpClaw registries loaded");
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex, "Registry worker failed during startup reload");
+        }
+
         return Task.CompletedTask;
     }
 

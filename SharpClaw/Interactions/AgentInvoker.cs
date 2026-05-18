@@ -147,6 +147,15 @@ public sealed class AgentInvoker(
             ? result.Response
             : $"[Agent error: {result.Error}]";
 
+        if (result.Success && string.IsNullOrWhiteSpace(responseText))
+        {
+            logger.LogWarning(
+                "LLM session {LlmSessionId} for agent {Agent} returned an empty response",
+                session.LlmSession!.SessionId,
+                agent.Name);
+            responseText = "[No response text returned by model. Please retry.]";
+        }
+
         await transcriptService.LogAsync(
             session.AgentId,
             session.SessionId,

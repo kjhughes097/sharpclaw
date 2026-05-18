@@ -15,6 +15,7 @@ public sealed class HelpCommand : ICommand
             .lsa — List all agents
             .lsm — List all MCP servers
             .lst — List all tools
+            .lsmt — List MCP tools for current agent
             .lss — List all skills
             .help — Show this help message
             """;

@@ -28,6 +28,7 @@ builder.Services.Configure<SharpClawOptions>(builder.Configuration.GetSection(Sh
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
 builder.Services.Configure<OpenTelemetryOptions>(builder.Configuration.GetSection(OpenTelemetryOptions.SectionName));
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(AnthropicOptions.SectionName));
+builder.Services.Configure<AnthropicAdminMcpOptions>(builder.Configuration.GetSection(AnthropicAdminMcpOptions.SectionName));
 
 // -- Logging: Console with custom format --
 builder.Logging.ClearProviders();
@@ -76,7 +77,6 @@ builder.Services.AddSingleton<ISkillRegistry, SkillRegistry>();
 builder.Services.AddSingleton<AgentLoader>();
 builder.Services.AddSingleton<McpLoader>();
 builder.Services.AddSingleton<SkillLoader>();
-
 // -- Execution --
 builder.Services.AddSingleton<CopilotProvider>();
 builder.Services.AddSingleton<ILlmProvider>(sp => sp.GetRequiredService<CopilotProvider>());
@@ -99,6 +99,8 @@ builder.Services.AddSingleton<SpawnAgentTool>();
 builder.Services.AddSingleton<SkillExecutorTool>();
 builder.Services.AddSingleton<ScheduleTaskTool>();
 builder.Services.AddSingleton<CancelTaskTool>();
+builder.Services.AddSingleton<WorkspaceFileTool>();
+builder.Services.AddSingleton<WorkspaceWriteTool>();
 
 // -- Sessions & Interactions --
 builder.Services.AddSingleton<AgentSessionRegistry>();
@@ -113,6 +115,7 @@ builder.Services.AddSingleton<ICommand, HelpCommand>();
 builder.Services.AddSingleton<ICommand, ListAgentsCommand>();
 builder.Services.AddSingleton<ICommand, ListMcpsCommand>();
 builder.Services.AddSingleton<ICommand, ListToolsCommand>();
+builder.Services.AddSingleton<ICommand, ListMcpToolsCommand>();
 builder.Services.AddSingleton<ICommand, ListSkillsCommand>();
 builder.Services.AddSingleton<ICommand, ListSchedulesCommand>();
 builder.Services.AddSingleton<ICommand, CancelScheduleCommand>();
@@ -126,7 +129,10 @@ builder.Services.AddSingleton<TranscriptService>();
 builder.Services.AddSingleton<WorkspaceInitialiser>();
 
 // -- MCP Server (self-hosted) --
-builder.Services.AddMcpServer().WithHttpTransport().WithTools<MemoryMcpTools>();
+builder.Services.AddMcpServer()
+    .WithHttpTransport()
+    .WithTools<MemoryMcpTools>()
+    .WithTools<AnthropicAdminMcpTools>();
 
 // -- Telegram --
 var telegramToken = builder.Configuration.GetValue<string>("Telegram:BotToken");
@@ -160,6 +166,8 @@ toolRegistry.Register(app.Services.GetRequiredService<SpawnAgentTool>());
 toolRegistry.Register(app.Services.GetRequiredService<SkillExecutorTool>());
 toolRegistry.Register(app.Services.GetRequiredService<ScheduleTaskTool>());
 toolRegistry.Register(app.Services.GetRequiredService<CancelTaskTool>());
+toolRegistry.Register(app.Services.GetRequiredService<WorkspaceFileTool>());
+toolRegistry.Register(app.Services.GetRequiredService<WorkspaceWriteTool>());
 
 // -- Endpoints --
 app.MapMcp("/mcp");

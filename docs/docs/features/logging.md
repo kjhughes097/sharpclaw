@@ -130,6 +130,17 @@ Single-session deep dive with explicit workspace path:
 ./sharpclaw.sh transcript fin /path/to/workspace --session <session-id>
 ```
 
+Browser MCP struggle diagnostics (heuristics):
+
+```bash
+./sharpclaw.sh transcript fin --browser
+```
+
+This adds:
+
+- summary counts for browser-tool mentions, leaked `browser_*` invoke tags, and browser-related error text
+- a latest-turn list of suspicious browser-related responses (errors or very slow responses)
+
 ## Transcript Query Examples
 
 These examples assume:

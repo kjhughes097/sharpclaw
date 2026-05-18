@@ -1,5 +1,8 @@
 using Microsoft.Extensions.Options;
+using Microsoft.VisualBasic.FileIO;
+using ClosedXML.Excel;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -23,6 +26,21 @@ public sealed class TelegramService(
     IOptions<SharpClawOptions> sharpClawOptions,
     ILogger<TelegramService> logger) : BackgroundService
 {
+    private const int TelegramMessageChunkSize = 3500;
+    private const long InlineTextFileMaxBytes = 100_000;
+    private static readonly HashSet<string> InlineTextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".csv", ".tsv", ".txt", ".md", ".json", ".yaml", ".yml", ".log", ".xml"
+    };
+    private static readonly HashSet<string> CsvExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".csv", ".tsv"
+    };
+    private static readonly HashSet<string> SpreadsheetExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".xlsx"
+    };
+
     private readonly HashSet<string> _allowedUsers =
         new(telegramOptions.Value.AllowedUsers, StringComparer.OrdinalIgnoreCase);
     private readonly string _defaultAgent = telegramOptions.Value.DefaultAgent;
@@ -49,20 +67,6 @@ public sealed class TelegramService(
     {
         if (update.Message is not { } message) return;
 
-        // Extract text content — either message text or file caption
-        var text = message.Text;
-        string? fileContext = null;
-
-        // Handle documents and photos
-        if (message.Document is not null || message.Photo is not null)
-        {
-            fileContext = await DownloadFileAsync(message, ct);
-            text = message.Caption;
-        }
-
-        // Must have either text or a file to process
-        if (text is null && fileContext is null) return;
-
         var username = message.From?.Username;
         if (username is null || !_allowedUsers.Contains(username)) return;
 
@@ -75,10 +79,23 @@ public sealed class TelegramService(
 
         if (agentId is null)
         {
-            await botClient.SendMessage(chatId,
-                "No agent selected. Send .{letter} to choose one.", parseMode: ParseMode.Html, cancellationToken: ct);
+            await SendResponseAsync(chatId, "No agent selected. Send .{letter} to choose one.", ct);
             return;
         }
+
+        // Extract text content — either message text or file caption
+        var text = message.Text;
+        string? fileContext = null;
+
+        // Handle documents and photos
+        if (message.Document is not null || message.Photo is not null)
+        {
+            fileContext = await DownloadFileAsync(agentId, message, ct);
+            text = message.Caption;
+        }
+
+        // Must have either text or a file to process
+        if (text is null && fileContext is null) return;
 
         // Build the prompt: combine file context and user text
         var prompt = BuildPrompt(text, fileContext);
@@ -100,10 +117,15 @@ public sealed class TelegramService(
             var (switchedTo, responseText) = await invoker.InvokeAsync(session, prompt, schedulingCtx, ct);
 
             if (!string.IsNullOrEmpty(responseText))
-                await botClient.SendMessage(chatId, responseText, parseMode: ParseMode.Html, cancellationToken: ct);
+                await SendResponseAsync(chatId, responseText, ct);
 
             if (switchedTo is not null)
                 router.Map(chatId, switchedTo);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "Failed to process Telegram update for chat {ChatId}", chatId);
+            await SendResponseAsync(chatId, "[Agent error: failed to process request]", ct);
         }
         finally
         {
@@ -112,7 +134,7 @@ public sealed class TelegramService(
         }
     }
 
-    private async Task<string?> DownloadFileAsync(Message message, CancellationToken ct)
+    private async Task<string?> DownloadFileAsync(string agentId, Message message, CancellationToken ct)
     {
         var workspacePath = sharpClawOptions.Value.WorkspacePath;
         if (string.IsNullOrWhiteSpace(workspacePath))
@@ -141,7 +163,7 @@ public sealed class TelegramService(
             return null;
         }
 
-        var uploadsDir = Path.Combine(workspacePath, "uploads");
+        var uploadsDir = Path.Combine(workspacePath, agentId, "uploads");
         Directory.CreateDirectory(uploadsDir);
 
         // Prefix with timestamp to avoid collisions
@@ -161,7 +183,7 @@ public sealed class TelegramService(
             await botClient.DownloadFile(file.FilePath, stream, ct);
 
             logger.LogInformation("Downloaded Telegram file to {Path} ({Size} bytes)", localPath, stream.Length);
-            return $"[File saved: {localPath}]";
+            return await BuildFileContextAsync(localPath, fileName, stream.Length, ct);
         }
         catch (Exception ex)
         {
@@ -183,6 +205,202 @@ public sealed class TelegramService(
     {
         var invalid = Path.GetInvalidFileNameChars();
         return string.Concat(fileName.Select(c => invalid.Contains(c) ? '_' : c));
+    }
+
+    private async Task<string> BuildFileContextAsync(string localPath, string fileName, long sizeBytes, CancellationToken ct)
+    {
+        var savedLine = $"[File saved: {localPath}]";
+        var extension = Path.GetExtension(fileName);
+        var sections = new List<string> { savedLine };
+
+        if (CsvExtensions.Contains(extension))
+        {
+            var csvSummary = await BuildCsvSummaryAsync(localPath, extension, ct);
+            if (!string.IsNullOrWhiteSpace(csvSummary))
+                sections.Add(csvSummary);
+        }
+        else if (SpreadsheetExtensions.Contains(extension))
+        {
+            var spreadsheetSummary = await BuildSpreadsheetSummaryAsync(localPath, ct);
+            if (!string.IsNullOrWhiteSpace(spreadsheetSummary))
+                sections.Add(spreadsheetSummary);
+        }
+
+        if (!InlineTextExtensions.Contains(extension) || sizeBytes > InlineTextFileMaxBytes)
+            return string.Join('\n', sections);
+
+        try
+        {
+            var text = await File.ReadAllTextAsync(localPath, ct);
+            if (string.IsNullOrWhiteSpace(text))
+                return string.Join('\n', sections.Append($"[File contents: empty {fileName}]"));
+
+            const int previewLimit = 50_000;
+            var inlineText = text.Length <= previewLimit ? text : text[..previewLimit];
+            var truncationNote = text.Length > previewLimit ? $"\n[Content truncated to first {previewLimit} characters]" : string.Empty;
+
+            sections.Add($"[File contents: {fileName}]\n{inlineText}{truncationNote}");
+            return string.Join('\n', sections);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to inline uploaded text file {Path}; falling back to path-only context", localPath);
+            return string.Join('\n', sections);
+        }
+    }
+
+    private async Task<string?> BuildCsvSummaryAsync(string localPath, string extension, CancellationToken ct)
+    {
+        try
+        {
+            await using var stream = File.OpenRead(localPath);
+            using var reader = new StreamReader(stream);
+            using var parser = new TextFieldParser(reader)
+            {
+                TextFieldType = FieldType.Delimited,
+                HasFieldsEnclosedInQuotes = true,
+                TrimWhiteSpace = false,
+            };
+
+            parser.SetDelimiters(extension.Equals(".tsv", StringComparison.OrdinalIgnoreCase) ? "\t" : ",");
+
+            var rows = new List<string[]>();
+            while (!parser.EndOfData && rows.Count < 6)
+            {
+                ct.ThrowIfCancellationRequested();
+                var fields = parser.ReadFields();
+                if (fields is not null)
+                    rows.Add(fields);
+            }
+
+            if (rows.Count == 0)
+                return "[CSV summary: empty file]";
+
+            var headers = rows[0];
+            var dataRows = rows.Count > 1 ? rows.Skip(1).ToList() : [];
+            var sampleCount = dataRows.Count;
+
+            var summary = new List<string>
+            {
+                $"[CSV summary: {Path.GetFileName(localPath)}]",
+                $"Columns ({headers.Length}): {string.Join(", ", headers)}",
+                $"Sample rows shown: {sampleCount}"
+            };
+
+            for (var i = 0; i < dataRows.Count; i++)
+            {
+                summary.Add($"Row {i + 1}: {string.Join(" | ", dataRows[i])}");
+            }
+
+            return string.Join('\n', summary);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to summarize CSV file {Path}", localPath);
+            return null;
+        }
+    }
+
+    private async Task<string?> BuildSpreadsheetSummaryAsync(string localPath, CancellationToken ct)
+    {
+        try
+        {
+            return await Task.Run(() =>
+            {
+                using var workbook = new XLWorkbook(localPath);
+                if (workbook.Worksheets.Count == 0)
+                    return "[Spreadsheet summary: workbook has no worksheets]";
+
+                var summary = new List<string>
+                {
+                    $"[Spreadsheet summary: {Path.GetFileName(localPath)}]",
+                    $"Worksheets ({workbook.Worksheets.Count}): {string.Join(", ", workbook.Worksheets.Select(sheet => sheet.Name))}"
+                };
+
+                var firstSheet = workbook.Worksheets.First();
+                var usedRange = firstSheet.RangeUsed();
+                if (usedRange is null)
+                {
+                    summary.Add($"Sheet '{firstSheet.Name}' is empty.");
+                    return string.Join('\n', summary);
+                }
+
+                var rows = usedRange.RowsUsed().Take(6).ToList();
+                if (rows.Count == 0)
+                {
+                    summary.Add($"Sheet '{firstSheet.Name}' is empty.");
+                    return string.Join('\n', summary);
+                }
+
+                var headers = rows[0]
+                    .CellsUsed(XLCellsUsedOptions.AllContents)
+                    .Select(cell => cell.GetFormattedString())
+                    .ToList();
+                var headerText = headers.Count == 0 ? "(no populated header cells)" : string.Join(", ", headers);
+                summary.Add($"First sheet: {firstSheet.Name}");
+                summary.Add($"Columns ({headers.Count}): {headerText}");
+
+                var sampleRows = rows.Skip(1).ToList();
+                summary.Add($"Sample rows shown: {sampleRows.Count}");
+
+                for (var i = 0; i < sampleRows.Count; i++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var values = sampleRows[i]
+                        .Cells(1, usedRange.ColumnCount())
+                        .Select(cell => cell.GetFormattedString())
+                        .ToArray();
+                    summary.Add($"Row {i + 1}: {string.Join(" | ", values)}");
+                }
+
+                return string.Join('\n', summary);
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to summarize spreadsheet file {Path}", localPath);
+            return null;
+        }
+    }
+
+    private async Task SendResponseAsync(long chatId, string text, CancellationToken ct)
+    {
+        foreach (var chunk in SplitMessage(text, TelegramMessageChunkSize))
+        {
+            try
+            {
+                await botClient.SendMessage(chatId, chunk, parseMode: ParseMode.Html, cancellationToken: ct);
+            }
+            catch (ApiRequestException ex) when (ex.Message.Contains("parse entities", StringComparison.OrdinalIgnoreCase))
+            {
+                logger.LogWarning(ex, "HTML parse failed for Telegram response; retrying as plain text");
+                await botClient.SendMessage(chatId, chunk, cancellationToken: ct);
+            }
+        }
+    }
+
+    private static IReadOnlyList<string> SplitMessage(string text, int maxChunkLength)
+    {
+        if (text.Length <= maxChunkLength)
+            return [text];
+
+        var chunks = new List<string>();
+        var remaining = text;
+
+        while (remaining.Length > maxChunkLength)
+        {
+            var breakAt = remaining.LastIndexOf('\n', maxChunkLength);
+            if (breakAt <= 0)
+                breakAt = maxChunkLength;
+
+            chunks.Add(remaining[..breakAt]);
+            remaining = remaining[breakAt..].TrimStart('\n');
+        }
+
+        if (remaining.Length > 0)
+            chunks.Add(remaining);
+
+        return chunks;
     }
 
     private async Task SendTypingIndicatorAsync(long chatId, CancellationToken ct)

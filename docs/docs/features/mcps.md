@@ -51,6 +51,32 @@ mcp_servers: [filesystem, memory]
 
 Omitting `mcp_servers` gives the agent access to **all** registered servers.
 
+### Configuration Placeholder Interpolation
+
+MCP JSON values can use `${...}` placeholders resolved at load time by `McpLoader`.
+
+- `${Some:Config:Path}` → value from app configuration
+- `${env:VAR_NAME}` → value from process environment variables
+
+This allows keeping secrets out of committed MCP JSON files while still using plain `mcps/*.json` definitions.
+
+### Anthropic Admin MCP Example
+
+```json
+{
+  "transport": "http",
+  "url": "http://localhost:5100/mcp"
+}
+```
+
+The built-in Anthropic Admin MCP tools are hosted by SharpClaw itself and provide:
+
+- `anthropic_usage_by_day` — daily token usage for past days
+- `anthropic_spend_by_day` — daily cost report for past days
+- `anthropic_remaining_funds` — estimated remaining funds as configured budget minus spend
+
+Anthropic does not expose a direct "remaining balance" API endpoint, so remaining funds are an estimate from budget and spend data.
+
 ## Self-Hosted MCP Server
 
 SharpClaw also exposes its own MCP endpoint via `ModelContextProtocol.AspNetCore`:

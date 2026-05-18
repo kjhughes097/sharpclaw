@@ -16,6 +16,7 @@ Commands are dot-prefixed shortcuts that bypass the LLM entirely. They're proces
 | `.lsa`           | `ListAgentsCommand`  | Lists all registered agents               |
 | `.lsm`           | `ListMcpsCommand`    | Lists all registered MCP servers          |
 | `.lst`           | `ListToolsCommand`   | Lists all registered tools                |
+| `.lsmt`          | `ListMcpToolsCommand`| Lists discovered MCP tools for current agent |
 | `.lss`           | `ListSkillsCommand`  | Lists all registered skills               |
 | `.help`          | `HelpCommand`        | Lists available commands                  |
 

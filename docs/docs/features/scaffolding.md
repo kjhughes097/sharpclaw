@@ -70,6 +70,13 @@ Configuration is in `appsettings.json` / `appsettings.Development.json`:
     "ApiKey": "",
     "DefaultModel": "claude-sonnet-4-20250514",
     "MaxTokens": 8192
+  },
+  "AnthropicAdminMcp": {
+    "ApiBaseUrl": "https://api.anthropic.com",
+    "ApiKey": "",
+    "MonthlyBudgetUsd": 0,
+    "DefaultLookbackDays": 7,
+    "EnableDashboardFallback": false
   }
 }
 ```

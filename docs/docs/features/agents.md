@@ -80,7 +80,7 @@ public interface IAgent
 | **myles** | claude-sonnet-4.5 | Running and endurance sports  | ade                   |
 | **deb**   | claude-sonnet-4.5 | Debate and critical reasoning | ade                   |
 
-All agents share the same tool set (`spawn_agent`, `execute_skill`) and MCP servers (`memory`, `playwright`).
+All current agents get the same workspace file tools (`workspace_read`, `workspace_write`) for working inside their own folder under `{WorkspacePath}/{agent-name}/`. Most agents use the base MCP servers (`memory`, `playwright`), while Ade also includes `anthropic_admin` for organization usage and spend interrogation.
 
 ### Memory Integration
 
@@ -92,3 +92,5 @@ Each agent's system prompt includes instructions for the memory MCP tools:
 - `KnowledgeRead(file)` / `KnowledgeWrite(file, content, mode)` — shared knowledge
 
 Agents maintain a `state.md` (working state, updated freely) and `notes.md` (persistent, requires user confirmation) in their workspace directory. Shared facts live in `knowledge/`.
+
+Uploaded files are saved under `{WorkspacePath}/{agent-name}/uploads/`. Any agent can use `workspace_read` / `workspace_write` to inspect or maintain files in its own workspace folder, and Fin is explicitly prompted to use them for stock-tracking CSV and spreadsheet workflows.

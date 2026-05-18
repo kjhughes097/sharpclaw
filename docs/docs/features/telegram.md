@@ -23,13 +23,16 @@ public sealed class TelegramService(
 ### Message Flow
 
 1. Receive `Update` with `Message.Text`
-2. Validate sender username against `AllowedUsers` whitelist
-3. Resolve agent via `TelegramAgentRouter` (per-chat mapping)
-4. Get or create `AgentSession` keyed by chat ID
-5. Publish inbound message to session bus
-6. Start typing indicator loop
-7. Call `AgentInvoker.InvokeAsync()`
-8. Send response back via `botClient.SendMessage()`
+2. If the message includes a document or photo caption, download the file into `{WorkspacePath}/{agent-name}/uploads/`
+3. For small text-based uploads like CSV/TSV/JSON, inline the file contents into the prompt alongside the saved file path
+4. For spreadsheet uploads like `.xlsx`, generate a compact workbook summary with sheet names, columns, and sample rows
+5. Validate sender username against `AllowedUsers` whitelist
+6. Resolve agent via `TelegramAgentRouter` (per-chat mapping)
+7. Get or create `AgentSession` keyed by chat ID
+8. Publish inbound message to session bus
+9. Start typing indicator loop
+10. Call `AgentInvoker.InvokeAsync()`
+11. Send response back via `botClient.SendMessage()`
 
 ### Security
 
@@ -59,6 +62,12 @@ For each incoming message, the agent is resolved in this order:
 3. **DefaultAgent** — the `Telegram:DefaultAgent` value from configuration.
 
 This means you can create a Telegram group per agent and messages will automatically route to the correct one. The `.{letter}` command still works to override the group-name default within a session.
+
+### File Uploads
+
+Uploaded documents are saved under `{WorkspacePath}/{agent-name}/uploads/`. When the file looks like text and is small enough to safely inspect, SharpClaw also inlines the file contents into the prompt so the agent can reason over CSVs and similar files without needing a separate file-reading tool.
+
+CSV and TSV uploads also get a compact summary block with column names and a few sample rows. `.xlsx` uploads get a workbook summary with worksheet names plus a preview of the first sheet, which makes spreadsheet-style uploads usable even though the binary file itself is not inlined.
 
 ## Configuration
 

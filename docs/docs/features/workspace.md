@@ -26,6 +26,7 @@ public sealed class WorkspaceInitialiser(
 ├── {agent-name}/      # Per-agent memory directory
 │   ├── memory.md      # Agent's persistent memory
 │   └── audit.md       # Agent's audit log
+│   └── uploads/       # Files uploaded for that agent
 └── ...
 ```
 
@@ -45,5 +46,10 @@ If `WorkspacePath` is empty or not configured, workspace initialisation is skipp
 
 - Creates the root directory and standard subdirectories
 - Creates a directory for each registered agent
+- Creates an `uploads/` folder for each registered agent
 - Runs once at startup (idempotent — won't overwrite existing files)
 - Logs a warning if path is not configured
+
+## Workspace File Tools
+
+All current agents can use workspace-scoped tools such as `workspace_read` and `workspace_write` to inspect or maintain files in their own workspace. These tools only operate inside the current agent's folder under `{WorkspacePath}/{agent-name}/`.

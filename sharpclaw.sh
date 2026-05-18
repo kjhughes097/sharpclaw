@@ -238,6 +238,7 @@ show_transcript_diagnostics() {
 
   local workspace_override=""
   local session_id=""
+  local browser_focus="false"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -250,15 +251,18 @@ show_transcript_diagnostics() {
         session_id="$1"
         ;;
       --help|-h)
-        echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>]"
+        echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>] [--browser]"
         return 0
+        ;;
+      --browser|-b)
+        browser_focus="true"
         ;;
       *)
         if [[ -z "${workspace_override}" ]]; then
           workspace_override="$1"
         else
           echo "Unexpected argument: $1"
-          echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>]"
+          echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>] [--browser]"
           return 1
         fi
         ;;
@@ -267,7 +271,7 @@ show_transcript_diagnostics() {
   done
 
   if [[ -z "${agent}" ]]; then
-    echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>]"
+    echo "Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>] [--browser]"
     return 1
   fi
 
@@ -310,6 +314,9 @@ show_transcript_diagnostics() {
   echo "Agent: ${agent}"
   if [[ -n "${session_id}" ]]; then
     echo "Session filter: ${session_id}"
+  fi
+  if [[ "${browser_focus}" == "true" ]]; then
+    echo "Browser diagnostics: enabled"
   fi
   echo "Transcript files: ${#files[@]}"
   echo
@@ -367,13 +374,65 @@ show_transcript_diagnostics() {
       | jq -r '"\(.timestampUtc) [\(.turnType)] len=\(.content|length) dur=\(.durationMs // 0)" + "\n" + (.content | gsub("\\n"; " ") | .[0:220]) + "\n"' \
       | sed '/^$/N;/^\n$/D'
   fi
+
+  if [[ "${browser_focus}" == "true" ]]; then
+    echo
+    echo "Browser MCP signal summary:"
+    cat "${files[@]}" \
+      | jq -s '
+          {
+            totalTurns: length,
+            browserToolMentions: (map(select(.content | test("browser_[a-z_]+"; "i"))) | length),
+            leakedBrowserInvokeTags: (map(select(.turnType == "response" and (.content | test("<invoke name=\\\"browser_"; "i")))) | length),
+            browserErrorLikeResponses: (
+              map(select(
+                .turnType == "response" and
+                (.content | test("browser_|playwright|navigate|screenshot|click"; "i")) and
+                (.content | test("agent error|failed|unable|could not|cannot|timeout|technical difficulties"; "i"))
+              ))
+              | length
+            ),
+            slowBrowserRelatedResponses: (
+              map(select(
+                .turnType == "response" and
+                (.durationMs // 0) > 30000 and
+                (.content | test("navigate|browser|playwright|screenshot|click"; "i"))
+              ))
+              | length
+            )
+          }
+        '
+
+    echo
+    echo "Suspicious browser-related turns (latest 20):"
+    cat "${files[@]}" \
+      | jq -r '
+          select(
+            .turnType == "response" and (
+              (.content | test("<invoke name=\\\"browser_"; "i")) or
+              (
+                (.content | test("browser_|playwright|navigate|screenshot|click"; "i")) and
+                (.content | test("agent error|failed|unable|could not|cannot|timeout|technical difficulties"; "i"))
+              ) or
+              (
+                (.durationMs // 0) > 30000 and
+                (.content | test("navigate|browser|playwright|screenshot|click"; "i"))
+              )
+            )
+          )
+          | [.timestampUtc, .sessionId, (.durationMs // 0), (.content | length), (.content | gsub("\\n"; " ") | .[0:180])] 
+          | @tsv
+        ' \
+      | sort -k1,1 \
+      | tail -n 20
+  fi
 }
 
 usage() {
   cat <<'EOF'
 Usage: ./sharpclaw.sh <command>
 Usage: ./sharpclaw.sh logs [ui|service]
-Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>]
+Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>] [--browser]
 
 Commands:
   start     Start SharpClaw service and Grafana stack
@@ -381,7 +440,7 @@ Commands:
   restart   Restart SharpClaw service and Grafana stack
   status    Show SharpClaw and Grafana stack status
   logs      Open Grafana logs UI (default target: ui)
-  transcript Show transcript diagnostics for an agent (optional --session filter)
+  transcript Show transcript diagnostics for an agent (optional --session filter, --browser)
   test      Run dotnet tests
   docs      Run Docusaurus docs dev server on port 3001
 EOF
