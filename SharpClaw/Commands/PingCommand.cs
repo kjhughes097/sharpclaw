@@ -31,21 +31,7 @@ public sealed class PingCommand(IAgentRegistry agentRegistry) : ICommand
             ? string.Join(", ", agent.SubAgentNames) 
             : "None";
 
-        var response = $"""
-            <b>{agentNameFormatted}</b>
-            {desc}
-            ─────────────────
-            <b>LLM:</b>
-            {agent.Llm ?? "copilot"}
-            <b>Model:</b>
-            {agent.Model ?? "default"}
-            <b>Tools:</b>
-            {toolsList}
-            <b>MCPs:</b>
-            {mcpList}
-            <b>Sub Agents:</b>
-            {subAgentList}
-            """;
+        var response = $"**{agentNameFormatted}**\n{desc}\n\n| | |\n|---|---|\n| **LLM** | {agent.Llm ?? "copilot"} |\n| **Model** | {agent.Model ?? "default"} |\n| **Tools** | {toolsList} |\n| **MCPs** | {mcpList} |\n| **Sub Agents** | {subAgentList} |";
 
         return Task.FromResult(new CommandResult(true, response));
     }

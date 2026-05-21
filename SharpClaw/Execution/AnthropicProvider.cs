@@ -73,8 +73,12 @@ public sealed class AnthropicProvider(
             // Add assistant response to history for multi-turn
             anthropicSession.AddAssistantMessage(content);
 
-            logger.LogDebug("Anthropic response received ({Length} chars)", content.Length);
-            return AgentRunResult.Ok(content, session.SessionId);
+            var inputTokens = (int?)response.Usage?.InputTokenCount;
+            var outputTokens = (int?)response.Usage?.OutputTokenCount;
+
+            logger.LogDebug("Anthropic response received ({Length} chars, in={Input}, out={Output})",
+                content.Length, inputTokens, outputTokens);
+            return AgentRunResult.Ok(content, session.SessionId, inputTokens, outputTokens);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

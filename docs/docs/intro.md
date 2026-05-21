@@ -12,9 +12,9 @@ SharpClaw is an AI agent orchestration service built on **.NET 10** and the **Gi
 ```
 ┌─────────────────────────────────────────────────────┐
 │  SharpClaw Service (.NET 10 Web App)                │
-├─────────────┬───────────────┬───────────────────────┤
-│  Telegram   │  HTTP/SSE     │  MCP Server (self)    │
-├─────────────┴───────────────┴───────────────────────┤
+├─────────────┬─────────────┬─────────────┬─────────────┤
+│  Telegram   │  HTTP/SSE     │  MCP Server   │  Web UI       │
+├─────────────┴─────────────┴─────────────┴─────────────┤
 │  AgentInvoker  →  CommandRouter  →  AgentRunner     │
 ├─────────────────────────────────────────────────────┤
 │  Registries: Agent │ Tool │ MCP │ Skill             │
@@ -30,13 +30,16 @@ SharpClaw is an AI agent orchestration service built on **.NET 10** and the **Gi
 dotnet build
 
 # Run
-dotnet run --project src/SharpClaw
+dotnet run --project SharpClaw/SharpClaw.csproj
+
+# Web UI (dev mode with hot reload)
+./sharpclaw.sh web
 
 # Test
 dotnet test
 ```
 
-The service listens on `http://localhost:5100` by default.
+The service listens on `http://localhost:5100` by default. The web UI is available at the same address (or `http://localhost:5173` in dev mode).
 
 ## Key Concepts
 

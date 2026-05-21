@@ -29,6 +29,7 @@ src/SharpClaw/
 ├── Auditing/                  # AuditService (markdown audit log)
 ├── Mcp/                       # Self-hosted MCP server tools (MemoryMcpTools)
 ├── Tools/                     # Custom ITool implementations
+├── Api/                       # Minimal API endpoint groups (web UI backend)
 └── Configuration/             # Options classes (SharpClawOptions, etc.)
 ```
 
@@ -98,4 +99,6 @@ The repository root includes `sharpclaw.sh` for common development operations:
 ./sharpclaw.sh logs service  # Shows SharpClaw local service log (optional)
 ./sharpclaw.sh test     # Runs dotnet test from repo root
 ./sharpclaw.sh docs     # Starts Docusaurus docs server on http://localhost:3001 (docs/)
+./sharpclaw.sh web      # Starts web UI dev server (Vite, port 5173, proxies API to :5100)
+./sharpclaw.sh web-build # Builds web UI production bundle to SharpClaw/wwwroot/
 ```

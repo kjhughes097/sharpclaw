@@ -1,0 +1,34 @@
+import { Outlet } from 'react-router-dom';
+import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
+import SideMenu from '../components/SideMenu';
+import AppNavbar from '../components/AppNavbar';
+
+export default function DashboardLayout() {
+    return (
+        <Box sx={{ display: 'flex' }}>
+            <SideMenu />
+            <AppNavbar />
+            <Box
+                component="main"
+                sx={{
+                    flexGrow: 1,
+                    overflow: 'auto',
+                    minHeight: '100vh',
+                }}
+            >
+                <Stack
+                    spacing={2}
+                    sx={{
+                        mx: 3,
+                        pb: 5,
+                        mt: { xs: 8, md: 2 },
+                        maxWidth: 1400,
+                    }}
+                >
+                    <Outlet />
+                </Stack>
+            </Box>
+        </Box>
+    );
+}

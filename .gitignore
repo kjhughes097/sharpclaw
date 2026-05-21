@@ -3,6 +3,7 @@ bin/
 obj/
 dist/
 build/
+SharpClaw/wwwroot/
 
 # Visual Studio
 .vs/

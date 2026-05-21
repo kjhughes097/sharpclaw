@@ -17,6 +17,7 @@ const sidebars: SidebarsConfig = {
         'features/interactions',
         'features/scheduling',
         'features/telegram',
+        'features/web-ui',
         'features/workspace',
         'features/memory',
         'features/auditing',

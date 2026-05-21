@@ -156,6 +156,11 @@ restart_all() {
   start_all
 }
 
+restart_service() {
+  stop_service
+  start_service
+}
+
 show_status() {
   if is_service_running; then
     echo "SharpClaw service: running (PID $(cat "${PID_FILE}"))"
@@ -229,6 +234,22 @@ view_docs() {
     else
       npm run start -- --port 3001
     fi
+  )
+}
+
+web_dev() {
+  echo "Starting web UI dev server on http://localhost:5173 (proxying API to :5100)..."
+  (
+    cd "${ROOT_DIR}/SharpClaw.Web"
+    npm run dev
+  )
+}
+
+web_build() {
+  echo "Building web UI production bundle to SharpClaw/wwwroot/..."
+  (
+    cd "${ROOT_DIR}/SharpClaw.Web"
+    npm run build
   )
 }
 
@@ -435,14 +456,19 @@ Usage: ./sharpclaw.sh logs [ui|service]
 Usage: ./sharpclaw.sh transcript <agent> [workspace_path] [--session <session_id>] [--browser]
 
 Commands:
-  start     Start SharpClaw service and Grafana stack
-  stop      Stop SharpClaw service and Grafana stack
-  restart   Restart SharpClaw service and Grafana stack
-  status    Show SharpClaw and Grafana stack status
-  logs      Open Grafana logs UI (default target: ui)
-  transcript Show transcript diagnostics for an agent (optional --session filter, --browser)
-  test      Run dotnet tests
-  docs      Run Docusaurus docs dev server on port 3001
+  start-all     Start SharpClaw service and Grafana stack
+  stop-all      Stop SharpClaw service and Grafana stack
+  restart-all   Restart SharpClaw service and Grafana stack
+  start         Start SharpClaw service and Grafana stack
+  stop          Stop SharpClaw service and Grafana stack
+  restart       Restart SharpClaw service and Grafana stack
+  status        Show SharpClaw and Grafana stack status
+  logs          Open Grafana logs UI (default target: ui)
+  transcript    Show transcript diagnostics for an agent (optional --session filter, --browser)
+  test          Run dotnet tests
+  docs          Run Docusaurus docs dev server on port 3001
+  web           Start web UI dev server (Vite, port 5173, proxies API to :5100)
+  web-build     Build web UI production bundle to SharpClaw/wwwroot/
 EOF
 }
 
@@ -453,14 +479,23 @@ main() {
   fi
 
   case "$1" in
-    start)
+    start-all)
       start_all
       ;;
-    stop)
+    stop-all)
       stop_all
       ;;
-    restart)
+    restart-all)
       restart_all
+      ;;
+    start)
+      start_service
+      ;;
+    stop)
+      stop_service
+      ;;
+    restart)
+      restart_service
       ;;
     status)
       show_status
@@ -477,6 +512,12 @@ main() {
       ;;
     docs)
       view_docs
+      ;;
+    web)
+      web_dev
+      ;;
+    web-build)
+      web_build
       ;;
     *)
       usage

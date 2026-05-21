@@ -170,7 +170,9 @@ public sealed class AgentInvoker(
                 Success: result.Success,
                 Error: result.Error,
                 DurationMs: (DateTimeOffset.UtcNow - requestStartedAt).TotalMilliseconds,
-                IsCommand: false),
+                IsCommand: false,
+                InputTokens: result.InputTokens,
+                OutputTokens: result.OutputTokens),
             ct);
 
         // Audit the response

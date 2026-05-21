@@ -39,7 +39,9 @@ public sealed class TranscriptService(IOptions<SharpClawOptions> options, ILogge
             Success: metadata?.Success,
             Error: metadata?.Error,
             DurationMs: metadata?.DurationMs,
-            IsCommand: metadata?.IsCommand);
+            IsCommand: metadata?.IsCommand,
+            InputTokens: metadata?.InputTokens,
+            OutputTokens: metadata?.OutputTokens);
 
         var jsonLine = JsonSerializer.Serialize(entry, _jsonOptions) + Environment.NewLine;
 
@@ -80,7 +82,9 @@ public sealed record TranscriptMetadata(
     bool? Success = null,
     string? Error = null,
     double? DurationMs = null,
-    bool? IsCommand = null);
+    bool? IsCommand = null,
+    int? InputTokens = null,
+    int? OutputTokens = null);
 
 internal sealed record TranscriptEntry(
     DateTimeOffset TimestampUtc,
@@ -96,4 +100,6 @@ internal sealed record TranscriptEntry(
     bool? Success,
     string? Error,
     double? DurationMs,
-    bool? IsCommand);
+    bool? IsCommand,
+    int? InputTokens,
+    int? OutputTokens);

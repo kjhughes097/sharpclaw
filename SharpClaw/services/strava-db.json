@@ -1,0 +1,26 @@
+{
+  "name": "strava-db",
+  "description": "PostgreSQL database for Strava activity data",
+  "project": "coding/strava-db",
+  "runtime": "docker-compose",
+  "port": 5433,
+  "autoStart": true,
+  "compose": {
+    "file": "docker-compose.yml",
+    "services": [
+      "postgres"
+    ],
+    "stopOnShutdown": true
+  },
+  "healthCheck": {
+    "type": "tcp",
+    "host": "localhost",
+    "port": 5433,
+    "timeoutSeconds": 30,
+    "intervalSeconds": 2
+  },
+  "expose": {
+    "mcp": false,
+    "endpoints": []
+  }
+}

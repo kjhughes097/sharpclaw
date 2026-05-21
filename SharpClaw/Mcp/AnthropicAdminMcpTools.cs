@@ -41,7 +41,7 @@ public sealed class AnthropicAdminMcpTools(
         long output = 0;
         var buckets = new List<object>();
 
-        foreach (var row in rows)
+        foreach (var (row, bucketStart, bucketEnd) in rows)
         {
             var rowUncached = GetInt64(row, "uncached_input_tokens");
             var rowCachedRead = GetInt64(row, "cache_read_input_tokens");
@@ -53,8 +53,8 @@ public sealed class AnthropicAdminMcpTools(
 
             buckets.Add(new
             {
-                bucket_start = GetString(row, "bucket_start"),
-                bucket_end = GetString(row, "bucket_end"),
+                bucket_start = bucketStart,
+                bucket_end = bucketEnd,
                 uncached_input_tokens = rowUncached,
                 cache_read_input_tokens = rowCachedRead,
                 output_tokens = rowOutput,
@@ -99,21 +99,21 @@ public sealed class AnthropicAdminMcpTools(
 
         using var payload = await GetAnthropicAsync("/v1/organizations/cost_report", query, ct);
         var rows = ExtractRows(payload.RootElement)
-            .Where(row => string.IsNullOrWhiteSpace(workspaceId) || string.Equals(GetString(row, "workspace_id"), workspaceId, StringComparison.OrdinalIgnoreCase))
+            .Where(item => string.IsNullOrWhiteSpace(workspaceId) || string.Equals(GetString(item.Row, "workspace_id"), workspaceId, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         decimal totalRawAmount = 0;
         var buckets = new List<object>();
 
-        foreach (var row in rows)
+        foreach (var (row, bucketStart, bucketEnd) in rows)
         {
             var rawAmount = GetDecimal(row, "amount");
             totalRawAmount += rawAmount;
 
             buckets.Add(new
             {
-                bucket_start = GetString(row, "bucket_start"),
-                bucket_end = GetString(row, "bucket_end"),
+                bucket_start = bucketStart,
+                bucket_end = bucketEnd,
                 amount_raw = rawAmount,
                 amount_usd_estimate = rawAmount / 100m,
                 cost_type = GetString(row, "cost_type"),
@@ -242,12 +242,29 @@ public sealed class AnthropicAdminMcpTools(
 
     private static string ToRfc3339(DateTimeOffset value) => value.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
-    private static IReadOnlyList<JsonElement> ExtractRows(JsonElement root)
+    private static IReadOnlyList<(JsonElement Row, string? BucketStart, string? BucketEnd)> ExtractRows(JsonElement root)
     {
+        // The API returns: { data: [{ starting_at, ending_at, results: [...] }] }
+        // We need to flatten all results arrays, preserving bucket timestamp context
         if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
-            return data.EnumerateArray().ToList();
-        if (root.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Array)
-            return results.EnumerateArray().ToList();
+        {
+            var allRows = new List<(JsonElement, string?, string?)>();
+            foreach (var bucket in data.EnumerateArray())
+            {
+                var bucketStart = GetString(bucket, "starting_at");
+                var bucketEnd = GetString(bucket, "ending_at");
+                
+                if (bucket.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var row in results.EnumerateArray())
+                    {
+                        allRows.Add((row, bucketStart, bucketEnd));
+                    }
+                }
+            }
+            return allRows;
+        }
+        
         return [];
     }
 

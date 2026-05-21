@@ -1,0 +1,31 @@
+{
+  "name": "strava-downloader",
+  "description": "Syncs Strava activities to local PostgreSQL database on a schedule",
+  "project": "coding/strava-downloader/StravaDownloader",
+  "runtime": "dotnet",
+  "port": 5200,
+  "autoStart": true,
+  "depends": ["strava-db"],
+  "healthCheck": {
+    "type": "http",
+    "path": "/health",
+    "timeoutSeconds": 60
+  },
+  "expose": {
+    "mcp": false,
+    "endpoints": [
+      {
+        "name": "status",
+        "path": "/status",
+        "method": "GET",
+        "description": "Get the current status of the Strava sync service including last sync time and total activities"
+      },
+      {
+        "name": "sync-history",
+        "path": "/sync-history",
+        "method": "GET",
+        "description": "Get the last 10 sync operations with their status, timing, and error details"
+      }
+    ]
+  }
+}

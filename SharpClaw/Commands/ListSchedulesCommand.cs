@@ -23,10 +23,10 @@ public sealed class ListSchedulesCommand(ScheduleStore store) : ICommand
                 ? t.Description
                 : t.Prompt[..Math.Min(t.Prompt.Length, 40)];
             var type = t.IsOneOff ? "once" : "recurring";
-            return $"• [{t.Id}] {desc} (agent: {t.AgentId}, {type}, next: {t.NextRunUtc:yyyy-MM-dd HH:mm} UTC)";
+            return $"[{t.Id}] {type}\nAgent: {t.AgentId}\n{desc}\nNext: {t.NextRunUtc:yyyy-MM-dd HH:mm} UTC\n-----";
         });
 
-        var response = $"Scheduled tasks:\n{string.Join('\n', lines)}";
+        var response = $"Scheduled tasks:\n=====\n{string.Join('\n', lines)}";
         return Task.FromResult(new CommandResult(true, response));
     }
 }

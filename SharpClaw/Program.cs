@@ -5,6 +5,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Telegram.Bot;
 using SharpClaw.Abstractions;
+using SharpClaw.Api;
 using SharpClaw.Auditing;
 using SharpClaw.Commands;
 using SharpClaw.Configuration;
@@ -72,11 +73,13 @@ builder.Services.AddSingleton<IAgentRegistry, AgentRegistry>();
 builder.Services.AddSingleton<IToolRegistry, ToolRegistry>();
 builder.Services.AddSingleton<IMcpRegistry, McpRegistry>();
 builder.Services.AddSingleton<ISkillRegistry, SkillRegistry>();
+builder.Services.AddSingleton<IServiceRegistry, ServiceRegistry>();
 
 // -- Loaders --
 builder.Services.AddSingleton<AgentLoader>();
 builder.Services.AddSingleton<McpLoader>();
 builder.Services.AddSingleton<SkillLoader>();
+builder.Services.AddSingleton<ServiceLoader>();
 // -- Execution --
 builder.Services.AddSingleton<CopilotProvider>();
 builder.Services.AddSingleton<ILlmProvider>(sp => sp.GetRequiredService<CopilotProvider>());
@@ -120,6 +123,7 @@ builder.Services.AddSingleton<ICommand, ListSkillsCommand>();
 builder.Services.AddSingleton<ICommand, ListSchedulesCommand>();
 builder.Services.AddSingleton<ICommand, ListCronCommand>();
 builder.Services.AddSingleton<ICommand, CancelScheduleCommand>();
+builder.Services.AddSingleton<ICommand, ListServicesCommand>();
 
 // -- Memory & Auditing --
 builder.Services.AddSingleton<MemoryService>();
@@ -143,6 +147,7 @@ if (!string.IsNullOrEmpty(telegramToken) && telegramToken != "YOUR_BOT_TOKEN_HER
     builder.Services.AddSingleton<ITelegramBotClient>(sp => new TelegramBotClient(telegramToken));
     builder.Services.AddHostedService<TelegramService>();
     builder.Services.AddSingleton<ITaskResultDelivery, TelegramTaskDelivery>();
+    builder.Services.AddSingleton<SendTelegramTool>();
 }
 builder.Services.AddSingleton<ITaskResultDelivery, WebTaskDelivery>();
 
@@ -150,6 +155,8 @@ builder.Services.AddSingleton<ITaskResultDelivery, WebTaskDelivery>();
 builder.Services.AddSingleton<RegistryWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RegistryWorker>());
 builder.Services.AddHostedService<SchedulerWorker>();
+builder.Services.AddSingleton<ServiceRunner>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<ServiceRunner>());
 
 var app = builder.Build();
 
@@ -170,12 +177,30 @@ toolRegistry.Register(app.Services.GetRequiredService<CancelTaskTool>());
 toolRegistry.Register(app.Services.GetRequiredService<WorkspaceFileTool>());
 toolRegistry.Register(app.Services.GetRequiredService<WorkspaceWriteTool>());
 
+if (!string.IsNullOrEmpty(telegramToken) && telegramToken != "YOUR_BOT_TOKEN_HERE")
+{
+    toolRegistry.Register(app.Services.GetRequiredService<SendTelegramTool>());
+}
+
+// -- Static files (Web UI) --
+app.UseStaticFiles();
+
 // -- Endpoints --
 app.MapMcp("/mcp");
 
-app.MapGet("/", () => "SharpClaw is running.");
+app.MapGet("/health", () => "SharpClaw is running.");
 
 app.MapGet("/agents", (IAgentRegistry registry) =>
     registry.GetAll().OrderBy(a => a.Name).Select(a => new { a.Name, a.Description }));
+
+// -- Web UI API --
+app.MapAgentEndpoints();
+app.MapChatEndpoints();
+app.MapMcpEndpoints();
+app.MapToolEndpoints();
+app.MapSkillEndpoints();
+app.MapConfigEndpoints();
+
+app.MapFallbackToFile("index.html");
 
 app.Run();

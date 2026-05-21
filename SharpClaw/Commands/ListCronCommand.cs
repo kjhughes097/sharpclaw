@@ -23,10 +23,10 @@ public sealed class ListCronCommand(ScheduleStore store) : ICommand
                 ? t.Description
                 : t.Prompt[..Math.Min(t.Prompt.Length, 40)];
             var type = t.IsOneOff ? "once" : "recurring";
-            return $"• [{t.Id}] `{t.CronExpression}` ({type}) agent: {t.AgentId} — {desc}\n  Next: {t.NextRunUtc:yyyy-MM-dd HH:mm} UTC";
+            return $"[{t.Id}] `{t.CronExpression}` ({type})\nAgent: {t.AgentId}\n{desc}\nNext: {t.NextRunUtc:yyyy-MM-dd HH:mm} UTC\n-----";
         });
 
-        var response = $"Cron jobs:\n{string.Join('\n', lines)}";
+        var response = $"Cron jobs:\n=====\n{string.Join('\n', lines)}";
         return Task.FromResult(new CommandResult(true, response));
     }
 }
