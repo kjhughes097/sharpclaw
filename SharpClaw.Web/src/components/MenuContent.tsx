@@ -12,6 +12,7 @@ import HubRoundedIcon from '@mui/icons-material/HubRounded';
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import WidgetsRoundedIcon from '@mui/icons-material/WidgetsRounded';
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 
 const mainItems = [
@@ -20,6 +21,7 @@ const mainItems = [
     { text: 'MCPs', icon: <HubRoundedIcon />, path: '/mcps' },
     { text: 'Tools', icon: <BuildRoundedIcon />, path: '/tools' },
     { text: 'Skills', icon: <SchoolRoundedIcon />, path: '/skills' },
+    { text: 'Tasks', icon: <ScheduleRoundedIcon />, path: '/tasks' },
     { text: 'Examples', icon: <WidgetsRoundedIcon />, path: '/examples' },
 ];
 

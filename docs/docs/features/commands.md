@@ -10,7 +10,7 @@ Commands are dot-prefixed shortcuts that bypass the LLM entirely. They're proces
 
 | Command          | Class                | Description                               |
 | ---------------- | -------------------- | ----------------------------------------- |
-| `.ping`          | `PingCommand`        | Returns "pong" — used for health checks   |
+| `.ping` / `hi`   | `PingCommand`        | Shows agent identity card (markdown table) |
 | `.switch {name}` | `SwitchAgentCommand` | Switches the session to a different agent |
 | `.reload`        | `ReloadCommand`      | Reloads agents, tools, and MCP configs    |
 | `.lsa`           | `ListAgentsCommand`  | Lists all registered agents               |

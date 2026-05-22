@@ -19,9 +19,11 @@ SharpClaw includes a browser-based dashboard for managing agents, MCP servers, s
 
 | Route              | Purpose                                         |
 | ------------------ | ----------------------------------------------- |
-| `/`                | Home — agent cards with LLM/model badges        |
-| `/agents`          | Agent list with create/edit/delete               |
-| `/agents/:name`    | Monaco editor for `.agent.md` files             |
+| `/`                | Home — agent cards, stat cards, charts           |
+| `/agents`          | Agent list with activity charts, tools/skills   |
+| `/agents/:name`    | Agent chat — interact with the agent live        |
+| `/agents/:name/edit` | Monaco editor for `.agent.md` files           |
+| `/agents/new`      | Create a new agent                              |
 | `/mcps`            | MCP server list with create/edit/delete          |
 | `/mcps/:name`      | Monaco editor for MCP JSON definitions          |
 | `/tools`           | Read-only tool list with parameter schemas       |
@@ -41,6 +43,10 @@ GET    /api/agents/{name}   Get full .agent.md content
 PUT    /api/agents/{name}   Update agent file content
 POST   /api/agents          Create new agent
 DELETE /api/agents/{name}   Delete agent
+GET    /api/agents/activity  Agent activity (daily turn counts, 30 days)
+
+POST   /api/chat/{agentName}              Send message (same path as Telegram)
+GET    /api/chat/{agentName}/history       Last N transcript entries
 
 GET    /api/mcps            List all MCP definitions
 GET    /api/mcps/{name}     Get MCP JSON content
@@ -68,7 +74,7 @@ Run the frontend dev server with hot reload (proxies `/api` to the .NET backend 
 ```bash
 ./sharpclaw.sh web
 # or directly:
-cd src/SharpClaw.Web && npm run dev
+cd SharpClaw.Web && npm run dev
 ```
 
 The dev server runs on `http://localhost:5173`.
@@ -80,7 +86,7 @@ Build the frontend bundle into `SharpClaw/wwwroot/` so the .NET app serves it as
 ```bash
 ./sharpclaw.sh web-build
 # or directly:
-cd src/SharpClaw.Web && npm run build
+cd SharpClaw.Web && npm run build
 ```
 
 The .NET app serves the SPA via `UseStaticFiles()` and `MapFallbackToFile("index.html")`.
@@ -88,7 +94,7 @@ The .NET app serves the SPA via `UseStaticFiles()` and `MapFallbackToFile("index
 ## Project Structure
 
 ```
-src/SharpClaw.Web/
+SharpClaw.Web/
 ├── index.html
 ├── vite.config.ts          # Proxy + build output config
 ├── package.json
@@ -107,6 +113,7 @@ src/SharpClaw.Web/
     ├── pages/
     │   ├── HomePage.tsx
     │   ├── AgentListPage.tsx
+    │   ├── AgentChatPage.tsx
     │   ├── AgentEditorPage.tsx
     │   ├── McpListPage.tsx
     │   ├── McpEditorPage.tsx
@@ -117,5 +124,13 @@ src/SharpClaw.Web/
     │   ├── ConfigPage.tsx
     │   └── ExamplesPage.tsx
     └── theme/
-        └── index.ts        # Dark theme customisation
+        └── index.ts        # Light theme customisation
 ```
+
+## Chat
+
+The agent chat page (`/agents/:name`) provides a web-based interface for interacting with agents. It uses the **same execution path as Telegram** — messages flow through `AgentSessionRegistry` → `AgentInvoker` → `AgentRunner`, so conversations appear in both UIs and are recorded in transcripts.
+
+The chat loads the last 20 transcript entries (request + response pairs) on page load, so navigating away and back preserves context.
+
+Responses are rendered as GitHub Flavoured Markdown via `react-markdown` + `remark-gfm`.

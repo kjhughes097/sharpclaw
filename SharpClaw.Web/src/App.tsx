@@ -10,6 +10,7 @@ import ToolListPage from './pages/ToolListPage';
 import ToolDetailPage from './pages/ToolDetailPage';
 import SkillListPage from './pages/SkillListPage';
 import SkillEditorPage from './pages/SkillEditorPage';
+import TaskListPage from './pages/TaskListPage';
 import ConfigPage from './pages/ConfigPage';
 import ExamplesPage from './pages/ExamplesPage';
 
@@ -30,6 +31,7 @@ export default function App() {
                 <Route path="/skills" element={<SkillListPage />} />
                 <Route path="/skills/new" element={<SkillEditorPage />} />
                 <Route path="/skills/:name" element={<SkillEditorPage />} />
+                <Route path="/tasks" element={<TaskListPage />} />
                 <Route path="/config" element={<ConfigPage />} />
                 <Route path="/examples" element={<ExamplesPage />} />
             </Route>

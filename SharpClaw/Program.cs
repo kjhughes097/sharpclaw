@@ -199,6 +199,7 @@ app.MapChatEndpoints();
 app.MapMcpEndpoints();
 app.MapToolEndpoints();
 app.MapSkillEndpoints();
+app.MapTaskEndpoints();
 app.MapConfigEndpoints();
 
 app.MapFallbackToFile("index.html");

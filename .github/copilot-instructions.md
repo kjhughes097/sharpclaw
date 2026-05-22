@@ -2,7 +2,9 @@
 
 ## Architecture
 
-Single project: **`src/SharpClaw`** — a .NET 10 Web SDK app hosting all registries, execution engine, MCP server, Telegram integration, and HTTP endpoints.
+Two projects at the repo root:
+- **`SharpClaw/`** — .NET 10 Web SDK app hosting all registries, execution engine, MCP server, Telegram integration, web chat API, and HTTP endpoints.
+- **`SharpClaw.Web/`** — Vite 9 + React 19 + TypeScript + MUI v9 frontend. Dev server on port 5173 proxies `/api` to the backend on port 5100. Production builds output to `SharpClaw/wwwroot/`.
 
 Key registries (all singleton):
 - `IAgentRegistry` — named `IAgent` instances
@@ -20,7 +22,7 @@ Two providers are available:
 
 ## Agent Loading
 
-Agents are defined in `src/SharpClaw/agents/*.agent.md` files. The filename (without extension) is the agent name. YAML frontmatter declares:
+Agents are defined in `SharpClaw/agents/*.agent.md` files. The filename (without extension) is the agent name. YAML frontmatter declares:
 
 ```yaml
 llm: copilot                   # LLM provider: 'copilot' (default) or 'anthropic'
@@ -37,11 +39,11 @@ To add a new agent: create `agents/{name}.agent.md`. No code changes needed.
 
 ## Adding Tools
 
-Implement `ITool` in `src/SharpClaw/Tools/`, register in DI in `Program.cs`, and add to the tool registry. Reference the tool name in agent frontmatter.
+Implement `ITool` in `SharpClaw/Tools/`, register in DI in `Program.cs`, and add to the tool registry. Reference the tool name in agent frontmatter.
 
 ## Adding MCP Servers (External)
 
-Add a JSON file to `src/SharpClaw/mcps/`:
+Add a JSON file to `SharpClaw/mcps/`:
 
 ```json
 {
@@ -68,10 +70,24 @@ Reference by name in agent frontmatter `mcp_servers`. No code changes needed.
 ```bash
 dotnet build
 dotnet test
-dotnet run --project src/SharpClaw
+dotnet run --project SharpClaw
 ```
 
 Launch settings set `ASPNETCORE_ENVIRONMENT=Development` and `DOTNET_ENVIRONMENT=Development`. Service listens on `http://localhost:5100`.
+
+### Web UI
+
+```bash
+cd SharpClaw.Web && npm run dev    # Dev server with HMR on :5173
+cd SharpClaw.Web && npm run build  # Production build → SharpClaw/wwwroot/
+```
+
+Or via the helper script:
+
+```bash
+sc web       # Dev server
+sc web-build # Production build
+```
 
 ## MCP Troubleshooting (Logging + Loki)
 
@@ -131,12 +147,13 @@ curl -sG 'http://127.0.0.1:3100/loki/api/v1/query_range' \
 
 The documentation site lives in `docs/` and is built with Docusaurus (TypeScript, classic preset).
 
-**Every code change that affects behaviour, configuration, or public interfaces must have corresponding documentation updates.** Consider:
+**MANDATORY: Every code change that affects behaviour, configuration, or public interfaces MUST include documentation updates in the same task. Do not consider work complete until docs are updated and `cd docs && npm run build` passes.** This includes:
 
 - New or changed features → update or create a page in `docs/docs/features/`
 - New agents, tools, or MCP servers → update relevant feature page
 - Configuration changes → update `docs/docs/features/scaffolding.md`
 - Architecture changes → update `docs/docs/intro.md`
+- New API endpoints → update `docs/docs/features/web-ui.md`
 - New sidebar entries → add to `docs/sidebars.ts`
 
 Documentation pages use standard Markdown with `sidebar_position` frontmatter for ordering.
@@ -155,3 +172,5 @@ cd docs && npm start        # Dev server with hot reload
 - **Telegram registration conditional**: Only registered when a valid bot token is configured (not empty, not placeholder).
 - **Anthropic registration conditional**: Only registered when a valid API key is configured in `Anthropic:ApiKey`.
 - **MCP bridging for Anthropic**: `McpToolBridge` connects to MCP servers as a client using `ModelContextProtocol` SDK, discovers tools via `ListToolsAsync()`, and exposes them as `AITool` instances. MCP connections are per-session and disposed when the session ends.
+- **Web chat shares Telegram path**: `ChatEndpoints` uses the same `AgentSessionRegistry` + `AgentInvoker` flow as Telegram. Channel key is `web:{agentName}`. Messages appear in transcripts and both UIs.
+- **Command responses use markdown**: `PingCommand` and other command responses use markdown (not Telegram HTML) for cross-UI compatibility.

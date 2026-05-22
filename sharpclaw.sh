@@ -241,7 +241,7 @@ web_dev() {
   echo "Starting web UI dev server on http://localhost:5173 (proxying API to :5100)..."
   (
     cd "${ROOT_DIR}/SharpClaw.Web"
-    npm run dev
+    npm run dev -- --host
   )
 }
 
