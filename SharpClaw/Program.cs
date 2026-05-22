@@ -107,6 +107,7 @@ builder.Services.AddSingleton<WorkspaceWriteTool>();
 
 // -- Sessions & Interactions --
 builder.Services.AddSingleton<AgentSessionRegistry>();
+builder.Services.AddSingleton<ChannelFanOutService>();
 builder.Services.AddSingleton<CommandRouter>();
 builder.Services.AddSingleton<AgentInvoker>();
 

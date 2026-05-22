@@ -22,6 +22,7 @@ public sealed class TelegramService(
     AgentInvoker invoker,
     TelegramAgentRouter router,
     IAgentRegistry agentRegistry,
+    ChannelFanOutService fanOut,
     IOptions<TelegramOptions> telegramOptions,
     IOptions<SharpClawOptions> sharpClawOptions,
     ILogger<TelegramService> logger) : BackgroundService
@@ -44,6 +45,21 @@ public sealed class TelegramService(
     private readonly HashSet<string> _allowedUsers =
         new(telegramOptions.Value.AllowedUsers, StringComparer.OrdinalIgnoreCase);
     private readonly string _defaultAgent = telegramOptions.Value.DefaultAgent;
+    private readonly HashSet<string> _registeredSinks = new();
+    private readonly Lock _sinkLock = new();
+
+    private void EnsureTelegramSinkRegistered(string agentName, long chatId)
+    {
+        var key = $"{agentName}:{chatId}";
+        lock (_sinkLock)
+        {
+            if (!_registeredSinks.Add(key))
+                return;
+        }
+
+        var sink = new TelegramChannelSink(botClient, chatId, logger);
+        fanOut.Register(agentName, sink);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -100,12 +116,18 @@ public sealed class TelegramService(
         // Build the prompt: combine file context and user text
         var prompt = BuildPrompt(text, fileContext);
 
-        var session = sessionRegistry.GetOrCreate(channelKey, agentId);
+        var session = sessionRegistry.GetOrCreate(agentId);
+
+        // Ensure Telegram sink is registered for this agent
+        EnsureTelegramSinkRegistered(agentId, chatId);
 
         // Publish inbound message
         await session.PublishAsync(new AgentMessage(
             session.SessionId, Guid.NewGuid().ToString(),
             ChannelMessageOrigin.Telegram, agentId, prompt, DateTimeOffset.UtcNow), ct);
+
+        // Fan out inbound message to other channels
+        await fanOut.BroadcastAsync(agentId, $"[telegram] {prompt}", channelKey, ct);
 
         // Send typing indicator while processing
         using var typingCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -117,10 +139,19 @@ public sealed class TelegramService(
             var (switchedTo, responseText) = await invoker.InvokeAsync(session, prompt, schedulingCtx, ct);
 
             if (!string.IsNullOrEmpty(responseText))
+            {
                 await SendResponseAsync(chatId, responseText, ct);
 
+                // Fan out agent response to other channels
+                await fanOut.BroadcastAsync(agentId, responseText, channelKey, ct);
+            }
+
             if (switchedTo is not null)
+            {
                 router.Map(chatId, switchedTo);
+                // Re-register sink under new agent
+                EnsureTelegramSinkRegistered(switchedTo, chatId);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

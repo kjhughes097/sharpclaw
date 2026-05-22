@@ -10,11 +10,12 @@ public sealed class AgentSessionRegistry(IOptions<SharpClawOptions> options)
     private readonly int _historyLimit = options.Value.ChatHistoryLimit;
 
     /// <summary>
-    /// Get or create a session keyed by a channel identifier (e.g. Telegram chat ID or web session ID).
+    /// Get or create a session keyed by agent name.
+    /// All channels talking to the same agent share a single session and LLM context.
     /// </summary>
-    public AgentSession GetOrCreate(string channelKey, string agentId) =>
-        _sessions.GetOrAdd(channelKey, _ => new AgentSession(agentId, _historyLimit));
+    public AgentSession GetOrCreate(string agentName) =>
+        _sessions.GetOrAdd(agentName, _ => new AgentSession(agentName, _historyLimit));
 
-    public AgentSession? Get(string channelKey) =>
-        _sessions.TryGetValue(channelKey, out var session) ? session : null;
+    public AgentSession? Get(string agentName) =>
+        _sessions.TryGetValue(agentName, out var session) ? session : null;
 }

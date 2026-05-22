@@ -10,11 +10,11 @@ public sealed class WebTaskDelivery(AgentSessionRegistry sessionRegistry, ILogge
 
     public async Task DeliverAsync(ScheduledTask task, string result, CancellationToken ct = default)
     {
-        var session = sessionRegistry.Get(task.ChannelKey);
+        var session = sessionRegistry.Get(task.AgentId);
         if (session is null)
         {
-            logger.LogWarning("No active web session for channel key '{ChannelKey}' — task {TaskId} result not delivered",
-                task.ChannelKey, task.Id);
+            logger.LogWarning("No active session for agent '{AgentId}' — task {TaskId} result not delivered",
+                task.AgentId, task.Id);
             return;
         }
 

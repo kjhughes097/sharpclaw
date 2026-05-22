@@ -21,12 +21,13 @@ internal static class ChatEndpoints
             ChatRequest request,
             AgentSessionRegistry sessionRegistry,
             AgentInvoker invoker,
+            ChannelFanOutService fanOut,
             CancellationToken ct) =>
         {
-            var channelKey = $"web:{agentName}";
-            var session = sessionRegistry.GetOrCreate(channelKey, agentName);
+            var session = sessionRegistry.GetOrCreate(agentName);
+            var channelId = $"http:{Guid.NewGuid():N}";
 
-            // Publish inbound message (same as Telegram)
+            // Publish inbound message
             await session.PublishAsync(new AgentMessage(
                 session.SessionId,
                 Guid.NewGuid().ToString(),
@@ -35,8 +36,15 @@ internal static class ChatEndpoints
                 request.Text,
                 DateTimeOffset.UtcNow), ct);
 
-            var schedulingCtx = new SchedulingContext(channelKey, ScheduleChannelType.Web, agentName);
+            // Fan out inbound message to other channels
+            await fanOut.BroadcastAsync(agentName, $"[web] {request.Text}", channelId, ct);
+
+            var schedulingCtx = new SchedulingContext(channelId, ScheduleChannelType.Web, agentName);
             var (switchedTo, responseText) = await invoker.InvokeAsync(session, request.Text, schedulingCtx, ct);
+
+            // Fan out agent response to other channels
+            if (!string.IsNullOrEmpty(responseText))
+                await fanOut.BroadcastAsync(agentName, responseText, channelId, ct);
 
             return Results.Ok(new ChatResponse(responseText, switchedTo));
         });

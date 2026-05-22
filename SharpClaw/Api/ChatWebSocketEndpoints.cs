@@ -18,7 +18,8 @@ internal static class ChatWebSocketEndpoints
             HttpContext context,
             string agentName,
             AgentSessionRegistry sessionRegistry,
-            AgentInvoker invoker) =>
+            AgentInvoker invoker,
+            ChannelFanOutService fanOut) =>
         {
             if (!context.WebSockets.IsWebSocketRequest)
             {
@@ -32,12 +33,14 @@ internal static class ChatWebSocketEndpoints
 
             logger.LogInformation("WebSocket connected for agent {AgentName}", agentName);
 
-            var channelKey = $"web:{agentName}";
-            var session = sessionRegistry.GetOrCreate(channelKey, agentName);
+            var session = sessionRegistry.GetOrCreate(agentName);
+            var channelId = $"ws:{Guid.NewGuid():N}";
+            var sink = new WebSocketChannelSink(ws, channelId);
+            fanOut.Register(agentName, sink);
 
             try
             {
-                await HandleConnectionAsync(ws, session, agentName, channelKey, invoker, logger, context.RequestAborted);
+                await HandleConnectionAsync(ws, session, agentName, channelId, invoker, fanOut, logger, context.RequestAborted);
             }
             catch (WebSocketException ex) when (ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely)
             {
@@ -49,6 +52,7 @@ internal static class ChatWebSocketEndpoints
             }
             finally
             {
+                fanOut.Unregister(agentName, sink);
                 logger.LogInformation("WebSocket disconnected for agent {AgentName}", agentName);
             }
         });
@@ -58,8 +62,9 @@ internal static class ChatWebSocketEndpoints
         WebSocket ws,
         AgentSession session,
         string agentName,
-        string channelKey,
+        string channelId,
         AgentInvoker invoker,
+        ChannelFanOutService fanOut,
         ILogger logger,
         CancellationToken ct)
     {
@@ -75,7 +80,7 @@ internal static class ChatWebSocketEndpoints
             if (inbound is null || string.IsNullOrWhiteSpace(inbound.Text))
                 continue;
 
-            // Publish inbound message (same as HTTP/Telegram path)
+            // Publish inbound message
             await session.PublishAsync(new AgentMessage(
                 session.SessionId,
                 Guid.NewGuid().ToString(),
@@ -84,16 +89,23 @@ internal static class ChatWebSocketEndpoints
                 inbound.Text,
                 DateTimeOffset.UtcNow), ct);
 
+            // Fan out inbound message to other channels
+            await fanOut.BroadcastAsync(agentName, $"[web] {inbound.Text}", channelId, ct);
+
             // Send typing indicator
             await SendMessageAsync(ws, new WsOutboundMessage("typing", null, null), ct);
 
             // Invoke agent (long-running — this is the whole point of WebSocket)
             try
             {
-                var schedulingCtx = new SchedulingContext(channelKey, ScheduleChannelType.Web, agentName);
+                var schedulingCtx = new SchedulingContext(channelId, ScheduleChannelType.Web, agentName);
                 var (switchedTo, responseText) = await invoker.InvokeAsync(session, inbound.Text, schedulingCtx, ct);
 
                 await SendMessageAsync(ws, new WsOutboundMessage("response", responseText, switchedTo), ct);
+
+                // Fan out agent response to other channels
+                if (!string.IsNullOrEmpty(responseText))
+                    await fanOut.BroadcastAsync(agentName, responseText, channelId, ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
