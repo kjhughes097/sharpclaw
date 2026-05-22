@@ -183,6 +183,10 @@ if (!string.IsNullOrEmpty(telegramToken) && telegramToken != "YOUR_BOT_TOKEN_HER
 }
 
 // -- Static files (Web UI) --
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(30),
+});
 app.UseStaticFiles();
 
 // -- Endpoints --
@@ -196,6 +200,7 @@ app.MapGet("/agents", (IAgentRegistry registry) =>
 // -- Web UI API --
 app.MapAgentEndpoints();
 app.MapChatEndpoints();
+app.MapChatWebSocketEndpoints();
 app.MapMcpEndpoints();
 app.MapToolEndpoints();
 app.MapSkillEndpoints();

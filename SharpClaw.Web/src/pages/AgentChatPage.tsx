@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -17,6 +17,8 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { apiFetch } from '../api/client';
+import { useAgentWebSocket } from '../hooks/useAgentWebSocket';
+import type { WsOutboundMessage } from '../hooks/useAgentWebSocket';
 
 interface AgentActivity {
     name: string;
@@ -39,8 +41,29 @@ export default function AgentChatPage() {
     const [agent, setAgent] = useState<AgentActivity | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
-    const [sending, setSending] = useState(false);
+    const [typing, setTyping] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const handleWsMessage = useCallback((msg: WsOutboundMessage) => {
+        if (msg.type === 'typing') {
+            setTyping(true);
+        } else if (msg.type === 'response') {
+            setTyping(false);
+            if (msg.content) {
+                const agentMsg: ChatMessage = { turnType: 'response', content: msg.content, timestamp: new Date().toISOString() };
+                setMessages((prev) => [...prev, agentMsg]);
+            }
+        } else if (msg.type === 'error') {
+            setTyping(false);
+            const errorMsg: ChatMessage = { turnType: 'response', content: `_Error: ${msg.content}_`, timestamp: new Date().toISOString() };
+            setMessages((prev) => [...prev, errorMsg]);
+        }
+    }, []);
+
+    const { send, connected, sending } = useAgentWebSocket({
+        agentName: name,
+        onMessage: handleWsMessage,
+    });
 
     useEffect(() => {
         if (!name) return;
@@ -49,7 +72,7 @@ export default function AgentChatPage() {
             const found = agents.find((a) => a.name === name);
             if (found) setAgent(found);
         });
-        // Load last 10 turns
+        // Load last 20 turns of history
         apiFetch<ChatMessage[]>(`/chat/${name}/history?limit=20`).then(setMessages);
     }, [name]);
 
@@ -57,31 +80,16 @@ export default function AgentChatPage() {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    const handleSend = async () => {
-        if (!input.trim() || !name || sending) return;
+    const handleSend = () => {
+        if (!input.trim() || !name || sending || !connected) return;
         const text = input.trim();
         setInput('');
-        setSending(true);
 
         // Optimistically add user message
         const userMsg: ChatMessage = { turnType: 'request', content: text, timestamp: new Date().toISOString() };
         setMessages((prev) => [...prev, userMsg]);
 
-        try {
-            const res = await apiFetch<{ response: string | null; switchedTo: string | null }>(`/chat/${name}`, {
-                method: 'POST',
-                body: JSON.stringify({ text }),
-            });
-            if (res.response) {
-                const agentMsg: ChatMessage = { turnType: 'response', content: res.response, timestamp: new Date().toISOString() };
-                setMessages((prev) => [...prev, agentMsg]);
-            }
-        } catch (err) {
-            const errorMsg: ChatMessage = { turnType: 'response', content: `_Error: ${err instanceof Error ? err.message : 'Unknown error'}_`, timestamp: new Date().toISOString() };
-            setMessages((prev) => [...prev, errorMsg]);
-        } finally {
-            setSending(false);
-        }
+        send(text);
     };
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -216,6 +224,16 @@ export default function AgentChatPage() {
                     </Box>
 
                     {/* Input */}
+                    {!connected && (
+                        <Typography variant="caption" color="warning.main" sx={{ mb: 1, textAlign: 'center' }}>
+                            Connecting to agent...
+                        </Typography>
+                    )}
+                    {typing && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
+                            Agent is thinking...
+                        </Typography>
+                    )}
                     <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-end' }}>
                         <TextField
                             fullWidth
@@ -225,14 +243,14 @@ export default function AgentChatPage() {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            disabled={sending}
+                            disabled={sending || !connected}
                             size="small"
                             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                         />
                         <IconButton
                             color="primary"
                             onClick={handleSend}
-                            disabled={!input.trim() || sending}
+                            disabled={!input.trim() || sending || !connected}
                         >
                             {sending ? <CircularProgress size={24} /> : <SendRoundedIcon />}
                         </IconButton>
