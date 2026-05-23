@@ -1,6 +1,6 @@
 ---
 llm: copilot
-model: claude-sonnet-4.5
+model: claude-haiku-4.5
 description: General assistant and team coordinator
 tools:
   - spawn_agent

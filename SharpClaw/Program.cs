@@ -80,6 +80,7 @@ builder.Services.AddSingleton<AgentLoader>();
 builder.Services.AddSingleton<McpLoader>();
 builder.Services.AddSingleton<SkillLoader>();
 builder.Services.AddSingleton<ServiceLoader>();
+builder.Services.AddSingleton<ProjectLoader>();
 // -- Execution --
 builder.Services.AddSingleton<CopilotProvider>();
 builder.Services.AddSingleton<ILlmProvider>(sp => sp.GetRequiredService<CopilotProvider>());
@@ -104,6 +105,8 @@ builder.Services.AddSingleton<ScheduleTaskTool>();
 builder.Services.AddSingleton<CancelTaskTool>();
 builder.Services.AddSingleton<WorkspaceFileTool>();
 builder.Services.AddSingleton<WorkspaceWriteTool>();
+builder.Services.AddSingleton<ProjectTool>();
+builder.Services.AddSingleton<TicketTool>();
 
 // -- Sessions & Interactions --
 builder.Services.AddSingleton<AgentSessionRegistry>();
@@ -126,6 +129,7 @@ builder.Services.AddSingleton<ICommand, ListCronCommand>();
 builder.Services.AddSingleton<ICommand, CancelScheduleCommand>();
 builder.Services.AddSingleton<ICommand, ListServicesCommand>();
 builder.Services.AddSingleton<ICommand, RestartCommand>();
+builder.Services.AddSingleton<ICommand, TicketCommand>();
 
 // -- Memory & Auditing --
 builder.Services.AddSingleton<MemoryService>();
@@ -178,6 +182,8 @@ toolRegistry.Register(app.Services.GetRequiredService<ScheduleTaskTool>());
 toolRegistry.Register(app.Services.GetRequiredService<CancelTaskTool>());
 toolRegistry.Register(app.Services.GetRequiredService<WorkspaceFileTool>());
 toolRegistry.Register(app.Services.GetRequiredService<WorkspaceWriteTool>());
+toolRegistry.Register(app.Services.GetRequiredService<ProjectTool>());
+toolRegistry.Register(app.Services.GetRequiredService<TicketTool>());
 
 if (!string.IsNullOrEmpty(telegramToken) && telegramToken != "YOUR_BOT_TOKEN_HERE")
 {
@@ -208,6 +214,7 @@ app.MapToolEndpoints();
 app.MapSkillEndpoints();
 app.MapTaskEndpoints();
 app.MapConfigEndpoints();
+app.MapProjectEndpoints();
 
 app.MapFallbackToFile("index.html");
 

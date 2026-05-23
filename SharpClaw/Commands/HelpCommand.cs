@@ -22,6 +22,10 @@ public sealed class HelpCommand : ICommand
             .lss — List all skills
             .schedules — List scheduled tasks
             .cron — List cron jobs (with expressions)
+            .projects — List all projects
+            .tickets — List all tickets across projects
+            .tickets <project-id> — List tickets in a project
+            .tickets <project-id> <status> — Filter by status
             .help — Show this help message
             """;
         return Task.FromResult(new CommandResult(true, help));
