@@ -18,4 +18,10 @@ public sealed class AgentSessionRegistry(IOptions<SharpClawOptions> options)
 
     public AgentSession? Get(string agentName) =>
         _sessions.TryGetValue(agentName, out var session) ? session : null;
+
+    /// <summary>
+    /// Returns all sessions that currently have an active LLM session (in-flight conversations).
+    /// </summary>
+    public IReadOnlyList<AgentSession> GetActiveSessions() =>
+        _sessions.Values.Where(s => s.LlmSession is not null).ToList();
 }

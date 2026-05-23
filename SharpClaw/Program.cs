@@ -125,6 +125,7 @@ builder.Services.AddSingleton<ICommand, ListSchedulesCommand>();
 builder.Services.AddSingleton<ICommand, ListCronCommand>();
 builder.Services.AddSingleton<ICommand, CancelScheduleCommand>();
 builder.Services.AddSingleton<ICommand, ListServicesCommand>();
+builder.Services.AddSingleton<ICommand, RestartCommand>();
 
 // -- Memory & Auditing --
 builder.Services.AddSingleton<MemoryService>();

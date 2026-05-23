@@ -115,18 +115,34 @@ public sealed class CopilotProvider(ILogger<CopilotProvider> logger) : ILlmProvi
                     adapter.CaptureSchedulingContext();
             }
 
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            logger.LogInformation(
+                "Copilot SendAndWaitAsync starting (session={SessionId}, promptLength={PromptLength})",
+                session.SessionId, prompt.Length);
+
             var result = await copilotSession.Inner.SendAndWaitAsync(
                 new MessageOptions { Prompt = prompt },
-                TimeSpan.FromMinutes(5),
+                TimeSpan.FromMinutes(10),
                 ct);
 
+            stopwatch.Stop();
             var content = result?.Data?.Content ?? string.Empty;
-            logger.LogDebug("Copilot response received ({Length} chars)", content.Length);
+            logger.LogInformation(
+                "Copilot response received (session={SessionId}, {Length} chars, elapsed={Elapsed})",
+                session.SessionId, content.Length, stopwatch.Elapsed);
             return AgentRunResult.Ok(content, session.SessionId);
+        }
+        catch (TimeoutException ex)
+        {
+            logger.LogError(
+                ex,
+                "Copilot SendAndWaitAsync timed out (session={SessionId}). The LLM or a tool call may be unresponsive.",
+                session.SessionId);
+            return AgentRunResult.Fail($"SendAndWaitAsync timed out after 10 minutes (session={session.SessionId}). Check if an MCP server or tool is hanging.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogError(ex, "Copilot send failed");
+            logger.LogError(ex, "Copilot send failed (session={SessionId})", session.SessionId);
             return AgentRunResult.Fail(ex.Message);
         }
     }

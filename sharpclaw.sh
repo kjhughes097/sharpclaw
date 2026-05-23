@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${ROOT_DIR}/.sharpclaw.pid"
+WATCHER_PID_FILE="${ROOT_DIR}/.sharpclaw-watcher.pid"
 LOG_FILE="${ROOT_DIR}/.sharpclaw.log"
 COMPOSE_FILE="${ROOT_DIR}/docker/docker-compose.yml"
 GRAFANA_EXPLORE_LEFT="%7B%22datasource%22%3A%22Loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22SharpClaw%5C%22%7D%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D"
@@ -100,6 +101,9 @@ start_service() {
     rm -f "${PID_FILE}"
   fi
 
+  # Clean up any stale restart signal
+  rm -f "${ROOT_DIR}/.sharpclaw.restart"
+
   echo "Starting SharpClaw service..."
   (
     cd "${ROOT_DIR}"
@@ -108,9 +112,72 @@ start_service() {
   )
 
   echo "SharpClaw started (PID $(cat "${PID_FILE}")). Logs: ${LOG_FILE}"
+
+  # Start the restart watcher
+  start_watcher
+}
+
+start_watcher() {
+  # Kill existing watcher if running
+  if [[ -f "${WATCHER_PID_FILE}" ]]; then
+    local old_pid
+    old_pid="$(cat "${WATCHER_PID_FILE}")"
+    if [[ -n "${old_pid}" ]] && kill -0 "${old_pid}" 2>/dev/null; then
+      kill "${old_pid}" 2>/dev/null || true
+    fi
+    rm -f "${WATCHER_PID_FILE}"
+  fi
+
+  nohup bash -c '
+    ROOT_DIR="'"${ROOT_DIR}"'"
+    PID_FILE="'"${PID_FILE}"'"
+    LOG_FILE="'"${LOG_FILE}"'"
+    SIGNAL_FILE="${ROOT_DIR}/.sharpclaw.restart"
+    PROJECT="'"$(resolve_project)"'"
+
+    while true; do
+      sleep 2
+      [[ -f "${SIGNAL_FILE}" ]] || continue
+
+      rm -f "${SIGNAL_FILE}"
+      echo "[watcher] Restart signal detected. Rebuilding..." >> "${LOG_FILE}"
+
+      # Build first
+      cd "${ROOT_DIR}"
+      if ! dotnet build --project "${PROJECT}" --nologo -q >> "${LOG_FILE}" 2>&1; then
+        echo "[watcher] Build failed — restart aborted." >> "${LOG_FILE}"
+        continue
+      fi
+
+      # Stop current process
+      if [[ -f "${PID_FILE}" ]]; then
+        pid="$(cat "${PID_FILE}")"
+        if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+          kill "${pid}" 2>/dev/null || true
+          for i in {1..20}; do
+            kill -0 "${pid}" 2>/dev/null || break
+            sleep 0.25
+          done
+          kill -0 "${pid}" 2>/dev/null && kill -9 "${pid}" 2>/dev/null || true
+        fi
+        rm -f "${PID_FILE}"
+      fi
+
+      # Start new process
+      echo "[watcher] Starting SharpClaw..." >> "${LOG_FILE}"
+      cd "${ROOT_DIR}"
+      nohup dotnet run --project "${PROJECT}" >>"${LOG_FILE}" 2>&1 &
+      echo $! > "${PID_FILE}"
+      echo "[watcher] SharpClaw restarted (PID $(cat "${PID_FILE}"))." >> "${LOG_FILE}"
+    done
+  ' >/dev/null 2>&1 &
+  echo $! >"${WATCHER_PID_FILE}"
 }
 
 stop_service() {
+  # Stop the watcher first
+  stop_watcher
+
   if ! is_service_running; then
     echo "SharpClaw service is not running."
     rm -f "${PID_FILE}"
@@ -139,6 +206,18 @@ stop_service() {
   kill -9 "${pid}" 2>/dev/null || true
   rm -f "${PID_FILE}"
   echo "SharpClaw service stopped."
+}
+
+stop_watcher() {
+  if [[ -f "${WATCHER_PID_FILE}" ]]; then
+    local watcher_pid
+    watcher_pid="$(cat "${WATCHER_PID_FILE}")"
+    if [[ -n "${watcher_pid}" ]] && kill -0 "${watcher_pid}" 2>/dev/null; then
+      kill "${watcher_pid}" 2>/dev/null || true
+    fi
+    rm -f "${WATCHER_PID_FILE}"
+  fi
+  rm -f "${ROOT_DIR}/.sharpclaw.restart"
 }
 
 start_all() {

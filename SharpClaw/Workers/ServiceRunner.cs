@@ -138,6 +138,23 @@ public sealed class ServiceRunner(
         logger.LogInformation("Service {Name} stopped", name);
     }
 
+    public async Task RestartServiceAsync(string name, CancellationToken ct = default)
+    {
+        var definition = serviceRegistry.Get(name);
+        if (definition is null)
+        {
+            logger.LogWarning("Service {Name} not found in registry", name);
+            return;
+        }
+
+        if (_running.ContainsKey(name))
+        {
+            StopService(name);
+        }
+
+        await StartServiceAsync(definition, ct);
+    }
+
     public IReadOnlyDictionary<string, ManagedService> GetRunningServices() =>
         _running.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
