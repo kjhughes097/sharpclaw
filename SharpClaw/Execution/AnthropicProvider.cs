@@ -27,7 +27,7 @@ public sealed class AnthropicProvider(
             .UseFunctionInvocation()
             .Build();
 
-        // Bridge MCP servers to get their tools
+        // Bridge eager MCP servers to get their tools
         McpToolBridge? mcpBridge = null;
         var allTools = new List<AITool>();
 
@@ -43,15 +43,27 @@ public sealed class AnthropicProvider(
             allTools.AddRange(request.Tools);
         }
 
+        // Create activation tools for lazy MCP servers
+        var lazyActivationTools = new List<LazyMcpActivationTool>();
+        if (request.LazyMcpServers is { Count: > 0 })
+        {
+            foreach (var (name, def) in request.LazyMcpServers)
+            {
+                var activationTool = new LazyMcpActivationTool(name, def, loggerFactory, allTools);
+                lazyActivationTools.Add(activationTool);
+                allTools.Add(activationTool);
+            }
+        }
+
         var chatOptions = new ChatOptions
         {
             Tools = allTools.Count > 0 ? allTools : null,
         };
 
-        logger.LogDebug("Created Anthropic session with model {Model}, {ToolCount} tools",
-            model, allTools.Count);
+        logger.LogDebug("Created Anthropic session with model {Model}, {ToolCount} tools ({LazyCount} lazy MCPs pending)",
+            model, allTools.Count, lazyActivationTools.Count);
 
-        return new AnthropicLlmSession(chatClient, chatOptions, request.SystemPrompt, mcpBridge);
+        return new AnthropicLlmSession(chatClient, chatOptions, request.SystemPrompt, mcpBridge, lazyActivationTools);
     }
 
     public async Task<AgentRunResult> SendAsync(ILlmSession session, string prompt, CancellationToken ct = default)
@@ -94,16 +106,19 @@ public sealed class AnthropicProvider(
         public ChatOptions ChatOptions { get; }
         public List<ChatMessage> Messages { get; } = [];
         private readonly McpToolBridge? _mcpBridge;
+        private readonly IReadOnlyList<LazyMcpActivationTool> _lazyActivationTools;
 
         public AnthropicLlmSession(
             IChatClient chatClient,
             ChatOptions chatOptions,
             string? systemPrompt,
-            McpToolBridge? mcpBridge)
+            McpToolBridge? mcpBridge,
+            IReadOnlyList<LazyMcpActivationTool> lazyActivationTools)
         {
             ChatClient = chatClient;
             ChatOptions = chatOptions;
             _mcpBridge = mcpBridge;
+            _lazyActivationTools = lazyActivationTools;
 
             if (!string.IsNullOrEmpty(systemPrompt))
             {
@@ -119,6 +134,9 @@ public sealed class AnthropicProvider(
 
         public async ValueTask DisposeAsync()
         {
+            foreach (var tool in _lazyActivationTools)
+                await tool.DisposeAsync();
+
             if (_mcpBridge is not null)
                 await _mcpBridge.DisposeAsync();
 

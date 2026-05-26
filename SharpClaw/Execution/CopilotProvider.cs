@@ -47,6 +47,13 @@ public sealed class CopilotProvider(ILogger<CopilotProvider> logger) : ILlmProvi
             ? request.McpServers.ToDictionary(kvp => kvp.Key, kvp => ToSdkConfig(kvp.Value))
             : new Dictionary<string, McpServerConfig>();
 
+        // Copilot SDK manages MCP connections server-side, so lazy MCPs have no token cost — include them eagerly
+        if (request.LazyMcpServers is not null)
+        {
+            foreach (var (name, def) in request.LazyMcpServers)
+                mcpServers[name] = ToSdkConfig(def);
+        }
+
         CopilotSession session;
 
         try
