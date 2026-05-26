@@ -29,20 +29,23 @@ public sealed class AgentRunner(
 
         var adapters = ResolveToolAdapters(request);
         var tools = adapters.Cast<AIFunction>().ToList();
-        var mcpServers = ResolveMcpServers(request);
+        var (eagerMcps, lazyMcps) = ResolveMcpServers(request);
         var systemPrompt = BuildSystemPrompt(request);
 
         logger.LogInformation(
-            "Resolved session configuration: tools={ToolCount}, mcps={McpCount} ({McpNames})",
+            "Resolved session configuration: tools={ToolCount}, mcps={McpCount} ({McpNames}), lazyMcps={LazyCount} ({LazyNames})",
             tools.Count,
-            mcpServers.Count,
-            mcpServers.Count == 0 ? "none" : string.Join(", ", mcpServers.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)));
+            eagerMcps.Count,
+            eagerMcps.Count == 0 ? "none" : string.Join(", ", eagerMcps.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)),
+            lazyMcps.Count,
+            lazyMcps.Count == 0 ? "none" : string.Join(", ", lazyMcps.Keys.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)));
 
         var llmRequest = new LlmSessionRequest(
             Model: request.Model,
             SystemPrompt: systemPrompt,
             Tools: tools,
-            McpServers: mcpServers,
+            McpServers: eagerMcps,
+            LazyMcpServers: lazyMcps.Count > 0 ? lazyMcps : null,
             ResumeSessionId: request.ResumeSessionId
         );
 
@@ -106,7 +109,7 @@ public sealed class AgentRunner(
         }).ToList();
     }
 
-    private IReadOnlyDictionary<string, McpServerDefinition> ResolveMcpServers(AgentRunRequest request)
+    private (Dictionary<string, McpServerDefinition> Eager, Dictionary<string, McpServerDefinition> Lazy) ResolveMcpServers(AgentRunRequest request)
     {
         var mcpNames = request.McpServerNames;
         var allServers = mcpRegistry.GetAll();
@@ -138,7 +141,10 @@ public sealed class AgentRunner(
             FormatNames(mcpNames),
             entries.Count == 0 ? "none" : string.Join(", ", entries.Select(x => x.Key).OrderBy(x => x, StringComparer.OrdinalIgnoreCase)));
 
-        return entries.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        var eager = entries.Where(kvp => !kvp.Value.Lazy).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        var lazy = entries.Where(kvp => kvp.Value.Lazy).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+        return (eager, lazy);
     }
 
     private static string FormatNames(IReadOnlyList<string>? names)

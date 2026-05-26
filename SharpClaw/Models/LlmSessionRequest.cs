@@ -7,5 +7,6 @@ public sealed record LlmSessionRequest(
     string? SystemPrompt = null,
     IReadOnlyList<AIFunction>? Tools = null,
     IReadOnlyDictionary<string, McpServerDefinition>? McpServers = null,
+    IReadOnlyDictionary<string, McpServerDefinition>? LazyMcpServers = null,
     string? ResumeSessionId = null
 );

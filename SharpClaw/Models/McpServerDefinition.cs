@@ -12,4 +12,10 @@ public sealed record McpServerDefinition
     // Http fields
     public string? Url { get; init; }
     public IReadOnlyDictionary<string, string>? Headers { get; init; }
+
+    /// <summary>
+    /// When true, this MCP server is not connected at session start.
+    /// Instead, a lightweight activation tool is provided that connects on first use.
+    /// </summary>
+    public bool Lazy { get; init; }
 }

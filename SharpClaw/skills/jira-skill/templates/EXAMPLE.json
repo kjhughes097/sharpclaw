@@ -1,0 +1,8 @@
+{
+  "project_key": "EXAMPLE",
+  "issue_type": "Story",
+  "priority": "Medium",
+  "labels": ["team-alpha", "backend"],
+  "components": ["api-gateway"],
+  "custom_fields": {}
+}
