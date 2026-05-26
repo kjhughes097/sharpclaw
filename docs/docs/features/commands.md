@@ -13,6 +13,7 @@ Commands are dot-prefixed shortcuts that bypass the LLM entirely. They're proces
 | `.ping` / `hi`   | `PingCommand`        | Shows agent identity card (markdown table) |
 | `.switch {name}` | `SwitchAgentCommand` | Switches the session to a different agent |
 | `.reload`        | `ReloadCommand`      | Reloads agents, tools, and MCP configs    |
+| `.new`           | `NewSessionCommand`  | Starts a fresh session for the current agent |
 | `.restart`       | `RestartCommand`     | Builds and restarts SharpClaw             |
 | `.restart <svc>` | `RestartCommand`     | Restarts a managed service                |
 | `.restart all`   | `RestartCommand`     | Restarts SharpClaw and all managed services |

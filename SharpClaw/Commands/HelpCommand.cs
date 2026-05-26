@@ -10,6 +10,7 @@ public sealed class HelpCommand : ICommand
         var help = """
             Available commands:
             .{letter} — Switch to agent starting with that letter
+            .new — Start a new session for the current agent
             hi / ping — Show current agent name and description
             .reload — Reload all registries from disk
             .restart — Build and restart SharpClaw

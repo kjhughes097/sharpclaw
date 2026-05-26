@@ -20,6 +20,20 @@ public sealed class AgentSessionRegistry(IOptions<SharpClawOptions> options)
         _sessions.TryGetValue(agentName, out var session) ? session : null;
 
     /// <summary>
+    /// Remove and dispose the session for the given agent, forcing a fresh session on next message.
+    /// </summary>
+    public async Task<bool> RemoveAsync(string agentName)
+    {
+        if (!_sessions.TryRemove(agentName, out var session))
+            return false;
+
+        if (session.LlmSession is { } llm)
+            await llm.DisposeAsync();
+
+        return true;
+    }
+
+    /// <summary>
     /// Returns all sessions that currently have an active LLM session (in-flight conversations).
     /// </summary>
     public IReadOnlyList<AgentSession> GetActiveSessions() =>
