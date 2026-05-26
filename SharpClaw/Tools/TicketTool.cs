@@ -16,7 +16,7 @@ public sealed class TicketTool(ProjectLoader loader) : ITool
         new("ticket_id", "string", "Ticket ID (e.g. '001'). Required for get_ticket and update_ticket.", Required: false),
         new("title", "string", "Ticket title. Required for create_ticket, optional for update_ticket.", Required: false),
         new("description", "string", "Ticket description. Optional for create_ticket and update_ticket.", Required: false),
-        new("status", "string", "Ticket status: planning, in_progress, for_review, done. Optional for update_ticket.", Required: false),
+        new("status", "string", "Ticket status: idea, planning, in_progress, for_review, done. Optional for update_ticket.", Required: false),
     ];
 
     public Task<object?> ExecuteAsync(ToolCallContext context, CancellationToken ct = default)

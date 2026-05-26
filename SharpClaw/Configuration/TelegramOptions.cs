@@ -6,5 +6,6 @@ public sealed class TelegramOptions
 
     public string BotToken { get; set; } = string.Empty;
     public List<string> AllowedUsers { get; set; } = [];
+    public List<long> AllowedChatIds { get; set; } = [];
     public string DefaultAgent { get; set; } = string.Empty;
 }

@@ -20,6 +20,7 @@ const sidebars: SidebarsConfig = {
         'features/web-ui',
         'features/workspace',
         'features/memory',
+        'features/projects',
         'features/auditing',
         'features/logging',
       ],

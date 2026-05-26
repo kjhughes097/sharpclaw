@@ -10,21 +10,21 @@ public sealed class RestartCommand(
     IHostEnvironment env,
     ILogger<RestartCommand> logger) : ICommand
 {
-    private static readonly string[] ForceFlags = ["--force", "-f"];
-
     public bool CanHandle(string text)
     {
         var trimmed = text.Trim();
-        return trimmed.StartsWith(".restart", StringComparison.OrdinalIgnoreCase);
+        return trimmed.StartsWith(".restartf", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith(".restart", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<CommandResult> ExecuteAsync(CommandContext context, CancellationToken ct = default)
     {
         var parts = context.RawText.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var force = parts.Any(p => ForceFlags.Contains(p, StringComparer.OrdinalIgnoreCase));
+        var command = parts[0];
+        var force = command.Equals(".restartf", StringComparison.OrdinalIgnoreCase);
         var target = parts
             .Skip(1)
-            .FirstOrDefault(p => !ForceFlags.Contains(p, StringComparer.OrdinalIgnoreCase));
+            .FirstOrDefault();
 
         if (string.IsNullOrEmpty(target) || target.Equals("sharpclaw", StringComparison.OrdinalIgnoreCase))
         {
@@ -55,7 +55,7 @@ public sealed class RestartCommand(
                 var sessionList = string.Join(", ", activeSessions.Select(s => s.AgentId));
                 return new CommandResult(true,
                     $"⚠️ **{activeSessions.Count} active session(s)**: {sessionList}\n\n" +
-                    "Use `.restart --force` to restart anyway, or wait for conversations to complete.");
+                    "Use `.restartf` to restart anyway, or wait for conversations to complete.");
             }
         }
 
@@ -137,7 +137,7 @@ public sealed class RestartCommand(
         var psi = new ProcessStartInfo
         {
             FileName = "dotnet",
-            Arguments = $"build --project \"{projectPath}\" --nologo",
+            Arguments = $"build \"{projectPath}\" --nologo",
             WorkingDirectory = workingDir,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

@@ -190,6 +190,12 @@ public sealed class AgentInvoker(
     {
         var basePrompt = agent.SystemPrompt ?? string.Empty;
 
+        // Inject Telegram chat ID if agent uses send_telegram tool and has a chat ID configured
+        if (agent.ToolNames.Contains("send_telegram") && agent is AgentDefinition agentDef && agentDef.TelegramChatId.HasValue)
+        {
+            basePrompt = $"{basePrompt}\n\n**Telegram Chat ID**: When using the `send_telegram` tool, always use chat ID: `{agentDef.TelegramChatId}`. Do not ask the user for a chat ID—use this configured value.";
+        }
+
         if (agent.SkillNames.Count == 0)
             return string.IsNullOrEmpty(basePrompt) ? null : basePrompt;
 

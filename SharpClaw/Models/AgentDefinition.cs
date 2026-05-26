@@ -9,5 +9,6 @@ public sealed record AgentDefinition(
     IReadOnlyList<string> McpNames,
     IReadOnlyList<string> SkillNames,
     IReadOnlyList<string> SubAgentNames,
+    long? TelegramChatId,
     string? SystemPrompt
 ) : Abstractions.IAgent;

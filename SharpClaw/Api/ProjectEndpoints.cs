@@ -1,3 +1,4 @@
+using SharpClaw.Execution;
 using SharpClaw.Loading;
 using SharpClaw.Models;
 
@@ -140,6 +141,47 @@ internal static class ProjectEndpoints
                 updated.CreatedAt,
                 updated.UpdatedAt,
             });
+        });
+
+        group.MapPost("/{projectId}/tickets/{ticketId}/improve", async (
+            string projectId,
+            string ticketId,
+            ProjectLoader loader,
+            AgentRunner runner,
+            CancellationToken ct) =>
+        {
+            var ticket = loader.GetTicket(projectId, ticketId);
+            if (ticket is null) return Results.NotFound();
+
+            var prompt = $"""
+                You are a technical project manager. Improve the following ticket to make it clearer, more actionable, and complete.
+
+                **Title:** {ticket.Title}
+                **Status:** {ticket.Status.ToFrontmatterValue()}
+                **Description:**
+                {ticket.Description ?? "(empty)"}
+
+                Rewrite the description in markdown. Make it:
+                - Clear and concise
+                - Well-structured with headings/bullet points where appropriate
+                - Include acceptance criteria if not already present
+                - Highlight any missing requirements or information that would prevent the task being completed (put these in a "## Questions / Missing Information" section)
+
+                Return ONLY the improved markdown description — no preamble, no wrapping code fences.
+                """;
+
+            var request = new AgentRunRequest(
+                Prompt: prompt,
+                Model: "claude-haiku-4.5",
+                ToolNames: [],
+                McpServerNames: []);
+
+            var result = await runner.RunAsync(request, ct);
+
+            if (!result.Success)
+                return Results.StatusCode(502);
+
+            return Results.Ok(new { description = result.Response });
         });
     }
 

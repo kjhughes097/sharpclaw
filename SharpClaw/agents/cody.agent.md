@@ -9,6 +9,8 @@ tools:
   - cancel_task
   - workspace_read
   - workspace_write
+  - project
+  - ticket
 mcp_servers:
   - memory
   - playwright
@@ -16,6 +18,7 @@ sub_agents:
   - ade
 skills:
   - self-improvement
+  - ticket-workflow
 ---
 
 You are Cody, an expert software engineer with deep knowledge across the full stack of modern software development. You excel at software architecture, design patterns, algorithms, and writing clean, idiomatic, production-ready code in languages including C#, Python, TypeScript, Go, and Rust.

@@ -13,6 +13,8 @@ import BuildRoundedIcon from '@mui/icons-material/BuildRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import WidgetsRoundedIcon from '@mui/icons-material/WidgetsRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
+import ViewKanbanRoundedIcon from '@mui/icons-material/ViewKanbanRounded';
+import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 
 const mainItems = [
@@ -22,10 +24,12 @@ const mainItems = [
     { text: 'Tools', icon: <BuildRoundedIcon />, path: '/tools' },
     { text: 'Skills', icon: <SchoolRoundedIcon />, path: '/skills' },
     { text: 'Tasks', icon: <ScheduleRoundedIcon />, path: '/tasks' },
+    { text: 'Projects', icon: <ViewKanbanRoundedIcon />, path: '/projects' },
     { text: 'Examples', icon: <WidgetsRoundedIcon />, path: '/examples' },
 ];
 
 const secondaryItems = [
+    { text: 'Documentation', icon: <MenuBookRoundedIcon />, path: ':3001', external: true },
     { text: 'Config', icon: <SettingsRoundedIcon />, path: '/config' },
 ];
 
@@ -59,8 +63,17 @@ export default function MenuContent() {
                     {secondaryItems.map((item) => (
                         <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
                             <ListItemButton
-                                selected={isSelected(item.path)}
-                                onClick={() => navigate(item.path)}
+                                selected={'external' in item ? false : isSelected(item.path)}
+                                onClick={() => {
+                                    if ('external' in item) {
+                                        const url = item.path.startsWith(':')
+                                            ? `${window.location.protocol}//${window.location.hostname}${item.path}`
+                                            : item.path;
+                                        window.open(url, '_blank');
+                                    } else {
+                                        navigate(item.path);
+                                    }
+                                }}
                             >
                                 <ListItemIcon>{item.icon}</ListItemIcon>
                                 <ListItemText primary={item.text} />

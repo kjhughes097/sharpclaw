@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${ROOT_DIR}/.sharpclaw.pid"
 WATCHER_PID_FILE="${ROOT_DIR}/.sharpclaw-watcher.pid"
+DOCS_PID_FILE="${ROOT_DIR}/.sharpclaw-docs.pid"
 LOG_FILE="${ROOT_DIR}/.sharpclaw.log"
 COMPOSE_FILE="${ROOT_DIR}/docker/docker-compose.yml"
 GRAFANA_EXPLORE_LEFT="%7B%22datasource%22%3A%22Loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22SharpClaw%5C%22%7D%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D"
@@ -113,8 +114,57 @@ start_service() {
 
   echo "SharpClaw started (PID $(cat "${PID_FILE}")). Logs: ${LOG_FILE}"
 
+  # Start the docs server
+  start_docs
+
   # Start the restart watcher
   start_watcher
+}
+
+start_docs() {
+  # Kill existing docs server process group if running
+  if [[ -f "${DOCS_PID_FILE}" ]]; then
+    local old_pid
+    old_pid="$(cat "${DOCS_PID_FILE}")"
+    if [[ -n "${old_pid}" ]] && kill -0 "${old_pid}" 2>/dev/null; then
+      # Kill the entire process group to catch child node processes
+      kill -- -"${old_pid}" 2>/dev/null || kill "${old_pid}" 2>/dev/null || true
+    fi
+    rm -f "${DOCS_PID_FILE}"
+  fi
+
+  # Ensure port 3001 is free (in case orphaned process still holds it)
+  local port_pid
+  port_pid="$(lsof -ti tcp:3001 2>/dev/null || true)"
+  if [[ -n "${port_pid}" ]]; then
+    kill ${port_pid} 2>/dev/null || true
+    sleep 1
+  fi
+
+  echo "Starting docs server on http://localhost:3001 ..."
+  (
+    cd "${ROOT_DIR}/docs"
+    setsid nohup npm run start -- --port 3001 --no-open >/dev/null 2>&1 &
+    echo $! >"${DOCS_PID_FILE}"
+  )
+}
+
+stop_docs() {
+  if [[ -f "${DOCS_PID_FILE}" ]]; then
+    local docs_pid
+    docs_pid="$(cat "${DOCS_PID_FILE}")"
+    if [[ -n "${docs_pid}" ]] && kill -0 "${docs_pid}" 2>/dev/null; then
+      # Kill the entire process group
+      kill -- -"${docs_pid}" 2>/dev/null || kill "${docs_pid}" 2>/dev/null || true
+    fi
+    rm -f "${DOCS_PID_FILE}"
+  fi
+  # Clean up any orphaned process on port 3001
+  local port_pid
+  port_pid="$(lsof -ti tcp:3001 2>/dev/null || true)"
+  if [[ -n "${port_pid}" ]]; then
+    kill ${port_pid} 2>/dev/null || true
+  fi
 }
 
 start_watcher() {
@@ -144,7 +194,7 @@ start_watcher() {
 
       # Build first
       cd "${ROOT_DIR}"
-      if ! dotnet build --project "${PROJECT}" --nologo -q >> "${LOG_FILE}" 2>&1; then
+      if ! dotnet build "${PROJECT}" --nologo -q >> "${LOG_FILE}" 2>&1; then
         echo "[watcher] Build failed — restart aborted." >> "${LOG_FILE}"
         continue
       fi
@@ -177,6 +227,9 @@ start_watcher() {
 stop_service() {
   # Stop the watcher first
   stop_watcher
+
+  # Stop docs server
+  stop_docs
 
   if ! is_service_running; then
     echo "SharpClaw service is not running."

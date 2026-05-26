@@ -76,6 +76,11 @@ public sealed class TelegramService(
             cancellationToken: ct);
 
         logger.LogInformation("Telegram bot started");
+
+        // Eagerly register Telegram sinks for agents with a configured chat ID
+        // so that fan-out from other channels (web UI) reaches Telegram immediately.
+        RegisterEagerSinks();
+
         await Task.Delay(Timeout.Infinite, ct);
     }
 
@@ -452,6 +457,63 @@ public sealed class TelegramService(
         if (chat.Type is not (ChatType.Group or ChatType.Supergroup)) return null;
         if (string.IsNullOrWhiteSpace(chat.Title)) return null;
         return agentRegistry.Get(chat.Title)?.Name;
+    }
+
+    private void RegisterEagerSinks()
+    {
+        // Register sinks for agents with explicit telegram_chat_id in frontmatter
+        foreach (var agent in agentRegistry.GetAll())
+        {
+            if (agent is AgentDefinition { TelegramChatId: { } chatId })
+            {
+                EnsureTelegramSinkRegistered(agent.Name, chatId);
+                logger.LogInformation(
+                    "Eagerly registered Telegram sink for agent {Agent} → chat {ChatId}",
+                    agent.Name, chatId);
+            }
+        }
+
+        // Discover group chats from AllowedChatIds whose title matches an agent name
+        _ = DiscoverGroupSinksAsync();
+    }
+
+    private async Task DiscoverGroupSinksAsync()
+    {
+        var allowedChatIds = telegramOptions.Value.AllowedChatIds;
+        if (allowedChatIds is null || allowedChatIds.Count == 0)
+            return;
+
+        foreach (var chatId in allowedChatIds)
+        {
+            try
+            {
+                var chat = await botClient.GetChat(chatId);
+                if (chat.Type is not (ChatType.Group or ChatType.Supergroup))
+                    continue;
+
+                var title = chat.Title;
+                if (string.IsNullOrWhiteSpace(title))
+                    continue;
+
+                var agent = agentRegistry.Get(title);
+                if (agent is null)
+                    continue;
+
+                // Already registered via frontmatter — skip
+                if (agent is AgentDefinition { TelegramChatId: not null })
+                    continue;
+
+                EnsureTelegramSinkRegistered(agent.Name, chatId);
+                router.Map(chatId, agent.Name);
+                logger.LogInformation(
+                    "Discovered Telegram group '{Title}' (chat {ChatId}) → agent {Agent}",
+                    title, chatId, agent.Name);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to query Telegram chat {ChatId} during sink discovery", chatId);
+            }
+        }
     }
 
     private Task HandleErrorAsync(ITelegramBotClient _, Exception ex, CancellationToken ct)

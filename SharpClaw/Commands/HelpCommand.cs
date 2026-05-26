@@ -12,7 +12,8 @@ public sealed class HelpCommand : ICommand
             .{letter} — Switch to agent starting with that letter
             hi / ping — Show current agent name and description
             .reload — Reload all registries from disk
-            .restart — Build and restart SharpClaw (use --force to skip in-flight check)
+            .restart — Build and restart SharpClaw
+            .restartf — Force restart (skip in-flight check)
             .restart <service> — Restart a managed service
             .restart all — Restart SharpClaw and all managed services
             .lsa — List all agents
