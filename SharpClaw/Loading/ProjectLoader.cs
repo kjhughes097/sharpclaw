@@ -9,7 +9,7 @@ public sealed class ProjectLoader(
     IOptions<SharpClawOptions> options,
     ILogger<ProjectLoader> logger)
 {
-    private string ProjectsDir => ResolvePath(options.Value.ProjectsDirectory);
+    private string ProjectsDir => ResolveProjectsPath();
 
     public IReadOnlyList<Project> GetAllProjects()
     {
@@ -249,8 +249,20 @@ public sealed class ProjectLoader(
             .ToArray())
         .Trim('-');
 
-    private string ResolvePath(string path) =>
-        Path.IsPathRooted(path) ? path : Path.Combine(env.ContentRootPath, path);
+    private string ResolveProjectsPath()
+    {
+        var projectsDir = options.Value.ProjectsDirectory;
+
+        if (Path.IsPathRooted(projectsDir))
+            return projectsDir;
+
+        // Prefer workspace path when configured
+        var workspace = options.Value.WorkspacePath;
+        if (!string.IsNullOrWhiteSpace(workspace))
+            return Path.Combine(workspace, projectsDir);
+
+        return Path.Combine(env.ContentRootPath, projectsDir);
+    }
 }
 
 internal static class StringExtensions

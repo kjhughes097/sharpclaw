@@ -1,5 +1,6 @@
 using SharpClaw.Abstractions;
 using SharpClaw.Models;
+using SharpClaw.Scheduling;
 using Telegram.Bot;
 using Telegram.Bot.Types.Enums;
 
@@ -8,6 +9,7 @@ namespace SharpClaw.Tools;
 public sealed class SendTelegramTool(
     ITelegramBotClient botClient,
     IConfiguration configuration,
+    SchedulingContextAccessor schedulingContextAccessor,
     ILogger<SendTelegramTool> logger) : ITool
 {
     private readonly HashSet<long> _allowedChatIds = configuration
@@ -16,11 +18,11 @@ public sealed class SendTelegramTool(
         ?.ToHashSet() ?? [];
 
     public string Name => "send_telegram";
-    public string Description => "Send a message to a Telegram chat. Only pre-approved chat IDs are permitted.";
+    public string Description => "Send a message to a Telegram chat. Only pre-approved chat IDs are permitted. When running from a scheduled task, the chat_id defaults to the originating chat.";
 
     public IReadOnlyList<ToolParameterDefinition> Parameters { get; } =
     [
-        new("chat_id", "string", "The Telegram chat ID to send the message to.", Required: true),
+        new("chat_id", "string", "The Telegram chat ID to send the message to. Optional when running from a scheduled task — defaults to the originating chat.", Required: false),
         new("message", "string", "The message text to send.", Required: true),
     ];
 
@@ -29,8 +31,19 @@ public sealed class SendTelegramTool(
         var chatIdStr = context.GetString("chat_id");
         var message = context.GetString("message");
 
+        // Fall back to scheduling context channel key if chat_id not provided
         if (string.IsNullOrWhiteSpace(chatIdStr))
-            return "Error: chat_id is required.";
+        {
+            var schedulingContext = schedulingContextAccessor.Current;
+            if (schedulingContext is { ChannelType: ScheduleChannelType.Telegram })
+            {
+                chatIdStr = schedulingContext.ChannelKey;
+                logger.LogDebug("SendTelegramTool: using channel key {ChatId} from scheduling context", chatIdStr);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(chatIdStr))
+            return "Error: chat_id is required (no scheduling context available to infer it).";
 
         if (string.IsNullOrWhiteSpace(message))
             return "Error: message is required.";

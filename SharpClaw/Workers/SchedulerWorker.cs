@@ -9,6 +9,7 @@ public sealed class SchedulerWorker(
     ScheduleStore store,
     IAgentRegistry agentRegistry,
     AgentRunner runner,
+    SchedulingContextAccessor schedulingContextAccessor,
     IEnumerable<ITaskResultDelivery> deliveryHandlers,
     ILogger<SchedulerWorker> logger) : BackgroundService
 {
@@ -79,6 +80,10 @@ public sealed class SchedulerWorker(
 
         logger.LogInformation("Executing scheduled task {TaskId}: agent={Agent}, prompt={Prompt}",
             task.Id, task.AgentId, task.Prompt[..Math.Min(task.Prompt.Length, 80)]);
+
+        // Set scheduling context so tools (e.g. send_telegram) can access channel info
+        schedulingContextAccessor.Current = new SchedulingContext(
+            task.ChannelKey, task.ChannelType, task.AgentId);
 
         var request = new AgentRunRequest(
             Prompt: task.Prompt,
