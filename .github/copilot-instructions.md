@@ -174,3 +174,41 @@ cd docs && npm start        # Dev server with hot reload
 - **MCP bridging for Anthropic**: `McpToolBridge` connects to MCP servers as a client using `ModelContextProtocol` SDK, discovers tools via `ListToolsAsync()`, and exposes them as `AITool` instances. MCP connections are per-session and disposed when the session ends.
 - **Web chat shares Telegram path**: `ChatEndpoints` uses the same `AgentSessionRegistry` + `AgentInvoker` flow as Telegram. Channel key is `web:{agentName}`. Messages appear in transcripts and both UIs.
 - **Command responses use markdown**: `PingCommand` and other command responses use markdown (not Telegram HTML) for cross-UI compatibility.
+
+## Git Workflow
+
+Never commit directly to `main`. Always use a feature branch and pull request.
+
+### Before Editing Files
+
+1. Ensure a clean state (stash or commit unrelated changes)
+2. Create a feature branch from `main`:
+   ```bash
+   git checkout main && git pull agent main
+   git checkout -b cody/<short-description>
+   ```
+3. Use descriptive branch names (e.g., `cody/add-restart-command`, `cody/fix-timeout-handling`)
+
+### After Completing Edits
+
+1. Stage and commit:
+   ```bash
+   git -c user.name="Cody" -c user.email="cody-agent@sharpclaw" -c commit.gpgsign=false add -A
+   git -c user.name="Cody" -c user.email="cody-agent@sharpclaw" -c commit.gpgsign=false commit -m "<descriptive message>"
+   ```
+2. Push the branch:
+   ```bash
+   git push agent cody/<short-description>
+   ```
+3. Create a pull request:
+   ```bash
+   gh pr create --title "<PR title>" --body "<description>" --base main --head cody/<short-description>
+   ```
+4. Inform the user the PR is ready and provide the URL.
+
+### Rules
+
+- **Never push directly to `main`** — always use a feature branch + PR.
+- **One logical change per branch/PR** — don't bundle unrelated work.
+- **Include context in PR descriptions** — what changed, why, and any testing done.
+- After the PR is created, switch back to `main` for the next task.
