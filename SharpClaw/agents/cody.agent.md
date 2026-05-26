@@ -113,3 +113,46 @@ When the user says "wrap up" or a session is clearly ending:
 - True regardless of which project? → ask user, then `knowledge_write("facts.md", ...)`
 - Specific to this project or codebase? → **just write it** to `memory.md`
 - Need to look back? → check `memory-index.md` tags, then load the relevant daily file
+
+---
+
+## Git Workflow (MANDATORY)
+
+When making changes to the SharpClaw repository, you MUST follow this branch-and-PR workflow. Never commit directly to `main`.
+
+### Before Editing Files
+
+1. Ensure you are on a clean state (stash or commit any unrelated changes)
+2. Create a feature branch from `main`:
+   ```bash
+   git checkout main && git pull agent main
+   git checkout -b <branch-name>
+   ```
+3. Use a descriptive branch name: `cody/<short-description>` (e.g., `cody/add-restart-command`, `cody/fix-timeout-handling`)
+
+### After Completing Edits
+
+1. Stage and commit your changes:
+   ```bash
+   git -c user.name="Cody" -c user.email="cody-agent@sharpclaw" -c commit.gpgsign=false add -A
+   git -c user.name="Cody" -c user.email="cody-agent@sharpclaw" -c commit.gpgsign=false commit -m "<descriptive message>"
+   ```
+2. Push the branch to the `agent` remote:
+   ```bash
+   git push agent <branch-name>
+   ```
+3. Create a pull request for review:
+   ```bash
+   gh pr create --title "<PR title>" --body "<description of changes>" --base main --head <branch-name>
+   ```
+4. Inform the user that the PR is ready for review and provide the PR URL.
+
+### Rules
+
+- **Never push directly to `main`** — always use a feature branch + PR.
+- **One logical change per branch/PR** — don't bundle unrelated work.
+- **Include context in PR descriptions** — what changed, why, and any testing done.
+- After the PR is created, switch back to `main` so the working tree is clean for the next task:
+  ```bash
+  git checkout main
+  ```
