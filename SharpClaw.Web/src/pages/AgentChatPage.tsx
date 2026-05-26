@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
@@ -12,7 +12,9 @@ import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import CircularProgress from '@mui/material/CircularProgress';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
+import EditIcon from '@mui/icons-material/Edit';
 import Paper from '@mui/material/Paper';
+import Tooltip from '@mui/material/Tooltip';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { LineChart } from '@mui/x-charts/LineChart';
@@ -38,6 +40,7 @@ interface ChatMessage {
 
 export default function AgentChatPage() {
     const { name } = useParams<{ name: string }>();
+    const navigate = useNavigate();
     const [agent, setAgent] = useState<AgentActivity | null>(null);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
@@ -132,6 +135,11 @@ export default function AgentChatPage() {
                                             <Chip label={`${agent.toolNames.length} tools`} size="small" variant="outlined" sx={{ fontSize: '0.65rem', height: 18 }} />
                                         </Stack>
                                     </Box>
+                                    <Tooltip title="Edit agent">
+                                        <IconButton size="small" sx={{ color: 'inherit', opacity: 0.7, '&:hover': { opacity: 1 } }} onClick={(e) => { e.stopPropagation(); navigate(`/agents/${agent.name}/edit`); }}>
+                                            <EditIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
                                 </Stack>
                             </Grid>
                             <Grid size={{ xs: 12, md: 5 }}>

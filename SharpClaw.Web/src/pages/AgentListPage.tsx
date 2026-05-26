@@ -10,6 +10,9 @@ import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import Grid from '@mui/material/Grid';
 import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { apiFetch } from '../api/client';
 
@@ -73,6 +76,11 @@ export default function AgentListPage() {
                                                 <Chip label={`${agent.toolNames.length} tools`} size="small" variant="outlined" sx={{ fontSize: '0.65rem', height: 18 }} />
                                             </Stack>
                                         </Box>
+                                        <Tooltip title="Edit agent">
+                                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); navigate(`/agents/${agent.name}/edit`); }}>
+                                                <EditIcon fontSize="small" />
+                                            </IconButton>
+                                        </Tooltip>
                                     </Stack>
                                 </Grid>
                                 {/* Activity Chart (1/2) */}
