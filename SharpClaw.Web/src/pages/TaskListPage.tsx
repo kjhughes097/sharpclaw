@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Grid from '@mui/material/Grid';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
+import CardActionArea from '@mui/material/CardActionArea';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
 import { getTasks } from '../api/tasks';
@@ -16,6 +18,7 @@ function formatDate(iso: string | null): string {
 
 export default function TaskListPage() {
     const [tasks, setTasks] = useState<ScheduledTaskSummary[]>([]);
+    const navigate = useNavigate();
 
     useEffect(() => { getTasks().then(setTasks); }, []);
 
@@ -34,6 +37,7 @@ export default function TaskListPage() {
                 {tasks.map((task) => (
                     <Grid key={task.id} size={{ xs: 12, sm: 6, md: 3 }}>
                         <Card variant="outlined" sx={{ height: '100%', opacity: task.enabled ? 1 : 0.6 }}>
+                            <CardActionArea onClick={() => navigate(`/tasks/${task.id}`)} sx={{ height: '100%' }}>
                             <CardContent>
                                 <Stack direction="row" spacing={1} sx={{ mb: 1, alignItems: 'center' }}>
                                     <Typography variant="subtitle1" sx={{ fontWeight: 600, flex: 1 }} noWrap>
@@ -78,6 +82,7 @@ export default function TaskListPage() {
                                     </Typography>
                                 )}
                             </CardContent>
+                            </CardActionArea>
                         </Card>
                     </Grid>
                 ))}
