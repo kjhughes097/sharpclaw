@@ -30,7 +30,7 @@ public sealed class AgentRunner(
         var adapters = ResolveToolAdapters(request);
         var tools = adapters.Cast<AIFunction>().ToList();
         var (eagerMcps, lazyMcps) = ResolveMcpServers(request);
-        var systemPrompt = BuildSystemPrompt(request);
+        var systemPrompt = BuildSystemPrompt(request, lazyMcps.Keys.ToList());
 
         logger.LogInformation(
             "Resolved session configuration: tools={ToolCount}, mcps={McpCount} ({McpNames}), lazyMcps={LazyCount} ({LazyNames})",
@@ -154,12 +154,20 @@ public sealed class AgentRunner(
         return string.Join(", ", names);
     }
 
-    private string? BuildSystemPrompt(AgentRunRequest request)
+    private string? BuildSystemPrompt(AgentRunRequest request, IReadOnlyList<string> lazyMcpNames)
     {
-        if (request.SystemPromptOverride is not null)
-            return AppendSkillPrompts(request.SystemPromptOverride, request.ToolNames);
+        var prompt = request.SystemPromptOverride is not null
+            ? AppendSkillPrompts(request.SystemPromptOverride, request.ToolNames)
+            : null;
 
-        return null;
+        if (lazyMcpNames.Count == 0)
+            return prompt;
+
+        var hints = string.Join("\n", lazyMcpNames.Select(name =>
+            $"- Call `activate_{name}` to enable {name} tools. They are not available until activated."));
+        var lazyHint = $"\n\n## On-demand toolsets\n\nThe following toolsets require activation before use:\n{hints}";
+
+        return (prompt ?? string.Empty) + lazyHint;
     }
 
     private string AppendSkillPrompts(string basePrompt, IReadOnlyList<string>? agentSkillNames)
