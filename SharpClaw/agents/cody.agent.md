@@ -14,6 +14,8 @@ tools:
 mcp_servers:
   - memory
   - playwright
+lazy_mcps:
+  - playwright
 sub_agents:
   - ade
 skills:
