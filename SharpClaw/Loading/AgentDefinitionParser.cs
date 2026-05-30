@@ -16,7 +16,7 @@ internal static class AgentDefinitionParser
         var lines = File.ReadAllLines(filePath);
 
         if (lines.Length == 0 || lines[0].Trim() != "---")
-            return new AgentDefinition(name, null, null, null, [], [], [], [], null, BuildPrompt(lines, 0));
+            return new AgentDefinition(name, null, null, null, [], [], [], [], [], null, BuildPrompt(lines, 0));
 
         var endFrontmatter = -1;
         for (var i = 1; i < lines.Length; i++)
@@ -29,7 +29,7 @@ internal static class AgentDefinitionParser
         }
 
         if (endFrontmatter == -1)
-            return new AgentDefinition(name, null, null, null, [], [], [], [], null, BuildPrompt(lines, 0));
+            return new AgentDefinition(name, null, null, null, [], [], [], [], [], null, BuildPrompt(lines, 0));
 
         string? description = null;
         string? llm = null;
@@ -37,6 +37,7 @@ internal static class AgentDefinitionParser
         long? telegramChatId = null;
         var tools = new List<string>();
         var mcpServers = new List<string>();
+        var lazyMcps = new List<string>();
         var skills = new List<string>();
         var subAgents = new List<string>();
         string? currentKey = null;
@@ -52,6 +53,7 @@ internal static class AgentDefinitionParser
                 {
                     case "tools": tools.Add(item); break;
                     case "mcp_servers": mcpServers.Add(item); break;
+                    case "lazy_mcps": lazyMcps.Add(item); break;
                     case "skills": skills.Add(item); break;
                     case "sub_agents": subAgents.Add(item); break;
                 }
@@ -78,6 +80,9 @@ internal static class AgentDefinitionParser
                     case "mcp_servers":
                         ParseInlineList(value, mcpServers);
                         break;
+                    case "lazy_mcps":
+                        ParseInlineList(value, lazyMcps);
+                        break;
                     case "skills":
                         ParseInlineList(value, skills);
                         break;
@@ -89,7 +94,7 @@ internal static class AgentDefinitionParser
         }
 
         var systemPrompt = BuildPrompt(lines, endFrontmatter + 1);
-        return new AgentDefinition(name, description, llm, model, tools, mcpServers, skills, subAgents, telegramChatId, systemPrompt);
+        return new AgentDefinition(name, description, llm, model, tools, mcpServers, lazyMcps, skills, subAgents, telegramChatId, systemPrompt);
     }
 
     private static void ParseInlineList(string value, List<string> target)

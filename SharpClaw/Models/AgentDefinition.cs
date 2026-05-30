@@ -7,6 +7,7 @@ public sealed record AgentDefinition(
     string? Model,
     IReadOnlyList<string> ToolNames,
     IReadOnlyList<string> McpNames,
+    IReadOnlyList<string> LazyMcpNames,
     IReadOnlyList<string> SkillNames,
     IReadOnlyList<string> SubAgentNames,
     long? TelegramChatId,

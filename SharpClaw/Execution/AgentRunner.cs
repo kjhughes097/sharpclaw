@@ -141,8 +141,25 @@ public sealed class AgentRunner(
             FormatNames(mcpNames),
             entries.Count == 0 ? "none" : string.Join(", ", entries.Select(x => x.Key).OrderBy(x => x, StringComparer.OrdinalIgnoreCase)));
 
-        var eager = entries.Where(kvp => !kvp.Value.Lazy).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-        var lazy = entries.Where(kvp => kvp.Value.Lazy).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        // Per-agent lazy_mcps override the global Lazy flag on the definition.
+        // If LazyMcpNames is specified, those names are lazy and all others are eager.
+        // If not specified, fall back to the global Lazy flag on each definition.
+        var lazyMcpNames = request.LazyMcpNames;
+
+        var eager = new Dictionary<string, McpServerDefinition>(StringComparer.OrdinalIgnoreCase);
+        var lazy = new Dictionary<string, McpServerDefinition>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (name, definition) in entries)
+        {
+            var isLazy = lazyMcpNames is not null
+                ? lazyMcpNames.Contains(name, StringComparer.OrdinalIgnoreCase)
+                : definition.Lazy;
+
+            if (isLazy)
+                lazy[name] = definition;
+            else
+                eager[name] = definition;
+        }
 
         return (eager, lazy);
     }

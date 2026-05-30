@@ -7,5 +7,6 @@ public sealed record AgentRunRequest(
     string? SystemPromptOverride = null,
     string? ResumeSessionId = null,
     IReadOnlyList<string>? ToolNames = null,
-    IReadOnlyList<string>? McpServerNames = null
+    IReadOnlyList<string>? McpServerNames = null,
+    IReadOnlyList<string>? LazyMcpNames = null
 );

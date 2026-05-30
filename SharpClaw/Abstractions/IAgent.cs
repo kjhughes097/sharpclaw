@@ -11,6 +11,7 @@ public interface IAgent
     string? SystemPrompt { get; }
     IReadOnlyList<string> ToolNames { get; }
     IReadOnlyList<string> McpNames { get; }
+    IReadOnlyList<string> LazyMcpNames { get; }
     IReadOnlyList<string> SkillNames { get; }
     IReadOnlyList<string> SubAgentNames { get; }
 }

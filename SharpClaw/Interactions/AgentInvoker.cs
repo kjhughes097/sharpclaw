@@ -121,7 +121,8 @@ public sealed class AgentInvoker(
                 Model: agent.Model,
                 SystemPromptOverride: systemPrompt,
                 McpServerNames: agent.McpNames.Count > 0 ? agent.McpNames : null,
-                ToolNames: agent.ToolNames.Count > 0 ? agent.ToolNames : null
+                ToolNames: agent.ToolNames.Count > 0 ? agent.ToolNames : null,
+                LazyMcpNames: agent.LazyMcpNames.Count > 0 ? agent.LazyMcpNames : null
             );
             var llmSession = await runner.CreateSessionAsync(request, ct);
             session.SetLlmSession(llmSession);
