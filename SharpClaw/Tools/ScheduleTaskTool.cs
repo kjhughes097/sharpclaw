@@ -9,14 +9,15 @@ public sealed class ScheduleTaskTool(
     SchedulingContextAccessor contextAccessor) : ITool
 {
     public string Name => "schedule_task";
-    public string Description => "Schedule a task to run an agent prompt at a specified time. Supports one-off and recurring schedules using cron expressions (5-field standard cron: minute hour day-of-month month day-of-week).";
+    public string Description => "Schedule a task to run an agent prompt or shell command at a specified time. Supports one-off and recurring schedules using cron expressions (5-field standard cron: minute hour day-of-month month day-of-week).";
 
     public IReadOnlyList<ToolParameterDefinition> Parameters { get; } =
     [
-        new("prompt", "string", "The prompt to send to the agent when the task fires.", Required: true),
+        new("prompt", "string", "The prompt to send to the agent when the task fires. Required for agent tasks, used as description for command tasks.", Required: true),
         new("cron_expression", "string", "Standard 5-field cron expression (e.g. '0 8 * * 3' for every Wednesday at 8am UTC).", Required: true),
         new("one_off", "boolean", "If true, the task runs once at the next matching time and is then deleted. Defaults to false (recurring).", Required: false),
         new("description", "string", "A short human-readable description of what this scheduled task does.", Required: false),
+        new("command", "string", "Shell command to execute. When provided, creates a command task instead of an agent task. The command runs in /bin/bash.", Required: false),
     ];
 
     public Task<object?> ExecuteAsync(ToolCallContext context, CancellationToken ct = default)
@@ -25,6 +26,7 @@ public sealed class ScheduleTaskTool(
         var cronExpr = context.GetString("cron_expression");
         var oneOffStr = context.GetString("one_off");
         var description = context.GetString("description");
+        var command = context.GetString("command");
 
         if (string.IsNullOrWhiteSpace(prompt))
             return Task.FromResult<object?>("Error: 'prompt' is required.");
@@ -44,6 +46,7 @@ public sealed class ScheduleTaskTool(
         }
 
         var isOneOff = string.Equals(oneOffStr, "true", StringComparison.OrdinalIgnoreCase);
+        var taskType = string.IsNullOrWhiteSpace(command) ? ScheduledTaskType.Agent : ScheduledTaskType.Command;
 
         // Get channel context
         var schedulingContext = contextAccessor.Current;
@@ -73,6 +76,8 @@ public sealed class ScheduleTaskTool(
             IsOneOff = isOneOff,
             ChannelKey = channelKey,
             ChannelType = channelType,
+            TaskType = taskType,
+            Command = command,
             CreatedUtc = now,
             NextRunUtc = nextRunUtc,
         };
@@ -80,9 +85,12 @@ public sealed class ScheduleTaskTool(
         store.Save(task);
 
         var scheduleType = isOneOff ? "one-off" : "recurring";
-        var result = $"Scheduled {scheduleType} task (ID: {task.Id}). Next run: {nextRunUtc:yyyy-MM-dd HH:mm} UTC. Cron: {cronExpr}";
+        var taskKind = taskType == ScheduledTaskType.Command ? "command" : "agent";
+        var result = $"Scheduled {scheduleType} {taskKind} task (ID: {task.Id}). Next run: {nextRunUtc:yyyy-MM-dd HH:mm} UTC. Cron: {cronExpr}";
         if (!string.IsNullOrEmpty(description))
             result += $"\nDescription: {description}";
+        if (taskType == ScheduledTaskType.Command)
+            result += $"\nCommand: {command}";
 
         return Task.FromResult<object?>(result);
     }
