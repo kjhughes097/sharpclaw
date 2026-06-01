@@ -117,6 +117,7 @@ public sealed class ScheduleStore
             "---",
             $"id: {task.Id}",
             $"agent: {task.AgentId}",
+            $"type: {task.TaskType.ToString().ToLowerInvariant()}",
             $"cron: \"{task.CronExpression}\"",
             $"one_off: {task.IsOneOff.ToString().ToLowerInvariant()}",
             $"channel_key: \"{task.ChannelKey}\"",
@@ -132,6 +133,9 @@ public sealed class ScheduleStore
 
         if (!string.IsNullOrEmpty(task.Description))
             lines.Add($"description: \"{EscapeYaml(task.Description)}\"");
+
+        if (!string.IsNullOrEmpty(task.Command))
+            lines.Add($"command: \"{EscapeYaml(task.Command)}\"");
 
         lines.Add("---");
         lines.Add(string.Empty);
@@ -168,6 +172,11 @@ public sealed class ScheduleStore
             !props.TryGetValue("cron", out var cron))
             return null;
 
+        var taskType = props.TryGetValue("type", out var typeStr) &&
+                      Enum.TryParse<ScheduledTaskType>(typeStr, true, out var parsedType)
+            ? parsedType
+            : ScheduledTaskType.Agent;
+
         return new ScheduledTask
         {
             Id = id,
@@ -182,6 +191,8 @@ public sealed class ScheduleStore
                           Enum.TryParse<ScheduleChannelType>(ct, true, out var channelType)
                 ? channelType
                 : ScheduleChannelType.Telegram,
+            TaskType = taskType,
+            Command = props.GetValueOrDefault("command"),
             CreatedUtc = props.TryGetValue("created", out var created) &&
                          DateTimeOffset.TryParse(created, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var createdDto)
                 ? createdDto
