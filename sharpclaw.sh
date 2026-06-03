@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PID_FILE="${ROOT_DIR}/.sharpclaw.pid"
 WATCHER_PID_FILE="${ROOT_DIR}/.sharpclaw-watcher.pid"
 DOCS_PID_FILE="${ROOT_DIR}/.sharpclaw-docs.pid"
+WEB_PID_FILE="${ROOT_DIR}/.sharpclaw-web.pid"
 LOG_FILE="${ROOT_DIR}/.sharpclaw.log"
 COMPOSE_FILE="${ROOT_DIR}/docker/docker-compose.yml"
 GRAFANA_EXPLORE_LEFT="%7B%22datasource%22%3A%22Loki%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22expr%22%3A%22%7Bservice_name%3D%5C%22SharpClaw%5C%22%7D%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D"
@@ -117,6 +118,9 @@ start_service() {
   # Start the docs server
   start_docs
 
+  # Start the web UI dev server
+  start_web
+
   # Start the restart watcher
   start_watcher
 }
@@ -147,6 +151,50 @@ start_docs() {
     setsid nohup npm run start -- --port 3001 --no-open >/dev/null 2>&1 &
     echo $! >"${DOCS_PID_FILE}"
   )
+}
+
+start_web() {
+  # Kill existing web dev server if running
+  if [[ -f "${WEB_PID_FILE}" ]]; then
+    local old_pid
+    old_pid="$(cat "${WEB_PID_FILE}")"
+    if [[ -n "${old_pid}" ]] && kill -0 "${old_pid}" 2>/dev/null; then
+      kill -- -"${old_pid}" 2>/dev/null || kill "${old_pid}" 2>/dev/null || true
+    fi
+    rm -f "${WEB_PID_FILE}"
+  fi
+
+  # Ensure port 5173 is free
+  local port_pid
+  port_pid="$(lsof -ti tcp:5173 2>/dev/null || true)"
+  if [[ -n "${port_pid}" ]]; then
+    kill ${port_pid} 2>/dev/null || true
+    sleep 1
+  fi
+
+  echo "Starting web UI dev server on http://localhost:5173 ..."
+  (
+    cd "${ROOT_DIR}/SharpClaw.Web"
+    setsid nohup npm run dev -- --host >/dev/null 2>&1 &
+    echo $! >"${WEB_PID_FILE}"
+  )
+}
+
+stop_web() {
+  if [[ -f "${WEB_PID_FILE}" ]]; then
+    local web_pid
+    web_pid="$(cat "${WEB_PID_FILE}")"
+    if [[ -n "${web_pid}" ]] && kill -0 "${web_pid}" 2>/dev/null; then
+      kill -- -"${web_pid}" 2>/dev/null || kill "${web_pid}" 2>/dev/null || true
+    fi
+    rm -f "${WEB_PID_FILE}"
+  fi
+  # Clean up any orphaned process on port 5173
+  local port_pid
+  port_pid="$(lsof -ti tcp:5173 2>/dev/null || true)"
+  if [[ -n "${port_pid}" ]]; then
+    kill ${port_pid} 2>/dev/null || true
+  fi
 }
 
 stop_docs() {
@@ -227,6 +275,9 @@ start_watcher() {
 stop_service() {
   # Stop the watcher first
   stop_watcher
+
+  # Stop web UI dev server
+  stop_web
 
   # Stop docs server
   stop_docs
