@@ -168,18 +168,18 @@ start_web() {
     rm -f "${WEB_PID_FILE}"
   fi
 
-  # Ensure port 5173 is free
+  # Ensure port 8097 is free
   local port_pid
-  port_pid="$(lsof -ti tcp:5173 2>/dev/null || true)"
+  port_pid="$(lsof -ti tcp:8097 2>/dev/null || true)"
   if [[ -n "${port_pid}" ]]; then
     kill ${port_pid} 2>/dev/null || true
     sleep 1
   fi
 
-  echo "Starting web UI dev server on http://localhost:5173 ..."
+  echo "Starting web UI dev server on http://localhost:8097 ..."
   (
     cd "${ROOT_DIR}/SharpClaw.Web"
-    setsid nohup npm run dev -- --host >/dev/null 2>&1 &
+    setsid nohup npm run dev -- --host --port 8097 >/dev/null 2>&1 &
     echo $! >"${WEB_PID_FILE}"
   )
 }
@@ -193,9 +193,9 @@ stop_web() {
     fi
     rm -f "${WEB_PID_FILE}"
   fi
-  # Clean up any orphaned process on port 5173
+  # Clean up any orphaned process on port 8097
   local port_pid
-  port_pid="$(lsof -ti tcp:5173 2>/dev/null || true)"
+  port_pid="$(lsof -ti tcp:8097 2>/dev/null || true)"
   if [[ -n "${port_pid}" ]]; then
     kill ${port_pid} 2>/dev/null || true
   fi
@@ -425,10 +425,10 @@ view_docs() {
 }
 
 web_dev() {
-  echo "Starting web UI dev server on http://localhost:5173 (proxying API to :5100)..."
+  echo "Starting web UI dev server on http://localhost:8097 (proxying API to :5100)..."
   (
     cd "${ROOT_DIR}/SharpClaw.Web"
-    npm run dev -- --host
+    npm run dev -- --host --port 8097
   )
 }
 
@@ -654,7 +654,7 @@ Commands:
   transcript    Show transcript diagnostics for an agent (optional --session filter, --browser)
   test          Run dotnet tests
   docs          Run Docusaurus docs dev server on port 3001
-  web           Start web UI dev server (Vite, port 5173, proxies API to :5100)
+  web           Start web UI dev server (Vite, port 8097, proxies API to :5100)
   web-build     Build web UI production bundle to SharpClaw/wwwroot/
 EOF
 }
