@@ -233,6 +233,7 @@ start_watcher() {
   nohup bash -c '
     ROOT_DIR="'"${ROOT_DIR}"'"
     PID_FILE="'"${PID_FILE}"'"
+    WEB_PID_FILE="'"${WEB_PID_FILE}"'"
     LOG_FILE="'"${LOG_FILE}"'"
     SIGNAL_FILE="${ROOT_DIR}/.sharpclaw.restart"
     PROJECT="'"$(resolve_project)"'"
@@ -244,8 +245,11 @@ start_watcher() {
       rm -f "${SIGNAL_FILE}"
       echo "[watcher] Restart signal detected. Rebuilding..." >> "${LOG_FILE}"
 
-      # Build first
+      # Pull latest changes
       cd "${ROOT_DIR}"
+      git pull --quiet >> "${LOG_FILE}" 2>&1 || true
+
+      # Build first
       if ! dotnet build "${PROJECT}" --nologo -q >> "${LOG_FILE}" 2>&1; then
         echo "[watcher] Build failed — restart aborted." >> "${LOG_FILE}"
         continue
@@ -271,6 +275,25 @@ start_watcher() {
       nohup dotnet run --project "${PROJECT}" >>"${LOG_FILE}" 2>&1 &
       echo $! > "${PID_FILE}"
       echo "[watcher] SharpClaw restarted (PID $(cat "${PID_FILE}"))." >> "${LOG_FILE}"
+
+      # Restart web UI dev server
+      echo "[watcher] Restarting web UI dev server..." >> "${LOG_FILE}"
+      if [[ -f "${WEB_PID_FILE}" ]]; then
+        web_pid="$(cat "${WEB_PID_FILE}")"
+        if [[ -n "${web_pid}" ]] && kill -0 "${web_pid}" 2>/dev/null; then
+          kill -- -"${web_pid}" 2>/dev/null || kill "${web_pid}" 2>/dev/null || true
+        fi
+        rm -f "${WEB_PID_FILE}"
+      fi
+      port_pid="$(lsof -ti tcp:8097 2>/dev/null || true)"
+      if [[ -n "${port_pid}" ]]; then
+        kill ${port_pid} 2>/dev/null || true
+        sleep 1
+      fi
+      cd "${ROOT_DIR}/SharpClaw.Web"
+      setsid nohup npm run dev -- --host --port 8097 >/dev/null 2>&1 &
+      echo $! > "${WEB_PID_FILE}"
+      echo "[watcher] Web UI dev server restarted on port 8097." >> "${LOG_FILE}"
     done
   ' >/dev/null 2>&1 &
   echo $! >"${WATCHER_PID_FILE}"
