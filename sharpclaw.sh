@@ -154,6 +154,10 @@ start_docs() {
 }
 
 start_web() {
+  # Pull latest changes
+  echo "Pulling latest changes..."
+  (cd "${ROOT_DIR}" && git pull --quiet) || true
+
   # Kill existing web dev server if running
   if [[ -f "${WEB_PID_FILE}" ]]; then
     local old_pid
