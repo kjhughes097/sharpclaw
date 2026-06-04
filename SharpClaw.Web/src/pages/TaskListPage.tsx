@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import Grid from '@mui/material/Grid';
 import Card from '@mui/material/Card';
@@ -8,6 +9,7 @@ import CardContent from '@mui/material/CardContent';
 import CardActionArea from '@mui/material/CardActionArea';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
+import AddIcon from '@mui/icons-material/Add';
 import { getTasks } from '../api/tasks';
 import type { ScheduledTaskSummary } from '../api/tasks';
 
@@ -24,9 +26,14 @@ export default function TaskListPage() {
 
     return (
         <Box>
-            <Typography variant="h4" gutterBottom>Tasks</Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="h4">Tasks</Typography>
+                <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/tasks/new')}>
+                    New Task
+                </Button>
+            </Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                Scheduled tasks that run agents on a cron schedule.
+                Scheduled tasks that run agents or commands on a cron schedule.
             </Typography>
 
             {tasks.length === 0 && (
@@ -56,7 +63,8 @@ export default function TaskListPage() {
 
                                 <Stack spacing={0.5} sx={{ mb: 1 }}>
                                     <Typography variant="caption" color="text.secondary">
-                                        Agent: <strong>{task.agent}</strong>
+                                        Type: <strong>{task.taskType === 'command' ? 'Command' : 'Agent'}</strong>
+                                        {task.taskType !== 'command' && <> — {task.agent}</>}
                                     </Typography>
                                     <Typography variant="caption" color="text.secondary">
                                         Channel: {task.channelType}
