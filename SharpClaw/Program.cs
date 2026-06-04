@@ -24,6 +24,17 @@ using SharpClaw.Workspace;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// -- CORS (allow Web UI access from any origin) --
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
 // -- Configuration binding --
 builder.Services.Configure<SharpClawOptions>(builder.Configuration.GetSection(SharpClawOptions.SectionName));
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(TelegramOptions.SectionName));
@@ -192,6 +203,7 @@ if (!string.IsNullOrEmpty(telegramToken) && telegramToken != "YOUR_BOT_TOKEN_HER
 }
 
 // -- Static files (Web UI) --
+app.UseCors();
 app.UseWebSockets(new WebSocketOptions
 {
     KeepAliveInterval = TimeSpan.FromSeconds(30),
