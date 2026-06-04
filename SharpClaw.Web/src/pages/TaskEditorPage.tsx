@@ -33,6 +33,7 @@ export default function TaskEditorPage() {
     const [description, setDescription] = useState('');
     const [cron, setCron] = useState('');
     const [agent, setAgent] = useState('');
+    const [command, setCommand] = useState('');
     const [enabled, setEnabled] = useState(true);
     const [isOneOff, setIsOneOff] = useState(false);
     const [prompt, setPrompt] = useState('');
@@ -49,6 +50,7 @@ export default function TaskEditorPage() {
                 setDescription(t.description);
                 setCron(t.cron);
                 setAgent(t.agent);
+                setCommand(t.command ?? '');
                 setEnabled(t.enabled);
                 setIsOneOff(t.isOneOff);
                 setPrompt(t.prompt);
@@ -71,6 +73,7 @@ export default function TaskEditorPage() {
                 enabled,
                 isOneOff,
                 agent,
+                command: task?.taskType === 'command' ? command : undefined,
             });
             setSuccess('Task saved successfully.');
         } catch (e: unknown) {
@@ -101,6 +104,8 @@ export default function TaskEditorPage() {
         );
     }
 
+    const isCommand = task.taskType === 'command';
+
     return (
         <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -112,6 +117,11 @@ export default function TaskEditorPage() {
                     <Chip
                         label={enabled ? 'Active' : 'Disabled'}
                         color={enabled ? 'success' : 'default'}
+                        size="small"
+                    />
+                    <Chip
+                        label={isCommand ? 'Command' : 'Agent'}
+                        variant="outlined"
                         size="small"
                     />
                 </Stack>
@@ -146,14 +156,26 @@ export default function TaskEditorPage() {
                             sx={{ width: 220 }}
                             helperText="5-field standard cron (min hour dom mon dow)"
                         />
-                        <TextField
-                            label="Agent"
-                            value={agent}
-                            onChange={(e) => setAgent(e.target.value)}
-                            size="small"
-                            sx={{ width: 200 }}
-                        />
+                        {!isCommand && (
+                            <TextField
+                                label="Agent"
+                                value={agent}
+                                onChange={(e) => setAgent(e.target.value)}
+                                size="small"
+                                sx={{ width: 200 }}
+                            />
+                        )}
                     </Stack>
+                    {isCommand && (
+                        <TextField
+                            label="Command"
+                            value={command}
+                            onChange={(e) => setCommand(e.target.value)}
+                            fullWidth
+                            size="small"
+                            helperText="Shell command to execute (runs via /bin/bash, 5-min timeout)"
+                        />
+                    )}
                     <Stack direction="row" spacing={3} sx={{ alignItems: 'center' }}>
                         <FormControlLabel
                             control={<Switch checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />}
@@ -181,7 +203,9 @@ export default function TaskEditorPage() {
                 </Stack>
             </Paper>
 
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>Prompt</Typography>
+            <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                {isCommand ? 'Prompt (optional)' : 'Prompt'}
+            </Typography>
             <Paper variant="outlined" sx={{ height: 'calc(100vh - 480px)', minHeight: 200, overflow: 'hidden' }}>
                 <Editor
                     height="100%"
