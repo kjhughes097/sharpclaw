@@ -41,6 +41,7 @@ builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection(Tel
 builder.Services.Configure<OpenTelemetryOptions>(builder.Configuration.GetSection(OpenTelemetryOptions.SectionName));
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(AnthropicOptions.SectionName));
 builder.Services.Configure<AnthropicAdminMcpOptions>(builder.Configuration.GetSection(AnthropicAdminMcpOptions.SectionName));
+builder.Services.Configure<SemanticMemoryOptions>(builder.Configuration.GetSection(SemanticMemoryOptions.SectionName));
 
 // -- Logging: Console with custom format --
 builder.Logging.ClearProviders();
@@ -147,6 +148,19 @@ builder.Services.AddSingleton<ICommand, TicketCommand>();
 builder.Services.AddSingleton<MemoryService>();
 builder.Services.AddSingleton<AuditService>();
 builder.Services.AddSingleton<TranscriptService>();
+
+// -- Semantic Memory (conditional) --
+var semanticMemoryEnabled = builder.Configuration.GetValue<bool>("SemanticMemory:Enabled");
+if (semanticMemoryEnabled)
+{
+    builder.Services.AddSingleton<EmbeddingService>();
+    builder.Services.AddSingleton<SemanticMemoryStore>();
+    builder.Services.AddSingleton<SemanticMemoryService>();
+}
+else
+{
+    builder.Services.AddSingleton<SemanticMemoryService?>(sp => null);
+}
 
 // -- Workspace --
 builder.Services.AddSingleton<WorkspaceInitialiser>();

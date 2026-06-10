@@ -52,3 +52,58 @@ This uses constructor injection (not `[FromServices]` — unsupported in ModelCo
 - **MemorySnapshotJob**: Daily archival of memory state
 - **LLM-based tagging**: Auto-generate tags for memory-index.md
 - **SQLite session persistence**: Store conversation history durably
+
+## Semantic Memory (Phase 1)
+
+Semantic memory adds vector-based recall to the existing file-based system. When enabled, the `AgentInvoker` automatically retrieves relevant stored memories before each LLM call and prepends them as context.
+
+### Architecture
+
+| Component | Responsibility |
+| --------- | -------------- |
+| `EmbeddingService` | Generates 384-dimensional embeddings using a local ONNX model (all-MiniLM-L6-v2) |
+| `SemanticMemoryStore` | SQLite-backed storage with FTS5 keyword search and brute-force cosine similarity (sqlite-vec optional) |
+| `SemanticMemoryService` | Orchestrates store + recall + deduplication + trust scoring |
+| `AgentInvoker` hook | Pre-LLM recall injection — recalled context is prepended to the user prompt |
+
+### Configuration
+
+Add to `appsettings.json`:
+
+```json
+{
+  "SemanticMemory": {
+    "Enabled": true,
+    "ModelPath": "models/all-MiniLM-L6-v2.onnx",
+    "TokenizerPath": "models/tokenizer.json",
+    "DatabasePath": "data/semantic-memory.db",
+    "TopK": 5,
+    "MinScore": 0.3,
+    "EmbeddingDimension": 384,
+    "MaxContextTokens": 1500
+  }
+}
+```
+
+Set `Enabled: true` to activate. The ONNX model file must be present at `ModelPath` (relative to app base directory).
+
+### Memory Types
+
+Stored memories have a type: `Fact`, `Decision`, `Preference`, or `Learning`.
+
+### Trust Scoring
+
+- Each memory starts with a trust score of 1.0
+- Recalled memories get a 5% boost (capped at 2.0)
+- Weekly decay (×0.95) prunes unused memories below 0.1
+
+### Deduplication
+
+Before storing, cosine similarity >0.92 against existing memories triggers a skip (prevents redundant entries).
+
+### Graceful Degradation
+
+- If `Enabled: false` (default), no semantic memory services are registered
+- If the ONNX model file is missing, startup fails with a clear error
+- If sqlite-vec is unavailable, falls back to brute-force cosine similarity
+- If recall fails at runtime, the prompt passes through unchanged
