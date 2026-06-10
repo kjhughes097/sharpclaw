@@ -57,3 +57,6 @@ coverage/
 
 # Docker
 docker-compose.override.yml
+
+# Working and optional folders
+SharpClaw/models
