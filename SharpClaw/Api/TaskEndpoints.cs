@@ -141,24 +141,25 @@ internal static class TaskEndpoints
         });
     }
 
-    private sealed record TaskCreateRequest(
-        string Cron,
-        string? TaskType,
-        string? Agent,
-        string? Command,
-        string? Prompt,
-        string? Description,
-        bool? IsOneOff,
-        bool? Enabled
-    );
-
-    private sealed record TaskUpdateRequest(
-        string? Description,
-        string? Cron,
-        string? Prompt,
-        bool? Enabled,
-        bool? IsOneOff,
-        string? Agent,
-        string? Command
-    );
 }
+
+internal sealed record TaskCreateRequest(
+    string Cron,
+    string? TaskType,
+    string? Agent,
+    string? Command,
+    string? Prompt,
+    string? Description,
+    bool? IsOneOff,
+    bool? Enabled
+);
+
+internal sealed record TaskUpdateRequest(
+    string? Description,
+    string? Cron,
+    string? Prompt,
+    bool? Enabled,
+    bool? IsOneOff,
+    string? Agent,
+    string? Command
+);

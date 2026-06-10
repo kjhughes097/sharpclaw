@@ -34,6 +34,7 @@ appsettings.Local.json
 .sharpclaw.pid
 .sharpclaw-watcher.pid
 .sharpclaw-docs.pid
+.sharpclaw-web.pid
 
 # OS-specific
 .DS_Store
