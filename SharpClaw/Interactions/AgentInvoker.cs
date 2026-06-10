@@ -2,6 +2,7 @@ using SharpClaw.Abstractions;
 using SharpClaw.Auditing;
 using SharpClaw.Commands;
 using SharpClaw.Execution;
+using SharpClaw.Memory;
 using SharpClaw.Models;
 using SharpClaw.Scheduling;
 using SharpClaw.Sessions;
@@ -16,6 +17,7 @@ public sealed class AgentInvoker(
     AuditService auditService,
     TranscriptService transcriptService,
     SchedulingContextAccessor schedulingContextAccessor,
+    SemanticMemoryService? semanticMemory,
     ILogger<AgentInvoker> logger)
 {
     public async Task<(string? SwitchedTo, string? ResponseText)> InvokeAsync(
@@ -142,7 +144,7 @@ public sealed class AgentInvoker(
                 session.SessionId);
         }
 
-        var result = await runner.SendAsync(session.LlmSession!, prompt, agent.Llm, ct);
+        var result = await runner.SendAsync(session.LlmSession!, await EnrichWithMemoryAsync(prompt, session.AgentId, ct), agent.Llm, ct);
 
         var responseText = result.Success
             ? result.Response
@@ -212,5 +214,25 @@ public sealed class AgentInvoker(
             return string.IsNullOrEmpty(basePrompt) ? null : basePrompt;
 
         return $"{basePrompt}\n\n---\n\n{string.Join("\n\n", skillPrompts)}";
+    }
+
+    private async Task<string> EnrichWithMemoryAsync(string prompt, string agentName, CancellationToken ct)
+    {
+        if (semanticMemory is null) return prompt;
+
+        try
+        {
+            var memories = await semanticMemory.RecallAsync(prompt, agentName, ct: ct);
+            if (memories.Count == 0) return prompt;
+
+            var context = semanticMemory.FormatRecalledContext(memories);
+            logger.LogDebug("Injecting {Count} recalled memories for agent {Agent}", memories.Count, agentName);
+            return $"{context}\n\n{prompt}";
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to recall semantic memories for agent {Agent}", agentName);
+            return prompt;
+        }
     }
 }
