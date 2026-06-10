@@ -378,6 +378,18 @@ show_status() {
     echo "SharpClaw service: stopped"
   fi
 
+  if [[ -f "${WEB_PID_FILE}" ]]; then
+    local web_pid
+    web_pid="$(cat "${WEB_PID_FILE}")"
+    if [[ -n "${web_pid}" ]] && kill -0 "${web_pid}" 2>/dev/null; then
+      echo "Web UI dev server: running (PID ${web_pid}, port 8097)"
+    else
+      echo "Web UI dev server: stopped"
+    fi
+  else
+    echo "Web UI dev server: stopped"
+  fi
+
   if ! compose_available; then
     echo "Grafana stack: unknown (docker compose not available)"
     return 0
