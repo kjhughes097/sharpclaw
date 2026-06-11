@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SharpClaw\SharpClaw.csproj" />
+    <ProjectReference Include="..\SharpClaw\SharpClaw.csproj" />
   </ItemGroup>
 
 </Project>

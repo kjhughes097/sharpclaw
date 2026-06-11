@@ -11,8 +11,8 @@ public class CommandRouterTests
 
     public CommandRouterTests()
     {
-        _agentRegistry.Register(new AgentDefinition("cody", "Coding assistant", null, null, [], [], [], [], null));
-        _agentRegistry.Register(new AgentDefinition("myles", "Research agent", null, null, [], [], [], [], null));
+        _agentRegistry.Register(new AgentDefinition("cody", "Coding assistant", null, null, [], [], [], [], [], null, null));
+        _agentRegistry.Register(new AgentDefinition("myles", "Research agent", null, null, [], [], [], [], [], null, null));
     }
 
     [Fact]

@@ -12,8 +12,8 @@ public class GroupNameAgentResolutionTests
 
     public GroupNameAgentResolutionTests()
     {
-        _agentRegistry.Register(new AgentDefinition("myles", null, null, null, [], [], [], [], null));
-        _agentRegistry.Register(new AgentDefinition("ade", null, null, null, [], [], [], [], null));
+        _agentRegistry.Register(new AgentDefinition("myles", null, null, null, [], [], [], [], [], null, null));
+        _agentRegistry.Register(new AgentDefinition("ade", null, null, null, [], [], [], [], [], null, null));
     }
 
     [Fact]

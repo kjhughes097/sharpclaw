@@ -11,7 +11,7 @@ public class AgentRegistryTests
     [Fact]
     public void Register_and_Get_returns_agent()
     {
-        var agent = new AgentDefinition("test", "A test agent", null, "gpt-4o", [], [], [], [], "You are a test.");
+        var agent = new AgentDefinition("test", "A test agent", null, "gpt-4o", [], [], [], [], [], null, "You are a test.");
         _registry.Register(agent);
 
         var result = _registry.Get("test");
@@ -22,7 +22,7 @@ public class AgentRegistryTests
     [Fact]
     public void Get_is_case_insensitive()
     {
-        var agent = new AgentDefinition("Cody", null, null, null, [], [], [], [], null);
+        var agent = new AgentDefinition("Cody", null, null, null, [], [], [], [], [], null, null);
         _registry.Register(agent);
 
         Assert.NotNull(_registry.Get("cody"));
@@ -32,8 +32,8 @@ public class AgentRegistryTests
     [Fact]
     public void Clear_removes_all_agents()
     {
-        _registry.Register(new AgentDefinition("a", null, null, null, [], [], [], [], null));
-        _registry.Register(new AgentDefinition("b", null, null, null, [], [], [], [], null));
+        _registry.Register(new AgentDefinition("a", null, null, null, [], [], [], [], [], null, null));
+        _registry.Register(new AgentDefinition("b", null, null, null, [], [], [], [], [], null, null));
 
         _registry.Clear();
 
