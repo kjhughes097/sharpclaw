@@ -196,6 +196,46 @@ internal static class ProjectEndpoints
             });
         });
 
+        group.MapPost("/{projectId}/tickets/{ticketId}/move", (string projectId, string ticketId, MoveTicketRequest req, ProjectLoader loader) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.TargetProjectId))
+                return Results.BadRequest("targetProjectId is required.");
+
+            if (req.TargetProjectId == projectId)
+                return Results.BadRequest("Ticket is already in that project.");
+
+            try
+            {
+                var moved = loader.MoveTicket(projectId, ticketId, req.TargetProjectId);
+                if (moved is null) return Results.NotFound();
+
+                return Results.Ok(new
+                {
+                    moved.Id,
+                    moved.ProjectId,
+                    moved.Title,
+                    moved.Description,
+                    Status = moved.Status.ToFrontmatterValue(),
+                    moved.Labels,
+                    moved.Reporter,
+                    moved.Assignee,
+                    moved.CreatedAt,
+                    moved.UpdatedAt,
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        group.MapDelete("/{projectId}/tickets/{ticketId}", (string projectId, string ticketId, ProjectLoader loader) =>
+        {
+            var deleted = loader.DeleteTicket(projectId, ticketId);
+            if (!deleted) return Results.NotFound();
+            return Results.NoContent();
+        });
+
         group.MapPost("/{projectId}/tickets/{ticketId}/improve", async (
             string projectId,
             string ticketId,
@@ -242,4 +282,5 @@ internal static class ProjectEndpoints
     private sealed record CreateLabelRequest(string Name);
     private sealed record CreateTicketRequest(string Title, string? Description, string? Reporter, string? Assignee, string[]? Labels);
     private sealed record UpdateTicketRequest(string? Title, string? Description, string? Status, string? Assignee, string[]? Labels);
+    private sealed record MoveTicketRequest(string TargetProjectId);
 }

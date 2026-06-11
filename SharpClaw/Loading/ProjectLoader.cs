@@ -180,6 +180,50 @@ public sealed class ProjectLoader(
         return updated;
     }
 
+    public Ticket? MoveTicket(string projectId, string ticketId, string newProjectId)
+    {
+        var sourceFile = ResolveTicketFile(projectId, ticketId);
+        if (!File.Exists(sourceFile))
+            return null;
+
+        var targetTicketsDir = Path.Combine(ProjectsDir, newProjectId, "tickets");
+        if (!Directory.Exists(targetTicketsDir))
+            throw new InvalidOperationException($"Target project '{newProjectId}' not found.");
+
+        var existing = ParseTicket(projectId, sourceFile);
+        if (existing is null)
+            return null;
+
+        var moved = existing with
+        {
+            ProjectId = newProjectId,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        var targetFile = Path.Combine(targetTicketsDir, $"{ticketId}.md");
+        WriteTicketFile(targetFile, moved);
+        File.Delete(sourceFile);
+
+        logger.LogInformation("Moved ticket {TicketId} from project {FromProject} to {ToProject}", ticketId, projectId, newProjectId);
+        return moved;
+    }
+
+    public bool DeleteTicket(string projectId, string ticketId)
+    {
+        var file = ResolveTicketFile(projectId, ticketId);
+        if (!File.Exists(file))
+            return false;
+
+        var deletedDir = Path.Combine(ProjectsDir, projectId, "tickets", ".deleted");
+        Directory.CreateDirectory(deletedDir);
+
+        var deletedFile = Path.Combine(deletedDir, $"{ticketId}.md");
+        File.Move(file, deletedFile, overwrite: true);
+
+        logger.LogInformation("Soft-deleted ticket {TicketId} from project {ProjectId}", ticketId, projectId);
+        return true;
+    }
+
     private string ResolveTicketFile(string projectId, string ticketId)
     {
         var ticketsDir = Path.Combine(ProjectsDir, projectId, "tickets");

@@ -141,14 +141,15 @@ Manage projects from within agent conversations.
 
 Manage tickets from within agent conversations.
 
-| Parameter     | Type   | Required | Description                                           |
-| ------------- | ------ | -------- | ----------------------------------------------------- |
-| `action`      | string | Yes      | `list_tickets`, `create_ticket`, `update_ticket`, `get_ticket` |
-| `project_id`  | string | Yes      | Project ID slug                                       |
-| `ticket_id`   | string | No       | Ticket ID, e.g. `001` (required for `get_ticket`, `update_ticket`) |
-| `title`       | string | No       | Ticket title (required for `create_ticket`)           |
-| `description` | string | No       | Ticket description in markdown                        |
-| `status`      | string | No       | New status (for `update_ticket`)                      |
+| Parameter           | Type   | Required | Description                                           |
+| ------------------- | ------ | -------- | ----------------------------------------------------- |
+| `action`            | string | Yes      | `list_tickets`, `create_ticket`, `update_ticket`, `get_ticket`, `move_ticket`, `delete_ticket` |
+| `project_id`        | string | Yes      | Project ID slug                                       |
+| `ticket_id`         | string | No       | Ticket ID, e.g. `001` (required for `get_ticket`, `update_ticket`, `move_ticket`, `delete_ticket`) |
+| `title`             | string | No       | Ticket title (required for `create_ticket`)           |
+| `description`       | string | No       | Ticket description in markdown                        |
+| `status`            | string | No       | New status (for `update_ticket`)                      |
+| `target_project_id` | string | No       | Target project ID (required for `move_ticket`)        |
 
 **Actions:**
 
@@ -156,6 +157,8 @@ Manage tickets from within agent conversations.
 - **`create_ticket`** — Creates a new ticket with auto-incremented ID. Default status is `planning`.
 - **`update_ticket`** — Updates a ticket's title, description, and/or status.
 - **`get_ticket`** — Returns full ticket details including description.
+- **`move_ticket`** — Moves a ticket from one project to another. The ticket retains its ID and all metadata.
+- **`delete_ticket`** — Soft-deletes a ticket by moving it to a `.deleted/` folder within the project's tickets directory. The ticket is removed from all lists but can be recovered from disk.
 
 ### Example: Agent Workflow
 
@@ -336,6 +339,37 @@ All fields are optional — include only what you want to change.
 
 **Response** `404 Not Found` if ticket doesn't exist.
 
+### Move Ticket
+
+```http
+POST /api/projects/{projectId}/tickets/{ticketId}/move
+Content-Type: application/json
+
+{
+  "targetProjectId": "another-project"
+}
+```
+
+Moves a ticket from one project to another, preserving the ticket ID and all metadata.
+
+**Response** `200 OK` — Returns the ticket with updated `projectId`.
+
+**Errors:**
+- `400 Bad Request` — Target project ID missing, same as current, or target project not found
+- `404 Not Found` — Ticket doesn't exist
+
+### Delete Ticket
+
+```http
+DELETE /api/projects/{projectId}/tickets/{ticketId}
+```
+
+Soft-deletes a ticket by moving it to a `.deleted/` subdirectory within the project's tickets folder. The file is preserved on disk for recovery but removed from all API responses and UI views.
+
+**Response** `204 No Content` — Ticket was deleted.
+
+**Response** `404 Not Found` — Ticket doesn't exist.
+
 ### Improve Ticket (AI-powered)
 
 ```http
@@ -363,6 +397,8 @@ The **Projects** page in the web UI (`/projects`) displays a Kanban board with d
 - **Cards** show the ticket number, title, and a colour-coded project chip
 - **Drag and drop** tickets between columns to change status
 - **Click** a card to open an editor dialog with the full markdown description
+- **Move tickets** between projects using the Project dropdown in the edit dialog
+- **Delete tickets** via the Delete button in the edit dialog (with confirmation prompt)
 - **Filter** by project using the chips at the top
 - **Improve** button uses AI to enhance the ticket description
 

@@ -7,16 +7,17 @@ namespace SharpClaw.Tools;
 public sealed class TicketTool(ProjectLoader loader) : ITool
 {
     public string Name => "ticket";
-    public string Description => "Manage project tickets. Actions: list_tickets, create_ticket, update_ticket, get_ticket.";
+    public string Description => "Manage project tickets. Actions: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket.";
 
     public IReadOnlyList<ToolParameterDefinition> Parameters { get; } =
     [
-        new("action", "string", "The action to perform: list_tickets, create_ticket, update_ticket, get_ticket.", Required: true),
+        new("action", "string", "The action to perform: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket.", Required: true),
         new("project_id", "string", "Project ID (slug). Required for all actions.", Required: true),
-        new("ticket_id", "string", "Ticket ID (e.g. '001'). Required for get_ticket and update_ticket.", Required: false),
+        new("ticket_id", "string", "Ticket ID (e.g. '001'). Required for get_ticket, update_ticket, move_ticket, delete_ticket.", Required: false),
         new("title", "string", "Ticket title. Required for create_ticket, optional for update_ticket.", Required: false),
         new("description", "string", "Ticket description. Optional for create_ticket and update_ticket.", Required: false),
         new("status", "string", "Ticket status: idea, planning, in_progress, for_review, done. Optional for update_ticket.", Required: false),
+        new("target_project_id", "string", "Target project ID for move_ticket.", Required: false),
     ];
 
     public Task<object?> ExecuteAsync(ToolCallContext context, CancellationToken ct = default)
@@ -29,7 +30,9 @@ public sealed class TicketTool(ProjectLoader loader) : ITool
             "create_ticket" => CreateTicket(context),
             "update_ticket" => UpdateTicket(context),
             "get_ticket" => GetTicket(context),
-            _ => Task.FromResult<object?>($"Error: Unknown action '{action}'. Use: list_tickets, create_ticket, update_ticket, get_ticket.")
+            "move_ticket" => MoveTicket(context),
+            "delete_ticket" => DeleteTicket(context),
+            _ => Task.FromResult<object?>($"Error: Unknown action '{action}'. Use: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket.")
         };
     }
 
@@ -123,5 +126,49 @@ public sealed class TicketTool(ProjectLoader loader) : ITool
             result += $"\n\n{ticket.Description}";
 
         return Task.FromResult<object?>(result);
+    }
+
+    private Task<object?> MoveTicket(ToolCallContext context)
+    {
+        var projectId = context.GetString("project_id");
+        var ticketId = context.GetString("ticket_id");
+        var targetProjectId = context.GetString("target_project_id");
+
+        if (string.IsNullOrWhiteSpace(projectId))
+            return Task.FromResult<object?>("Error: 'project_id' is required.");
+        if (string.IsNullOrWhiteSpace(ticketId))
+            return Task.FromResult<object?>("Error: 'ticket_id' is required for move_ticket.");
+        if (string.IsNullOrWhiteSpace(targetProjectId))
+            return Task.FromResult<object?>("Error: 'target_project_id' is required for move_ticket.");
+
+        try
+        {
+            var moved = loader.MoveTicket(projectId, ticketId, targetProjectId);
+            if (moved is null)
+                return Task.FromResult<object?>($"Error: Ticket '{ticketId}' not found in project '{projectId}'.");
+
+            return Task.FromResult<object?>($"Moved ticket `{moved.Id}` from '{projectId}' to '{targetProjectId}': {moved.Title}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Task.FromResult<object?>($"Error: {ex.Message}");
+        }
+    }
+
+    private Task<object?> DeleteTicket(ToolCallContext context)
+    {
+        var projectId = context.GetString("project_id");
+        var ticketId = context.GetString("ticket_id");
+
+        if (string.IsNullOrWhiteSpace(projectId))
+            return Task.FromResult<object?>("Error: 'project_id' is required.");
+        if (string.IsNullOrWhiteSpace(ticketId))
+            return Task.FromResult<object?>("Error: 'ticket_id' is required for delete_ticket.");
+
+        var deleted = loader.DeleteTicket(projectId, ticketId);
+        if (!deleted)
+            return Task.FromResult<object?>($"Error: Ticket '{ticketId}' not found in project '{projectId}'.");
+
+        return Task.FromResult<object?>($"Deleted ticket `{ticketId}` from project '{projectId}'.");
     }
 }
