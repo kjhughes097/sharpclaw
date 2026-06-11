@@ -91,7 +91,7 @@ public sealed class ProjectLoader(
         return ParseTicket(projectId, file);
     }
 
-    public Ticket CreateTicket(string projectId, string title, string? description)
+    public Ticket CreateTicket(string projectId, string title, string? description, string? reporter = null, string? assignee = null, IReadOnlyList<string>? labels = null)
     {
         var ticketsDir = Path.Combine(ProjectsDir, projectId, "tickets");
         if (!Directory.Exists(ticketsDir))
@@ -99,7 +99,7 @@ public sealed class ProjectLoader(
 
         var nextId = GetNextTicketId(ticketsDir);
         var now = DateTimeOffset.UtcNow;
-        var ticket = new Ticket(nextId, projectId, title, description, TicketStatus.Planning, now, now);
+        var ticket = new Ticket(nextId, projectId, title, description, TicketStatus.Planning, now, now, labels ?? [], reporter, assignee);
 
         var file = Path.Combine(ticketsDir, $"{nextId}.md");
         WriteTicketFile(file, ticket);
@@ -108,7 +108,7 @@ public sealed class ProjectLoader(
         return ticket;
     }
 
-    public Ticket? UpdateTicket(string projectId, string ticketId, TicketStatus? status = null, string? title = null, string? description = null)
+    public Ticket? UpdateTicket(string projectId, string ticketId, TicketStatus? status = null, string? title = null, string? description = null, string? assignee = null, IReadOnlyList<string>? labels = null)
     {
         var file = ResolveTicketFile(projectId, ticketId);
         if (!File.Exists(file))
@@ -123,6 +123,8 @@ public sealed class ProjectLoader(
             Title = title ?? existing.Title,
             Description = description ?? existing.Description,
             Status = status ?? existing.Status,
+            Assignee = assignee ?? existing.Assignee,
+            Labels = labels ?? existing.Labels,
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
@@ -170,8 +172,11 @@ public sealed class ProjectLoader(
         var status = TicketStatusExtensions.ParseStatus(frontmatter.GetValueOrDefault("status"));
         var createdAt = ParseDateTimeOffset(frontmatter.GetValueOrDefault("created_at"));
         var updatedAt = ParseDateTimeOffset(frontmatter.GetValueOrDefault("updated_at"));
+        var labels = ParseList(frontmatter.GetValueOrDefault("labels"));
+        var reporter = frontmatter.GetValueOrDefault("reporter")?.NullIfEmpty();
+        var assignee = frontmatter.GetValueOrDefault("assignee")?.NullIfEmpty();
 
-        return new Ticket(id, projectId, title, body, status, createdAt, updatedAt);
+        return new Ticket(id, projectId, title, body, status, createdAt, updatedAt, labels, reporter, assignee);
     }
 
     private static (Dictionary<string, string> frontmatter, string? body) ParseFrontmatter(string[] lines)
@@ -229,6 +234,12 @@ public sealed class ProjectLoader(
         writer.WriteLine("---");
         writer.WriteLine($"title: {ticket.Title}");
         writer.WriteLine($"status: {ticket.Status.ToFrontmatterValue()}");
+        if (ticket.Labels.Count > 0)
+            writer.WriteLine($"labels: {string.Join(", ", ticket.Labels)}");
+        if (!string.IsNullOrEmpty(ticket.Reporter))
+            writer.WriteLine($"reporter: {ticket.Reporter}");
+        if (!string.IsNullOrEmpty(ticket.Assignee))
+            writer.WriteLine($"assignee: {ticket.Assignee}");
         writer.WriteLine($"created_at: {ticket.CreatedAt:O}");
         writer.WriteLine($"updated_at: {ticket.UpdatedAt:O}");
         writer.WriteLine("---");
@@ -237,6 +248,16 @@ public sealed class ProjectLoader(
             writer.WriteLine();
             writer.WriteLine(ticket.Description);
         }
+    }
+
+    private static IReadOnlyList<string> ParseList(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return [];
+
+        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => s.Length > 0)
+            .ToList();
     }
 
     private static DateTimeOffset ParseDateTimeOffset(string? value) =>

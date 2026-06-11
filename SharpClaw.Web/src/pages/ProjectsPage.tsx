@@ -16,8 +16,8 @@ import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
 import MenuItem from '@mui/material/MenuItem';
 import Editor from '@monaco-editor/react';
-import { getProjects, getProjectTickets, updateTicketStatus, updateTicket, createTicket, improveTicket } from '../api/projects';
-import type { ProjectSummary, TicketSummary } from '../api/projects';
+import { getProjects, getProjectTickets, getUsers, updateTicketStatus, updateTicket, createTicket, improveTicket } from '../api/projects';
+import type { ProjectSummary, TicketSummary, User } from '../api/projects';
 
 const STATUSES = [
     { key: 'idea', label: 'Idea' },
@@ -40,18 +40,22 @@ function getProjectColour(projectId: string, projects: ProjectSummary[]): string
 export default function ProjectsPage() {
     const [projects, setProjects] = useState<ProjectSummary[]>([]);
     const [tickets, setTickets] = useState<TicketSummary[]>([]);
+    const [users, setUsers] = useState<User[]>([]);
     const [draggedTicketId, setDraggedTicketId] = useState<string | null>(null);
     const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
     const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+    const [selectedAssignee, setSelectedAssignee] = useState<string | null>(null);
     const [editingTicket, setEditingTicket] = useState<TicketSummary | null>(null);
     const [editTitle, setEditTitle] = useState('');
     const [editDescription, setEditDescription] = useState('');
+    const [editAssignee, setEditAssignee] = useState('');
     const [saving, setSaving] = useState(false);
     const [improving, setImproving] = useState(false);
     const [creatingTicket, setCreatingTicket] = useState(false);
     const [newTicketTitle, setNewTicketTitle] = useState('');
     const [newTicketDescription, setNewTicketDescription] = useState('');
     const [newTicketProjectId, setNewTicketProjectId] = useState('');
+    const [newTicketAssignee, setNewTicketAssignee] = useState('');
     const [savingNew, setSavingNew] = useState(false);
 
     useEffect(() => {
@@ -62,6 +66,7 @@ export default function ProjectsPage() {
             );
             setTickets(allTickets.flat());
         });
+        getUsers().then(setUsers);
     }, []);
 
     const handleDragStart = useCallback((e: DragEvent, ticketId: string) => {
@@ -111,6 +116,7 @@ export default function ProjectsPage() {
         setEditingTicket(ticket);
         setEditTitle(ticket.title);
         setEditDescription(ticket.description ?? '');
+        setEditAssignee(ticket.assignee ?? '');
     }, []);
 
     const handleEditorClose = useCallback(() => {
@@ -121,9 +127,10 @@ export default function ProjectsPage() {
         if (!editingTicket) return;
         setSaving(true);
         try {
-            const data: { title?: string; description?: string } = {};
+            const data: { title?: string; description?: string; assignee?: string } = {};
             if (editTitle !== editingTicket.title) data.title = editTitle;
             if (editDescription !== (editingTicket.description ?? '')) data.description = editDescription;
+            if (editAssignee !== (editingTicket.assignee ?? '')) data.assignee = editAssignee || undefined;
 
             if (Object.keys(data).length > 0) {
                 const updated = await updateTicket(editingTicket.projectId, editingTicket.id, data);
@@ -133,7 +140,7 @@ export default function ProjectsPage() {
         } finally {
             setSaving(false);
         }
-    }, [editingTicket, editTitle, editDescription]);
+    }, [editingTicket, editTitle, editDescription, editAssignee]);
 
     const handleImprove = useCallback(async () => {
         if (!editingTicket) return;
@@ -150,6 +157,7 @@ export default function ProjectsPage() {
         setNewTicketTitle('');
         setNewTicketDescription('');
         setNewTicketProjectId(selectedProjectId ?? projects[0]?.id ?? '');
+        setNewTicketAssignee('');
         setCreatingTicket(true);
     }, [selectedProjectId, projects]);
 
@@ -160,17 +168,22 @@ export default function ProjectsPage() {
             const ticket = await createTicket(newTicketProjectId, {
                 title: newTicketTitle.trim(),
                 description: newTicketDescription.trim() || undefined,
+                assignee: newTicketAssignee || undefined,
             });
             setTickets(prev => [...prev, ticket]);
             setCreatingTicket(false);
         } finally {
             setSavingNew(false);
         }
-    }, [newTicketProjectId, newTicketTitle, newTicketDescription]);
+    }, [newTicketProjectId, newTicketTitle, newTicketDescription, newTicketAssignee]);
 
-    const filteredTickets = selectedProjectId
-        ? tickets.filter(t => t.projectId === selectedProjectId)
-        : tickets;
+    const filteredTickets = tickets.filter(t => {
+        if (selectedProjectId && t.projectId !== selectedProjectId && !t.labels.includes(selectedProjectId))
+            return false;
+        if (selectedAssignee && t.assignee !== selectedAssignee)
+            return false;
+        return true;
+    });
 
     const ticketsByStatus = (status: string) =>
         filteredTickets.filter(t => t.status === status);
@@ -219,6 +232,33 @@ export default function ProjectsPage() {
                                     color: PROJECT_COLOURS[idx % PROJECT_COLOURS.length],
                                 }),
                             }}
+                        />
+                    ))}
+                </Stack>
+            )}
+
+            {users.length > 0 && (
+                <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap', gap: 0.5 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 0.5 }}>
+                        Assignee:
+                    </Typography>
+                    <Chip
+                        label="All"
+                        size="small"
+                        variant={selectedAssignee === null ? 'filled' : 'outlined'}
+                        color={selectedAssignee === null ? 'primary' : 'default'}
+                        onClick={() => setSelectedAssignee(null)}
+                    />
+                    {users.map((user) => (
+                        <Chip
+                            key={user.id}
+                            label={user.name}
+                            size="small"
+                            variant={selectedAssignee === user.id ? 'filled' : 'outlined'}
+                            color={selectedAssignee === user.id ? 'primary' : 'default'}
+                            onClick={() => setSelectedAssignee(
+                                selectedAssignee === user.id ? null : user.id
+                            )}
                         />
                     ))}
                 </Stack>
@@ -274,16 +314,40 @@ export default function ProjectsPage() {
                                         <Typography variant="body2" sx={{ fontWeight: 500, mb: 0.75 }}>
                                             {ticket.title}
                                         </Typography>
-                                        <Chip
-                                            label={projects.find(p => p.id === ticket.projectId)?.title ?? ticket.projectId}
-                                            size="small"
-                                            sx={{
-                                                bgcolor: getProjectColour(ticket.projectId, projects),
-                                                color: '#fff',
-                                                fontWeight: 500,
-                                                fontSize: '0.7rem',
-                                            }}
-                                        />
+                                        <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+                                            <Chip
+                                                label={projects.find(p => p.id === ticket.projectId)?.title ?? ticket.projectId}
+                                                size="small"
+                                                sx={{
+                                                    bgcolor: getProjectColour(ticket.projectId, projects),
+                                                    color: '#fff',
+                                                    fontWeight: 500,
+                                                    fontSize: '0.7rem',
+                                                }}
+                                            />
+                                            {ticket.labels.filter(l => l !== ticket.projectId).map((label) => (
+                                                <Chip
+                                                    key={label}
+                                                    label={projects.find(p => p.id === label)?.title ?? label}
+                                                    size="small"
+                                                    sx={{
+                                                        bgcolor: getProjectColour(label, projects),
+                                                        color: '#fff',
+                                                        fontWeight: 500,
+                                                        fontSize: '0.7rem',
+                                                        opacity: 0.75,
+                                                    }}
+                                                />
+                                            ))}
+                                            {ticket.assignee && (
+                                                <Chip
+                                                    label={ticket.assignee}
+                                                    size="small"
+                                                    variant="outlined"
+                                                    sx={{ fontSize: '0.7rem' }}
+                                                />
+                                            )}
+                                        </Stack>
                                     </CardContent>
                                 </Card>
                             ))}
@@ -306,6 +370,26 @@ export default function ProjectsPage() {
                         fullWidth
                         slotProps={{ input: { sx: { fontSize: '1.25rem', fontWeight: 600 } } }}
                     />
+                    <Stack direction="row" spacing={2} sx={{ mt: 1, alignItems: 'center' }}>
+                        {editingTicket?.reporter && (
+                            <Typography variant="caption" color="text.secondary">
+                                Reporter: {editingTicket.reporter}
+                            </Typography>
+                        )}
+                        <TextField
+                            select
+                            label="Assignee"
+                            value={editAssignee}
+                            onChange={(e) => setEditAssignee(e.target.value)}
+                            size="small"
+                            sx={{ minWidth: 150 }}
+                        >
+                            <MenuItem value="">Unassigned</MenuItem>
+                            {users.map((u) => (
+                                <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Stack>
                 </DialogTitle>
                 <DialogContent sx={{ p: 0, height: 450 }}>
                     <Editor
@@ -356,6 +440,19 @@ export default function ProjectsPage() {
                         fullWidth
                         autoFocus
                     />
+                    <TextField
+                        select
+                        label="Assignee"
+                        value={newTicketAssignee}
+                        onChange={(e) => setNewTicketAssignee(e.target.value)}
+                        fullWidth
+                        size="small"
+                    >
+                        <MenuItem value="">Unassigned</MenuItem>
+                        {users.map((u) => (
+                            <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>
+                        ))}
+                    </TextField>
                     <Box sx={{ height: 300 }}>
                         <Editor
                             height="100%"

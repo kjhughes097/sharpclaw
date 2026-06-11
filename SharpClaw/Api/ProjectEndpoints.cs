@@ -1,3 +1,4 @@
+using SharpClaw.Abstractions;
 using SharpClaw.Execution;
 using SharpClaw.Loading;
 using SharpClaw.Models;
@@ -9,6 +10,14 @@ internal static class ProjectEndpoints
     public static void MapProjectEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/projects").WithTags("Projects");
+
+        // Users (agents + configured humans) for assignment dropdowns
+        app.MapGet("/api/users", (IAgentRegistry agentRegistry) =>
+        {
+            var agents = agentRegistry.GetAll().Select(a => new { id = a.Name, name = a.Name, type = "agent" });
+            var humans = new[] { new { id = "kevin", name = "Kevin", type = "human" } };
+            return humans.Concat(agents);
+        }).WithTags("Users");
 
         group.MapGet("/", (ProjectLoader loader) =>
             loader.GetAllProjects().Select(p => new
@@ -77,6 +86,9 @@ internal static class ProjectEndpoints
                 t.Title,
                 t.Description,
                 Status = t.Status.ToFrontmatterValue(),
+                t.Labels,
+                t.Reporter,
+                t.Assignee,
                 t.CreatedAt,
                 t.UpdatedAt,
             });
@@ -94,6 +106,9 @@ internal static class ProjectEndpoints
                 ticket.Title,
                 ticket.Description,
                 Status = ticket.Status.ToFrontmatterValue(),
+                ticket.Labels,
+                ticket.Reporter,
+                ticket.Assignee,
                 ticket.CreatedAt,
                 ticket.UpdatedAt,
             });
@@ -106,7 +121,7 @@ internal static class ProjectEndpoints
 
             try
             {
-                var ticket = loader.CreateTicket(projectId, req.Title, req.Description);
+                var ticket = loader.CreateTicket(projectId, req.Title, req.Description, req.Reporter, req.Assignee, req.Labels);
                 return Results.Created($"/api/projects/{projectId}/tickets/{ticket.Id}", new
                 {
                     ticket.Id,
@@ -114,6 +129,9 @@ internal static class ProjectEndpoints
                     ticket.Title,
                     ticket.Description,
                     Status = ticket.Status.ToFrontmatterValue(),
+                    ticket.Labels,
+                    ticket.Reporter,
+                    ticket.Assignee,
                     ticket.CreatedAt,
                     ticket.UpdatedAt,
                 });
@@ -127,7 +145,8 @@ internal static class ProjectEndpoints
         group.MapPatch("/{projectId}/tickets/{ticketId}", (string projectId, string ticketId, UpdateTicketRequest req, ProjectLoader loader) =>
         {
             var status = string.IsNullOrEmpty(req.Status) ? null : (TicketStatus?)TicketStatusExtensions.ParseStatus(req.Status);
-            var updated = loader.UpdateTicket(projectId, ticketId, status, req.Title, req.Description);
+            var labels = req.Labels is not null ? (IReadOnlyList<string>)req.Labels : null;
+            var updated = loader.UpdateTicket(projectId, ticketId, status, req.Title, req.Description, req.Assignee, labels);
 
             if (updated is null) return Results.NotFound();
 
@@ -138,6 +157,9 @@ internal static class ProjectEndpoints
                 updated.Title,
                 updated.Description,
                 Status = updated.Status.ToFrontmatterValue(),
+                updated.Labels,
+                updated.Reporter,
+                updated.Assignee,
                 updated.CreatedAt,
                 updated.UpdatedAt,
             });
@@ -186,6 +208,6 @@ internal static class ProjectEndpoints
     }
 
     private sealed record CreateProjectRequest(string Title, string? Description);
-    private sealed record CreateTicketRequest(string Title, string? Description);
-    private sealed record UpdateTicketRequest(string? Title, string? Description, string? Status);
+    private sealed record CreateTicketRequest(string Title, string? Description, string? Reporter, string? Assignee, string[]? Labels);
+    private sealed record UpdateTicketRequest(string? Title, string? Description, string? Status, string? Assignee, string[]? Labels);
 }
