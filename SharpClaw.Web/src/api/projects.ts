@@ -23,6 +23,12 @@ export const getProjects = () => apiFetch<ProjectSummary[]>('/projects');
 export const getProjectTickets = (projectId: string) =>
     apiFetch<TicketSummary[]>(`/projects/${projectId}/tickets`);
 
+export const createTicket = (projectId: string, data: { title: string; description?: string }) =>
+    apiFetch<TicketSummary>(`/projects/${projectId}/tickets`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
+
 export const updateTicket = (projectId: string, ticketId: string, data: { title?: string; description?: string; status?: string }) =>
     apiFetch<TicketSummary>(`/projects/${projectId}/tickets/${ticketId}`, {
         method: 'PATCH',
