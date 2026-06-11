@@ -18,6 +18,7 @@ public sealed class AgentInvoker(
     TranscriptService transcriptService,
     SchedulingContextAccessor schedulingContextAccessor,
     SemanticMemoryService? semanticMemory,
+    MemoryExtractionService? memoryExtraction,
     ILogger<AgentInvoker> logger)
 {
     public async Task<(string? SwitchedTo, string? ResponseText)> InvokeAsync(
@@ -180,6 +181,22 @@ public sealed class AgentInvoker(
 
         // Audit the response
         await auditService.LogAsync(session.AgentId, AuditEntryType.Response, responseText ?? string.Empty, ct);
+
+        // Fire-and-forget: extract and store memories from this exchange
+        if (result.Success && memoryExtraction is not null && !string.IsNullOrWhiteSpace(responseText))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await memoryExtraction.ExtractAndStoreAsync(prompt, responseText, session.AgentId, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Background memory extraction failed for agent {Agent}", session.AgentId);
+                }
+            }, CancellationToken.None);
+        }
 
         await session.PublishAsync(new AgentMessage(
             session.SessionId, Guid.NewGuid().ToString(),

@@ -12,4 +12,11 @@ public sealed class SemanticMemoryOptions
     public float MinScore { get; set; } = 0.3f;
     public int EmbeddingDimension { get; set; } = 384;
     public int MaxContextTokens { get; set; } = 1500;
+
+    // Phase 2: Auto-capture extraction
+    public bool ExtractionEnabled { get; set; } = true;
+    public string ExtractionModel { get; set; } = "claude-haiku-4-20250414";
+    public int ExtractionMaxTokens { get; set; } = 1024;
+    public int MinPromptLengthForExtraction { get; set; } = 20;
+    public int MinResponseLengthForExtraction { get; set; } = 50;
 }
