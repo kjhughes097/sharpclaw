@@ -1,3 +1,4 @@
+using System.Reflection;
 using ModelContextProtocol.Client;
 using SharpClaw.Models;
 
@@ -5,6 +6,15 @@ namespace SharpClaw.Execution;
 
 public sealed class McpToolBridge : IAsyncDisposable
 {
+    internal static readonly McpClientOptions DefaultClientOptions = new()
+    {
+        ClientInfo = new()
+        {
+            Name = "SharpClaw",
+            Version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0"
+        }
+    };
+
     private readonly List<McpClient> _clients = [];
 
     public IReadOnlyList<McpClientTool> Tools { get; private set; } = [];
@@ -36,7 +46,7 @@ public sealed class McpToolBridge : IAsyncDisposable
                     _ => throw new InvalidOperationException($"Unknown MCP transport type '{def.Transport}' for server '{name}'")
                 };
 
-                var client = await McpClient.CreateAsync(transport, loggerFactory: loggerFactory, cancellationToken: ct);
+                var client = await McpClient.CreateAsync(transport, DefaultClientOptions, loggerFactory: loggerFactory, cancellationToken: ct);
                 bridge._clients.Add(client);
 
                 var tools = await client.ListToolsAsync(cancellationToken: ct);
