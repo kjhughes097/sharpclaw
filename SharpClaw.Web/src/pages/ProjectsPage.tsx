@@ -12,8 +12,11 @@ import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
+import IconButton from '@mui/material/IconButton';
+import AddIcon from '@mui/icons-material/Add';
+import MenuItem from '@mui/material/MenuItem';
 import Editor from '@monaco-editor/react';
-import { getProjects, getProjectTickets, updateTicketStatus, updateTicket, improveTicket } from '../api/projects';
+import { getProjects, getProjectTickets, updateTicketStatus, updateTicket, createTicket, improveTicket } from '../api/projects';
 import type { ProjectSummary, TicketSummary } from '../api/projects';
 
 const STATUSES = [
@@ -45,6 +48,11 @@ export default function ProjectsPage() {
     const [editDescription, setEditDescription] = useState('');
     const [saving, setSaving] = useState(false);
     const [improving, setImproving] = useState(false);
+    const [creatingTicket, setCreatingTicket] = useState(false);
+    const [newTicketTitle, setNewTicketTitle] = useState('');
+    const [newTicketDescription, setNewTicketDescription] = useState('');
+    const [newTicketProjectId, setNewTicketProjectId] = useState('');
+    const [savingNew, setSavingNew] = useState(false);
 
     useEffect(() => {
         getProjects().then(async (projs) => {
@@ -138,6 +146,28 @@ export default function ProjectsPage() {
         }
     }, [editingTicket]);
 
+    const handleOpenCreateTicket = useCallback(() => {
+        setNewTicketTitle('');
+        setNewTicketDescription('');
+        setNewTicketProjectId(selectedProjectId ?? projects[0]?.id ?? '');
+        setCreatingTicket(true);
+    }, [selectedProjectId, projects]);
+
+    const handleCreateTicket = useCallback(async () => {
+        if (!newTicketProjectId || !newTicketTitle.trim()) return;
+        setSavingNew(true);
+        try {
+            const ticket = await createTicket(newTicketProjectId, {
+                title: newTicketTitle.trim(),
+                description: newTicketDescription.trim() || undefined,
+            });
+            setTickets(prev => [...prev, ticket]);
+            setCreatingTicket(false);
+        } finally {
+            setSavingNew(false);
+        }
+    }, [newTicketProjectId, newTicketTitle, newTicketDescription]);
+
     const filteredTickets = selectedProjectId
         ? tickets.filter(t => t.projectId === selectedProjectId)
         : tickets;
@@ -147,7 +177,12 @@ export default function ProjectsPage() {
 
     return (
         <Box>
-            <Typography variant="h4" gutterBottom>Projects</Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 1, alignItems: 'center' }}>
+                <Typography variant="h4">Projects</Typography>
+                <IconButton color="primary" onClick={handleOpenCreateTicket} title="New ticket" size="small">
+                    <AddIcon />
+                </IconButton>
+            </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Kanban board showing tickets across all projects.
             </Typography>
@@ -290,6 +325,56 @@ export default function ProjectsPage() {
                     <Button onClick={handleEditorClose}>Cancel</Button>
                     <Button variant="contained" onClick={handleEditorSave} disabled={saving || improving}>
                         {saving ? 'Saving...' : 'Save'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog
+                open={creatingTicket}
+                onClose={() => setCreatingTicket(false)}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle>New Ticket</DialogTitle>
+                <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
+                    <TextField
+                        select
+                        label="Project"
+                        value={newTicketProjectId}
+                        onChange={(e) => setNewTicketProjectId(e.target.value)}
+                        fullWidth
+                        size="small"
+                    >
+                        {projects.map((p) => (
+                            <MenuItem key={p.id} value={p.id}>{p.title}</MenuItem>
+                        ))}
+                    </TextField>
+                    <TextField
+                        label="Title"
+                        value={newTicketTitle}
+                        onChange={(e) => setNewTicketTitle(e.target.value)}
+                        fullWidth
+                        autoFocus
+                    />
+                    <Box sx={{ height: 300 }}>
+                        <Editor
+                            height="100%"
+                            defaultLanguage="markdown"
+                            value={newTicketDescription}
+                            onChange={(v) => setNewTicketDescription(v ?? '')}
+                            theme="vs-dark"
+                            options={{ minimap: { enabled: false }, wordWrap: 'on', fontSize: 14, lineNumbers: 'off' }}
+                        />
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setCreatingTicket(false)}>Cancel</Button>
+                    <Button
+                        variant="contained"
+                        onClick={handleCreateTicket}
+                        disabled={savingNew || !newTicketTitle.trim() || !newTicketProjectId}
+                    >
+                        {savingNew ? 'Creating...' : 'Create'}
                     </Button>
                 </DialogActions>
             </Dialog>
