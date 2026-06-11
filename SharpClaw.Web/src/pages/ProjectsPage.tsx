@@ -66,7 +66,7 @@ export default function ProjectsPage() {
             );
             setTickets(allTickets.flat());
         });
-        getUsers().then(setUsers);
+        getUsers().then(setUsers).catch(() => setUsers([]));
     }, []);
 
     const handleDragStart = useCallback((e: DragEvent, ticketId: string) => {
