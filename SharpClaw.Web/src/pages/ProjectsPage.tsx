@@ -15,6 +15,7 @@ import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
 import MenuItem from '@mui/material/MenuItem';
+import Autocomplete from '@mui/material/Autocomplete';
 import Editor from '@monaco-editor/react';
 import { getProjects, getProjectTickets, getUsers, updateTicketStatus, updateTicket, createTicket, improveTicket } from '../api/projects';
 import type { ProjectSummary, TicketSummary, User } from '../api/projects';
@@ -49,6 +50,7 @@ export default function ProjectsPage() {
     const [editTitle, setEditTitle] = useState('');
     const [editDescription, setEditDescription] = useState('');
     const [editAssignee, setEditAssignee] = useState('');
+    const [editLabels, setEditLabels] = useState<string[]>([]);
     const [saving, setSaving] = useState(false);
     const [improving, setImproving] = useState(false);
     const [creatingTicket, setCreatingTicket] = useState(false);
@@ -56,6 +58,7 @@ export default function ProjectsPage() {
     const [newTicketDescription, setNewTicketDescription] = useState('');
     const [newTicketProjectId, setNewTicketProjectId] = useState('');
     const [newTicketAssignee, setNewTicketAssignee] = useState('');
+    const [newTicketLabels, setNewTicketLabels] = useState<string[]>([]);
     const [savingNew, setSavingNew] = useState(false);
 
     useEffect(() => {
@@ -117,6 +120,7 @@ export default function ProjectsPage() {
         setEditTitle(ticket.title);
         setEditDescription(ticket.description ?? '');
         setEditAssignee(ticket.assignee ?? '');
+        setEditLabels(ticket.labels ?? []);
     }, []);
 
     const handleEditorClose = useCallback(() => {
@@ -127,10 +131,12 @@ export default function ProjectsPage() {
         if (!editingTicket) return;
         setSaving(true);
         try {
-            const data: { title?: string; description?: string; assignee?: string } = {};
+            const data: { title?: string; description?: string; assignee?: string; labels?: string[] } = {};
             if (editTitle !== editingTicket.title) data.title = editTitle;
             if (editDescription !== (editingTicket.description ?? '')) data.description = editDescription;
             if (editAssignee !== (editingTicket.assignee ?? '')) data.assignee = editAssignee || undefined;
+            const existingLabels = editingTicket.labels ?? [];
+            if (JSON.stringify(editLabels.slice().sort()) !== JSON.stringify(existingLabels.slice().sort())) data.labels = editLabels;
 
             if (Object.keys(data).length > 0) {
                 const updated = await updateTicket(editingTicket.projectId, editingTicket.id, data);
@@ -140,7 +146,7 @@ export default function ProjectsPage() {
         } finally {
             setSaving(false);
         }
-    }, [editingTicket, editTitle, editDescription, editAssignee]);
+    }, [editingTicket, editTitle, editDescription, editAssignee, editLabels]);
 
     const handleImprove = useCallback(async () => {
         if (!editingTicket) return;
@@ -158,6 +164,7 @@ export default function ProjectsPage() {
         setNewTicketDescription('');
         setNewTicketProjectId(selectedProjectId ?? projects[0]?.id ?? '');
         setNewTicketAssignee('');
+        setNewTicketLabels([]);
         setCreatingTicket(true);
     }, [selectedProjectId, projects]);
 
@@ -169,13 +176,14 @@ export default function ProjectsPage() {
                 title: newTicketTitle.trim(),
                 description: newTicketDescription.trim() || undefined,
                 assignee: newTicketAssignee || undefined,
+                labels: newTicketLabels.length > 0 ? newTicketLabels : undefined,
             });
             setTickets(prev => [...prev, ticket]);
             setCreatingTicket(false);
         } finally {
             setSavingNew(false);
         }
-    }, [newTicketProjectId, newTicketTitle, newTicketDescription, newTicketAssignee]);
+    }, [newTicketProjectId, newTicketTitle, newTicketDescription, newTicketAssignee, newTicketLabels]);
 
     const filteredTickets = tickets.filter(t => {
         if (selectedProjectId && t.projectId !== selectedProjectId && !t.labels.includes(selectedProjectId))
@@ -389,6 +397,16 @@ export default function ProjectsPage() {
                                 <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>
                             ))}
                         </TextField>
+                        <Autocomplete
+                            multiple
+                            size="small"
+                            options={projects.map(p => p.id)}
+                            getOptionLabel={(id) => projects.find(p => p.id === id)?.title ?? id}
+                            value={editLabels}
+                            onChange={(_, val) => setEditLabels(val)}
+                            renderInput={(params) => <TextField {...params} label="Labels" size="small" />}
+                            sx={{ minWidth: 200 }}
+                        />
                     </Stack>
                 </DialogTitle>
                 <DialogContent sx={{ p: 0, height: 450 }}>
@@ -453,6 +471,16 @@ export default function ProjectsPage() {
                             <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>
                         ))}
                     </TextField>
+                    <Autocomplete
+                        multiple
+                        size="small"
+                        options={projects.map(p => p.id)}
+                        getOptionLabel={(id) => projects.find(p => p.id === id)?.title ?? id}
+                        value={newTicketLabels}
+                        onChange={(_, val) => setNewTicketLabels(val)}
+                        renderInput={(params) => <TextField {...params} label="Labels" size="small" />}
+                        fullWidth
+                    />
                     <Box sx={{ height: 300 }}>
                         <Editor
                             height="100%"
