@@ -143,7 +143,7 @@ public sealed class ProjectLoader(
         if (!Directory.Exists(ticketsDir))
             throw new InvalidOperationException($"Project '{projectId}' not found.");
 
-        var nextId = GetNextTicketId(ticketsDir);
+        var nextId = GetNextTicketId();
         var now = DateTimeOffset.UtcNow;
         var ticket = new Ticket(nextId, projectId, title, description, TicketStatus.Planning, now, now, labels ?? [], reporter, assignee);
 
@@ -188,16 +188,28 @@ public sealed class ProjectLoader(
         return Path.Combine(ticketsDir, filename);
     }
 
-    private static string GetNextTicketId(string ticketsDir)
+    private string GetNextTicketId()
     {
-        var existing = Directory.EnumerateFiles(ticketsDir, "*.md")
-            .Select(f => Path.GetFileNameWithoutExtension(f))
-            .Where(n => int.TryParse(n, out _))
-            .Select(n => int.Parse(n))
-            .DefaultIfEmpty(0)
-            .Max();
+        var max = 0;
+        var dir = ProjectsDir;
+        if (!Directory.Exists(dir))
+            return "001";
 
-        return (existing + 1).ToString("D3");
+        foreach (var projectDir in Directory.EnumerateDirectories(dir))
+        {
+            var ticketsDir = Path.Combine(projectDir, "tickets");
+            if (!Directory.Exists(ticketsDir))
+                continue;
+
+            foreach (var file in Directory.EnumerateFiles(ticketsDir, "*.md"))
+            {
+                var name = Path.GetFileNameWithoutExtension(file);
+                if (int.TryParse(name, out var num) && num > max)
+                    max = num;
+            }
+        }
+
+        return (max + 1).ToString("D3");
     }
 
     private static Project? ParseProject(string projectDir, string filePath)
