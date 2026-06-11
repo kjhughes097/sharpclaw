@@ -79,6 +79,7 @@ The filename (without `.md`) is the **ticket ID** — a zero-padded number like 
 | ------------- | ----------------- | ---------------------------------- |
 | Idea          | `idea`            | Captured but not yet planned       |
 | Planning      | `planning`        | Being scoped and specified         |
+| Todo          | `todo`            | Planned and ready to be picked up  |
 | In Progress   | `in_progress`     | Actively being worked on           |
 | For Review    | `for_review`      | Complete, awaiting review          |
 | Done          | `done`            | Finished                           |
@@ -393,7 +394,7 @@ Uses an LLM to rewrite and improve the ticket description, making it clearer and
 
 The **Projects** page in the web UI (`/projects`) displays a Kanban board with drag-and-drop ticket management:
 
-- **Columns** represent statuses: Idea → Planning → In Progress → For Review → Done
+- **Columns** represent statuses: Idea → Planning → Todo → In Progress → For Review → Done
 - **Cards** show the ticket number, title, and a colour-coded project chip
 - **Drag and drop** tickets between columns to change status
 - **Click** a card to open an editor dialog with the full markdown description

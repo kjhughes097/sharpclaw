@@ -29,6 +29,7 @@ import type { ProjectSummary, TicketSummary, User } from '../api/projects';
 const STATUSES = [
     { key: 'idea', label: 'Idea' },
     { key: 'planning', label: 'Planning' },
+    { key: 'todo', label: 'Todo' },
     { key: 'in_progress', label: 'In Progress' },
     { key: 'for_review', label: 'For Review' },
     { key: 'done', label: 'Done' },
