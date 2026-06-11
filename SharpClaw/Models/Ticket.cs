@@ -7,5 +7,11 @@ public sealed record Ticket(
     string? Description,
     TicketStatus Status,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt
-);
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<string> Labels = default!,
+    string? Reporter = null,
+    string? Assignee = null
+)
+{
+    public IReadOnlyList<string> Labels { get; init; } = Labels ?? [];
+}

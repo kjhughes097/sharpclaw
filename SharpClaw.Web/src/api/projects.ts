@@ -14,8 +14,17 @@ export interface TicketSummary {
     title: string;
     description: string | null;
     status: string;
+    labels: string[];
+    reporter: string | null;
+    assignee: string | null;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface User {
+    id: string;
+    name: string;
+    type: 'agent' | 'human';
 }
 
 export const getProjects = () => apiFetch<ProjectSummary[]>('/projects');
@@ -23,13 +32,15 @@ export const getProjects = () => apiFetch<ProjectSummary[]>('/projects');
 export const getProjectTickets = (projectId: string) =>
     apiFetch<TicketSummary[]>(`/projects/${projectId}/tickets`);
 
-export const createTicket = (projectId: string, data: { title: string; description?: string }) =>
+export const getUsers = () => apiFetch<User[]>('/users');
+
+export const createTicket = (projectId: string, data: { title: string; description?: string; reporter?: string; assignee?: string; labels?: string[] }) =>
     apiFetch<TicketSummary>(`/projects/${projectId}/tickets`, {
         method: 'POST',
         body: JSON.stringify(data),
     });
 
-export const updateTicket = (projectId: string, ticketId: string, data: { title?: string; description?: string; status?: string }) =>
+export const updateTicket = (projectId: string, ticketId: string, data: { title?: string; description?: string; status?: string; assignee?: string; labels?: string[] }) =>
     apiFetch<TicketSummary>(`/projects/${projectId}/tickets/${ticketId}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
