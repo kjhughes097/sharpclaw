@@ -72,3 +72,12 @@ export const improveTicket = (projectId: string, ticketId: string) =>
     apiFetch<{ description: string }>(`/projects/${projectId}/tickets/${ticketId}/improve`, {
         method: 'POST',
     });
+
+export const moveTicket = (projectId: string, ticketId: string, targetProjectId: string) =>
+    apiFetch<TicketSummary>(`/projects/${projectId}/tickets/${ticketId}/move`, {
+        method: 'POST',
+        body: JSON.stringify({ targetProjectId }),
+    });
+
+export const deleteTicket = (projectId: string, ticketId: string) =>
+    apiFetch<void>(`/projects/${projectId}/tickets/${ticketId}`, { method: 'DELETE' });

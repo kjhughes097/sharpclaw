@@ -23,7 +23,7 @@ import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemSecondaryAction from '@mui/material/ListItemSecondaryAction';
 import Editor from '@monaco-editor/react';
-import { getProjects, getProjectTickets, getUsers, getLabels, addLabel, removeLabel, createProject, deleteProject, updateTicketStatus, updateTicket, createTicket, improveTicket } from '../api/projects';
+import { getProjects, getProjectTickets, getUsers, getLabels, addLabel, removeLabel, createProject, deleteProject, updateTicketStatus, updateTicket, createTicket, improveTicket, moveTicket, deleteTicket } from '../api/projects';
 import type { ProjectSummary, TicketSummary, User } from '../api/projects';
 
 const STATUSES = [
@@ -57,8 +57,10 @@ export default function ProjectsPage() {
     const [editDescription, setEditDescription] = useState('');
     const [editAssignee, setEditAssignee] = useState('');
     const [editLabels, setEditLabels] = useState<string[]>([]);
+    const [editProjectId, setEditProjectId] = useState('');
     const [saving, setSaving] = useState(false);
     const [improving, setImproving] = useState(false);
+    const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [creatingTicket, setCreatingTicket] = useState(false);
     const [newTicketTitle, setNewTicketTitle] = useState('');
     const [newTicketDescription, setNewTicketDescription] = useState('');
@@ -134,6 +136,7 @@ export default function ProjectsPage() {
         setEditDescription(ticket.description ?? '');
         setEditAssignee(ticket.assignee ?? '');
         setEditLabels(ticket.labels ?? []);
+        setEditProjectId(ticket.projectId);
     }, []);
 
     const handleEditorClose = useCallback(() => {
@@ -144,22 +147,39 @@ export default function ProjectsPage() {
         if (!editingTicket) return;
         setSaving(true);
         try {
-            const data: { title?: string; description?: string; assignee?: string; labels?: string[] } = {};
-            if (editTitle !== editingTicket.title) data.title = editTitle;
-            if (editDescription !== (editingTicket.description ?? '')) data.description = editDescription;
-            if (editAssignee !== (editingTicket.assignee ?? '')) data.assignee = editAssignee || undefined;
-            const existingLabels = editingTicket.labels ?? [];
-            if (JSON.stringify(editLabels.slice().sort()) !== JSON.stringify(existingLabels.slice().sort())) data.labels = editLabels;
+            // Handle project move first
+            if (editProjectId !== editingTicket.projectId) {
+                const moved = await moveTicket(editingTicket.projectId, editingTicket.id, editProjectId);
+                setTickets(prev => prev.map(t => t.id === editingTicket.id ? moved : t));
+                // Update remaining fields on the moved ticket
+                const data: { title?: string; description?: string; assignee?: string; labels?: string[] } = {};
+                if (editTitle !== editingTicket.title) data.title = editTitle;
+                if (editDescription !== (editingTicket.description ?? '')) data.description = editDescription;
+                if (editAssignee !== (editingTicket.assignee ?? '')) data.assignee = editAssignee || undefined;
+                const existingLabels = editingTicket.labels ?? [];
+                if (JSON.stringify(editLabels.slice().sort()) !== JSON.stringify(existingLabels.slice().sort())) data.labels = editLabels;
+                if (Object.keys(data).length > 0) {
+                    const updated = await updateTicket(editProjectId, editingTicket.id, data);
+                    setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
+                }
+            } else {
+                const data: { title?: string; description?: string; assignee?: string; labels?: string[] } = {};
+                if (editTitle !== editingTicket.title) data.title = editTitle;
+                if (editDescription !== (editingTicket.description ?? '')) data.description = editDescription;
+                if (editAssignee !== (editingTicket.assignee ?? '')) data.assignee = editAssignee || undefined;
+                const existingLabels = editingTicket.labels ?? [];
+                if (JSON.stringify(editLabels.slice().sort()) !== JSON.stringify(existingLabels.slice().sort())) data.labels = editLabels;
 
-            if (Object.keys(data).length > 0) {
-                const updated = await updateTicket(editingTicket.projectId, editingTicket.id, data);
-                setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
+                if (Object.keys(data).length > 0) {
+                    const updated = await updateTicket(editingTicket.projectId, editingTicket.id, data);
+                    setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
+                }
             }
             setEditingTicket(null);
         } finally {
             setSaving(false);
         }
-    }, [editingTicket, editTitle, editDescription, editAssignee, editLabels]);
+    }, [editingTicket, editTitle, editDescription, editAssignee, editLabels, editProjectId]);
 
     const handleImprove = useCallback(async () => {
         if (!editingTicket) return;
@@ -169,6 +189,19 @@ export default function ProjectsPage() {
             setEditDescription(result.description);
         } finally {
             setImproving(false);
+        }
+    }, [editingTicket]);
+
+    const handleDeleteTicket = useCallback(async () => {
+        if (!editingTicket) return;
+        setSaving(true);
+        try {
+            await deleteTicket(editingTicket.projectId, editingTicket.id);
+            setTickets(prev => prev.filter(t => t.id !== editingTicket.id));
+            setEditingTicket(null);
+            setConfirmingDelete(false);
+        } finally {
+            setSaving(false);
         }
     }, [editingTicket]);
 
@@ -404,6 +437,18 @@ export default function ProjectsPage() {
                         )}
                         <TextField
                             select
+                            label="Project"
+                            value={editProjectId}
+                            onChange={(e) => setEditProjectId(e.target.value)}
+                            size="small"
+                            sx={{ minWidth: 150 }}
+                        >
+                            {projects.map((p) => (
+                                <MenuItem key={p.id} value={p.id}>{p.title}</MenuItem>
+                            ))}
+                        </TextField>
+                        <TextField
+                            select
                             label="Assignee"
                             value={editAssignee}
                             onChange={(e) => setEditAssignee(e.target.value)}
@@ -441,10 +486,28 @@ export default function ProjectsPage() {
                     <Button onClick={handleImprove} disabled={improving || saving} color="secondary">
                         {improving ? 'Improving...' : 'Improve'}
                     </Button>
+                    <Button onClick={() => setConfirmingDelete(true)} disabled={saving || improving} color="error">
+                        Delete
+                    </Button>
                     <Box sx={{ flex: 1 }} />
                     <Button onClick={handleEditorClose}>Cancel</Button>
                     <Button variant="contained" onClick={handleEditorSave} disabled={saving || improving}>
                         {saving ? 'Saving...' : 'Save'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <Dialog open={confirmingDelete} onClose={() => setConfirmingDelete(false)} maxWidth="xs">
+                <DialogTitle>Delete Ticket?</DialogTitle>
+                <DialogContent>
+                    <Typography>
+                        Are you sure you want to delete ticket <strong>{editingTicket?.id}</strong>: &quot;{editingTicket?.title}&quot;? This action cannot be undone from the UI.
+                    </Typography>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setConfirmingDelete(false)}>Cancel</Button>
+                    <Button onClick={handleDeleteTicket} color="error" variant="contained" disabled={saving}>
+                        {saving ? 'Deleting...' : 'Delete'}
                     </Button>
                 </DialogActions>
             </Dialog>
