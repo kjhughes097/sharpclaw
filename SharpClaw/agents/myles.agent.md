@@ -93,7 +93,7 @@ Without memory, every conversation starts from zero. You MUST use memory activel
 
 ### When to Retrieve
 
-Before responding to anything non-trivial, call `memory_search("myles", ...)` to check for relevant prior context (training history, goals, PRs, injury notes). If you find relevant tags in `memory-index.md`, load the corresponding `memory-{YY-MM-DD}.md` file. This is not optional — do it.
+**Semantic auto-recall is active.** Relevant memories from past conversations are automatically retrieved and prepended to your messages — you don't need to search for context that's already been recalled for you. Only use `memory_search` when you need specific historical detail not covered by the auto-injected context (e.g., loading a specific daily snapshot from `memory-index.md` tags).
 
 ### When to Write (Be Aggressive)
 

@@ -2,6 +2,7 @@ using System.Numerics.Tensors;
 using Microsoft.Extensions.Options;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using Microsoft.ML.Tokenizers;
 using SharpClaw.Configuration;
 
 namespace SharpClaw.Memory;
@@ -9,6 +10,7 @@ namespace SharpClaw.Memory;
 public sealed class EmbeddingService : IDisposable
 {
     private readonly InferenceSession _session;
+    private readonly BertTokenizer _tokenizer;
     private readonly int _dimension;
     private readonly ILogger<EmbeddingService> _logger;
     private bool _disposed;
@@ -18,12 +20,19 @@ public sealed class EmbeddingService : IDisposable
         _logger = logger;
         _dimension = options.Value.EmbeddingDimension;
 
-        var modelPath = Path.IsPathRooted(options.Value.ModelPath)
-            ? options.Value.ModelPath
-            : Path.Combine(AppContext.BaseDirectory, options.Value.ModelPath);
+        var modelPath = ResolvePath(options.Value.ModelPath);
+        var vocabPath = ResolvePath(options.Value.VocabPath);
 
         if (!File.Exists(modelPath))
             throw new FileNotFoundException($"ONNX embedding model not found at '{modelPath}'");
+
+        if (!File.Exists(vocabPath))
+            throw new FileNotFoundException($"WordPiece vocab file not found at '{vocabPath}'. Run scripts/download-embedding-model.sh");
+
+        _tokenizer = BertTokenizer.Create(vocabPath, new BertOptions
+        {
+            LowerCaseBeforeTokenization = true
+        });
 
         var sessionOptions = new Microsoft.ML.OnnxRuntime.SessionOptions
         {
@@ -32,7 +41,7 @@ public sealed class EmbeddingService : IDisposable
         sessionOptions.AppendExecutionProvider_CPU();
 
         _session = new InferenceSession(modelPath, sessionOptions);
-        _logger.LogInformation("Loaded embedding model from {Path} (dimension={Dim})", modelPath, _dimension);
+        _logger.LogInformation("Loaded embedding model from {Path} with BertTokenizer (dimension={Dim})", modelPath, _dimension);
     }
 
     public int Dimension => _dimension;
@@ -44,17 +53,15 @@ public sealed class EmbeddingService : IDisposable
         if (string.IsNullOrWhiteSpace(text))
             return new float[_dimension];
 
-        // Simple whitespace tokenization with [CLS]/[SEP] — for MiniLM we use token IDs
-        // In production, use a proper tokenizer. For now, we encode using simple word-piece approximation.
-        var tokens = SimpleTokenize(text);
+        var tokenIds = Tokenize(text);
 
-        var inputIds = new DenseTensor<long>(new[] { 1, tokens.Length });
-        var attentionMask = new DenseTensor<long>(new[] { 1, tokens.Length });
-        var tokenTypeIds = new DenseTensor<long>(new[] { 1, tokens.Length });
+        var inputIds = new DenseTensor<long>(new[] { 1, tokenIds.Length });
+        var attentionMask = new DenseTensor<long>(new[] { 1, tokenIds.Length });
+        var tokenTypeIds = new DenseTensor<long>(new[] { 1, tokenIds.Length });
 
-        for (var i = 0; i < tokens.Length; i++)
+        for (var i = 0; i < tokenIds.Length; i++)
         {
-            inputIds[0, i] = tokens[i];
+            inputIds[0, i] = tokenIds[i];
             attentionMask[0, i] = 1;
             tokenTypeIds[0, i] = 0;
         }
@@ -70,7 +77,7 @@ public sealed class EmbeddingService : IDisposable
 
         // MiniLM outputs last_hidden_state [1, seq_len, 384] — mean pool over sequence
         var output = results.First().AsTensor<float>();
-        var embedding = MeanPool(output, tokens.Length);
+        var embedding = MeanPool(output, tokenIds.Length);
 
         // L2 normalize
         var norm = MathF.Sqrt(TensorPrimitives.Dot(embedding, embedding));
@@ -81,6 +88,22 @@ public sealed class EmbeddingService : IDisposable
         }
 
         return embedding;
+    }
+
+    /// <summary>
+    /// Tokenizes text using BertTokenizer which handles WordPiece + [CLS]/[SEP] framing.
+    /// Truncates to max 512 tokens.
+    /// </summary>
+    private long[] Tokenize(string text, int maxLength = 512)
+    {
+        // BertTokenizer.EncodeToIds adds [CLS] and [SEP] automatically
+        var ids = _tokenizer.EncodeToIds(text, maxLength, out _, out _);
+
+        var tokens = new long[ids.Count];
+        for (var i = 0; i < ids.Count; i++)
+            tokens[i] = ids[i];
+
+        return tokens;
     }
 
     private float[] MeanPool(Microsoft.ML.OnnxRuntime.Tensors.Tensor<float> hiddenState, int seqLen)
@@ -100,29 +123,10 @@ public sealed class EmbeddingService : IDisposable
         return embedding;
     }
 
-    /// <summary>
-    /// Simple tokenization: [CLS] + char-level token IDs + [SEP], capped at 512 tokens.
-    /// This is a placeholder — proper WordPiece tokenization should be added for better quality.
-    /// </summary>
-    private static long[] SimpleTokenize(string text, int maxLength = 512)
-    {
-        // For BERT-family models, we approximate with character-based encoding
-        // [CLS]=101, [SEP]=102, [UNK]=100
-        var chars = text.ToLowerInvariant().ToCharArray();
-        var tokenCount = Math.Min(chars.Length, maxLength - 2);
-        var tokens = new long[tokenCount + 2];
-
-        tokens[0] = 101; // [CLS]
-        for (var i = 0; i < tokenCount; i++)
-        {
-            var c = chars[i];
-            // Map ASCII printable to token range; non-ASCII to [UNK]
-            tokens[i + 1] = c is >= ' ' and <= '~' ? c + 900 : 100;
-        }
-        tokens[tokenCount + 1] = 102; // [SEP]
-
-        return tokens;
-    }
+    private static string ResolvePath(string configPath) =>
+        Path.IsPathRooted(configPath)
+            ? configPath
+            : Path.Combine(AppContext.BaseDirectory, configPath);
 
     public void Dispose()
     {

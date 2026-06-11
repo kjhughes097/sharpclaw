@@ -61,7 +61,7 @@ Semantic memory adds vector-based recall to the existing file-based system. When
 
 | Component | Responsibility |
 | --------- | -------------- |
-| `EmbeddingService` | Generates 384-dimensional embeddings using a local ONNX model (all-MiniLM-L6-v2) |
+| `EmbeddingService` | Generates 384-dimensional embeddings using a local ONNX model (all-MiniLM-L6-v2) with BertTokenizer (WordPiece) |
 | `SemanticMemoryStore` | SQLite-backed storage with FTS5 keyword search and brute-force cosine similarity (sqlite-vec optional) |
 | `SemanticMemoryService` | Orchestrates store + recall + deduplication + trust scoring |
 | `AgentInvoker` hook | Pre-LLM recall injection — recalled context is prepended to the user prompt |
@@ -75,7 +75,7 @@ Add to `appsettings.json`:
   "SemanticMemory": {
     "Enabled": true,
     "ModelPath": "models/all-MiniLM-L6-v2.onnx",
-    "TokenizerPath": "models/tokenizer.json",
+    "VocabPath": "models/vocab.txt",
     "DatabasePath": "data/semantic-memory.db",
     "TopK": 5,
     "MinScore": 0.3,
@@ -85,7 +85,7 @@ Add to `appsettings.json`:
 }
 ```
 
-Set `Enabled: true` to activate. The ONNX model file must be present at `ModelPath` (relative to app base directory).
+Set `Enabled: true` to activate. The ONNX model and `vocab.txt` files must be present (relative to app base directory). Run `scripts/download-embedding-model.sh` to fetch them.
 
 ### Memory Types
 
@@ -215,7 +215,7 @@ These tools are always registered but return helpful error messages when semanti
   "SemanticMemory": {
     "Enabled": true,
     "ModelPath": "models/all-MiniLM-L6-v2.onnx",
-    "TokenizerPath": "models/tokenizer.json",
+    "VocabPath": "models/vocab.txt",
     "DatabasePath": "data/semantic-memory.db",
     "TopK": 5,
     "MinScore": 0.3,

@@ -60,3 +60,4 @@ docker-compose.override.yml
 
 # Working and optional folders
 SharpClaw/models
+SharpClaw/.playwright-mcp/
