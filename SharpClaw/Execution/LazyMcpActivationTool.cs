@@ -74,7 +74,7 @@ public sealed class LazyMcpActivationTool : AIFunction, IAsyncDisposable
                 _ => throw new InvalidOperationException($"Unknown MCP transport '{_definition.Transport}' for server '{_serverName}'")
             };
 
-            _client = await McpClient.CreateAsync(transport, loggerFactory: _loggerFactory, cancellationToken: cancellationToken);
+            _client = await McpClient.CreateAsync(transport, McpToolBridge.DefaultClientOptions, loggerFactory: _loggerFactory, cancellationToken: cancellationToken);
             var tools = await _client.ListToolsAsync(cancellationToken: cancellationToken);
 
             // Inject discovered tools into the session's live tool list
