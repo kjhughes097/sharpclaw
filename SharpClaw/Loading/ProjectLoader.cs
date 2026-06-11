@@ -62,6 +62,52 @@ public sealed class ProjectLoader(
         return project;
     }
 
+    public void DeleteProject(string projectId)
+    {
+        var projectDir = Path.Combine(ProjectsDir, projectId);
+        if (!Directory.Exists(projectDir))
+            throw new InvalidOperationException($"Project '{projectId}' not found.");
+
+        Directory.Delete(projectDir, recursive: true);
+        logger.LogInformation("Deleted project: {ProjectId}", projectId);
+    }
+
+    public IReadOnlyList<string> GetLabels()
+    {
+        var labelsFile = Path.Combine(ProjectsDir, "labels.json");
+        if (!File.Exists(labelsFile))
+            return [];
+
+        var json = File.ReadAllText(labelsFile);
+        return System.Text.Json.JsonSerializer.Deserialize<List<string>>(json) ?? [];
+    }
+
+    public IReadOnlyList<string> AddLabel(string name)
+    {
+        var labels = GetLabels().ToList();
+        if (!labels.Contains(name, StringComparer.OrdinalIgnoreCase))
+        {
+            labels.Add(name);
+            labels.Sort(StringComparer.OrdinalIgnoreCase);
+            WriteLabelsFile(labels);
+        }
+        return labels;
+    }
+
+    public void RemoveLabel(string name)
+    {
+        var labels = GetLabels().ToList();
+        labels.RemoveAll(l => l.Equals(name, StringComparison.OrdinalIgnoreCase));
+        WriteLabelsFile(labels);
+    }
+
+    private void WriteLabelsFile(List<string> labels)
+    {
+        var labelsFile = Path.Combine(ProjectsDir, "labels.json");
+        Directory.CreateDirectory(ProjectsDir);
+        File.WriteAllText(labelsFile, System.Text.Json.JsonSerializer.Serialize(labels, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    }
+
     public IReadOnlyList<Ticket> GetTickets(string projectId, TicketStatus? statusFilter = null)
     {
         var ticketsDir = Path.Combine(ProjectsDir, projectId, "tickets");
