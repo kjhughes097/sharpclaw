@@ -43,6 +43,9 @@ Thumbs.db
 *.swo
 *~
 
+# Database files
+*.db
+
 # Logs
 *.log
 logs/

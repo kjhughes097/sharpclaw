@@ -11,14 +11,17 @@ public sealed class SemanticMemoryStore : IDisposable
     private readonly ILogger<SemanticMemoryStore> _logger;
     private bool _disposed;
 
-    public SemanticMemoryStore(IOptions<SemanticMemoryOptions> options, ILogger<SemanticMemoryStore> logger)
+    public SemanticMemoryStore(IOptions<SemanticMemoryOptions> options, IOptions<SharpClawOptions> sharpClawOptions, ILogger<SemanticMemoryStore> logger)
     {
         _logger = logger;
         _dimension = options.Value.EmbeddingDimension;
 
+        var workspacePath = sharpClawOptions.Value.WorkspacePath;
         var dbPath = Path.IsPathRooted(options.Value.DatabasePath)
             ? options.Value.DatabasePath
-            : Path.Combine(AppContext.BaseDirectory, options.Value.DatabasePath);
+            : !string.IsNullOrEmpty(workspacePath)
+                ? Path.Combine(workspacePath, options.Value.DatabasePath)
+                : Path.Combine(AppContext.BaseDirectory, options.Value.DatabasePath);
 
         Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
 
