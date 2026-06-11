@@ -33,6 +33,7 @@
     <Content Include="agents/**/*.agent.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="skills/**/*.skill.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="models/**/*.onnx" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="models/**/*.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Update="mcps/**/*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
