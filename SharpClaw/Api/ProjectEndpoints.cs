@@ -15,7 +15,7 @@ internal static class ProjectEndpoints
         app.MapGet("/api/users", (IAgentRegistry agentRegistry) =>
         {
             var agents = agentRegistry.GetAll().Select(a => new { id = a.Name, name = a.Name, type = "agent" });
-            var humans = new[] { new { id = "kevin", name = "Kevin", type = "human" } };
+            var humans = new[] { new { id = "ken", name = "Ken", type = "human" } };
             return humans.Concat(agents);
         }).WithTags("Users");
 
