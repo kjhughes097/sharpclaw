@@ -107,3 +107,65 @@ Before storing, cosine similarity >0.92 against existing memories triggers a ski
 - If the ONNX model file is missing, startup fails with a clear error
 - If sqlite-vec is unavailable, falls back to brute-force cosine similarity
 - If recall fails at runtime, the prompt passes through unchanged
+
+## Semantic Memory (Phase 2) — Auto-Capture
+
+Phase 2 adds automatic extraction of facts, decisions, preferences, and learnings from agent exchanges. After each successful LLM response, a background task uses a cheap model to analyse the exchange and store any noteworthy information as semantic memories.
+
+### Architecture
+
+| Component | Responsibility |
+| --------- | -------------- |
+| `MemoryExtractionService` | Calls a cheap LLM (Haiku) with the user prompt + agent response, parses extracted memories |
+| `AgentInvoker` post-LLM hook | Fire-and-forget: triggers extraction after a successful response without blocking the user |
+
+### How It Works
+
+1. User sends a prompt → agent responds successfully
+2. `AgentInvoker` fires a background task (non-blocking)
+3. `MemoryExtractionService` sends the exchange to a cheap model with a structured extraction prompt
+4. The model returns a JSON array of `{content, type}` objects
+5. Each extracted memory is stored via `SemanticMemoryService.StoreAsync()` — which handles embedding generation and deduplication (>0.92 cosine = skip)
+
+### Configuration
+
+```json
+{
+  "SemanticMemory": {
+    "Enabled": true,
+    "ExtractionEnabled": true,
+    "ExtractionModel": "claude-haiku-4-20250414",
+    "ExtractionMaxTokens": 1024,
+    "MinPromptLengthForExtraction": 20,
+    "MinResponseLengthForExtraction": 50
+  }
+}
+```
+
+| Setting | Default | Description |
+| ------- | ------- | ----------- |
+| `ExtractionEnabled` | `true` | Toggle extraction on/off (within enabled semantic memory) |
+| `ExtractionModel` | `claude-haiku-4-20250414` | Model used for extraction (should be cheap/fast) |
+| `ExtractionMaxTokens` | `1024` | Max output tokens for extraction response |
+| `MinPromptLengthForExtraction` | `20` | Skip extraction for very short prompts |
+| `MinResponseLengthForExtraction` | `50` | Skip extraction for very short responses |
+
+### Prerequisites
+
+- `SemanticMemory:Enabled` must be `true`
+- A valid `Anthropic:ApiKey` must be configured (extraction uses the Anthropic API)
+- If either is missing, extraction is silently disabled
+
+### Filtering
+
+The extraction prompt instructs the LLM to:
+- Only extract genuinely important, reusable information
+- Skip transient details (timestamps, greetings, routine confirmations)
+- Skip information only relevant to the immediate task
+- Categorise each memory as fact/decision/preference/learning
+
+### Graceful Degradation
+
+- Extraction failures are logged as warnings and never affect the user response
+- Fire-and-forget: the user response is returned immediately regardless of extraction status
+- Short exchanges (below length thresholds) are skipped entirely

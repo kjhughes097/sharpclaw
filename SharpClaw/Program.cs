@@ -151,15 +151,27 @@ builder.Services.AddSingleton<TranscriptService>();
 
 // -- Semantic Memory (conditional) --
 var semanticMemoryEnabled = builder.Configuration.GetValue<bool>("SemanticMemory:Enabled");
+var anthropicConfigured = !string.IsNullOrEmpty(builder.Configuration.GetValue<string>("Anthropic:ApiKey"));
 if (semanticMemoryEnabled)
 {
     builder.Services.AddSingleton<EmbeddingService>();
     builder.Services.AddSingleton<SemanticMemoryStore>();
     builder.Services.AddSingleton<SemanticMemoryService>();
+
+    // Extraction requires Anthropic API key
+    if (anthropicConfigured)
+    {
+        builder.Services.AddSingleton<MemoryExtractionService>();
+    }
+    else
+    {
+        builder.Services.AddSingleton<MemoryExtractionService?>(sp => null);
+    }
 }
 else
 {
     builder.Services.AddSingleton<SemanticMemoryService?>(sp => null);
+    builder.Services.AddSingleton<MemoryExtractionService?>(sp => null);
 }
 
 // -- Workspace --
