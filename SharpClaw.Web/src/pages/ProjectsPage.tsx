@@ -14,10 +14,16 @@ import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+import SettingsIcon from '@mui/icons-material/Settings';
 import MenuItem from '@mui/material/MenuItem';
 import Autocomplete from '@mui/material/Autocomplete';
+import List from '@mui/material/List';
+import ListItem from '@mui/material/ListItem';
+import ListItemText from '@mui/material/ListItemText';
+import ListItemSecondaryAction from '@mui/material/ListItemSecondaryAction';
 import Editor from '@monaco-editor/react';
-import { getProjects, getProjectTickets, getUsers, updateTicketStatus, updateTicket, createTicket, improveTicket } from '../api/projects';
+import { getProjects, getProjectTickets, getUsers, getLabels, addLabel, removeLabel, createProject, deleteProject, updateTicketStatus, updateTicket, createTicket, improveTicket } from '../api/projects';
 import type { ProjectSummary, TicketSummary, User } from '../api/projects';
 
 const STATUSES = [
@@ -60,6 +66,12 @@ export default function ProjectsPage() {
     const [newTicketAssignee, setNewTicketAssignee] = useState('');
     const [newTicketLabels, setNewTicketLabels] = useState<string[]>([]);
     const [savingNew, setSavingNew] = useState(false);
+    const [labels, setLabels] = useState<string[]>([]);
+    const [managingProjects, setManagingProjects] = useState(false);
+    const [newProjectTitle, setNewProjectTitle] = useState('');
+    const [newProjectDescription, setNewProjectDescription] = useState('');
+    const [managingLabels, setManagingLabels] = useState(false);
+    const [newLabelName, setNewLabelName] = useState('');
 
     useEffect(() => {
         getProjects().then(async (projs) => {
@@ -70,6 +82,7 @@ export default function ProjectsPage() {
             setTickets(allTickets.flat());
         });
         getUsers().then(setUsers).catch(() => setUsers([]));
+        getLabels().then(setLabels).catch(() => setLabels([]));
     }, []);
 
     const handleDragStart = useCallback((e: DragEvent, ticketId: string) => {
@@ -186,7 +199,7 @@ export default function ProjectsPage() {
     }, [newTicketProjectId, newTicketTitle, newTicketDescription, newTicketAssignee, newTicketLabels]);
 
     const filteredTickets = tickets.filter(t => {
-        if (selectedProjectId && t.projectId !== selectedProjectId && !t.labels.includes(selectedProjectId))
+        if (selectedProjectId && t.projectId !== selectedProjectId)
             return false;
         if (selectedAssignee && t.assignee !== selectedAssignee)
             return false;
@@ -202,6 +215,12 @@ export default function ProjectsPage() {
                 <Typography variant="h4">Projects</Typography>
                 <IconButton color="primary" onClick={handleOpenCreateTicket} title="New ticket" size="small">
                     <AddIcon />
+                </IconButton>
+                <IconButton color="default" onClick={() => setManagingProjects(true)} title="Manage projects" size="small">
+                    <SettingsIcon />
+                </IconButton>
+                <IconButton color="default" onClick={() => setManagingLabels(true)} title="Manage labels" size="small">
+                    <SettingsIcon fontSize="small" />
                 </IconButton>
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -333,17 +352,16 @@ export default function ProjectsPage() {
                                                     fontSize: '0.7rem',
                                                 }}
                                             />
-                                            {ticket.labels.filter(l => l !== ticket.projectId).map((label) => (
+                                            {ticket.labels.map((label) => (
                                                 <Chip
                                                     key={label}
-                                                    label={projects.find(p => p.id === label)?.title ?? label}
+                                                    label={label}
                                                     size="small"
+                                                    variant="outlined"
                                                     sx={{
-                                                        bgcolor: getProjectColour(label, projects),
-                                                        color: '#fff',
-                                                        fontWeight: 500,
                                                         fontSize: '0.7rem',
-                                                        opacity: 0.75,
+                                                        borderColor: '#7b1fa2',
+                                                        color: '#7b1fa2',
                                                     }}
                                                 />
                                             ))}
@@ -400,8 +418,8 @@ export default function ProjectsPage() {
                         <Autocomplete
                             multiple
                             size="small"
-                            options={projects.map(p => p.id)}
-                            getOptionLabel={(id) => projects.find(p => p.id === id)?.title ?? id}
+                            freeSolo
+                            options={labels}
                             value={editLabels}
                             onChange={(_, val) => setEditLabels(val)}
                             renderInput={(params) => <TextField {...params} label="Labels" size="small" />}
@@ -474,8 +492,8 @@ export default function ProjectsPage() {
                     <Autocomplete
                         multiple
                         size="small"
-                        options={projects.map(p => p.id)}
-                        getOptionLabel={(id) => projects.find(p => p.id === id)?.title ?? id}
+                        freeSolo
+                        options={labels}
                         value={newTicketLabels}
                         onChange={(_, val) => setNewTicketLabels(val)}
                         renderInput={(params) => <TextField {...params} label="Labels" size="small" />}
@@ -501,6 +519,129 @@ export default function ProjectsPage() {
                     >
                         {savingNew ? 'Creating...' : 'Create'}
                     </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Manage Projects Dialog */}
+            <Dialog open={managingProjects} onClose={() => setManagingProjects(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Manage Projects</DialogTitle>
+                <DialogContent>
+                    <Stack direction="row" spacing={1} sx={{ mb: 2, mt: 1 }}>
+                        <TextField
+                            label="New project title"
+                            value={newProjectTitle}
+                            onChange={(e) => setNewProjectTitle(e.target.value)}
+                            size="small"
+                            sx={{ flex: 1 }}
+                        />
+                        <TextField
+                            label="Description (optional)"
+                            value={newProjectDescription}
+                            onChange={(e) => setNewProjectDescription(e.target.value)}
+                            size="small"
+                            sx={{ flex: 1 }}
+                        />
+                        <Button
+                            variant="contained"
+                            size="small"
+                            disabled={!newProjectTitle.trim()}
+                            onClick={async () => {
+                                await createProject(newProjectTitle.trim(), newProjectDescription.trim() || undefined);
+                                const projs = await getProjects();
+                                setProjects(projs);
+                                setNewProjectTitle('');
+                                setNewProjectDescription('');
+                            }}
+                        >
+                            Add
+                        </Button>
+                    </Stack>
+                    <List dense>
+                        {projects.map((p) => (
+                            <ListItem key={p.id}>
+                                <ListItemText primary={p.title} secondary={`${p.ticketCount} tickets`} />
+                                <ListItemSecondaryAction>
+                                    <IconButton
+                                        edge="end"
+                                        size="small"
+                                        disabled={p.ticketCount > 0}
+                                        title={p.ticketCount > 0 ? 'Cannot delete project with tickets' : 'Delete project'}
+                                        onClick={async () => {
+                                            await deleteProject(p.id);
+                                            setProjects(prev => prev.filter(x => x.id !== p.id));
+                                            setTickets(prev => prev.filter(t => t.projectId !== p.id));
+                                        }}
+                                    >
+                                        <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                </ListItemSecondaryAction>
+                            </ListItem>
+                        ))}
+                    </List>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setManagingProjects(false)}>Close</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Manage Labels Dialog */}
+            <Dialog open={managingLabels} onClose={() => setManagingLabels(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Manage Labels</DialogTitle>
+                <DialogContent>
+                    <Stack direction="row" spacing={1} sx={{ mb: 2, mt: 1 }}>
+                        <TextField
+                            label="New label"
+                            value={newLabelName}
+                            onChange={(e) => setNewLabelName(e.target.value)}
+                            size="small"
+                            sx={{ flex: 1 }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && newLabelName.trim()) {
+                                    addLabel(newLabelName.trim()).then(setLabels);
+                                    setNewLabelName('');
+                                }
+                            }}
+                        />
+                        <Button
+                            variant="contained"
+                            size="small"
+                            disabled={!newLabelName.trim()}
+                            onClick={async () => {
+                                const updated = await addLabel(newLabelName.trim());
+                                setLabels(updated);
+                                setNewLabelName('');
+                            }}
+                        >
+                            Add
+                        </Button>
+                    </Stack>
+                    <List dense>
+                        {labels.map((label) => (
+                            <ListItem key={label}>
+                                <ListItemText primary={label} />
+                                <ListItemSecondaryAction>
+                                    <IconButton
+                                        edge="end"
+                                        size="small"
+                                        onClick={async () => {
+                                            await removeLabel(label);
+                                            setLabels(prev => prev.filter(l => l !== label));
+                                        }}
+                                    >
+                                        <DeleteIcon fontSize="small" />
+                                    </IconButton>
+                                </ListItemSecondaryAction>
+                            </ListItem>
+                        ))}
+                        {labels.length === 0 && (
+                            <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                                No labels yet. Add one above.
+                            </Typography>
+                        )}
+                    </List>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setManagingLabels(false)}>Close</Button>
                 </DialogActions>
             </Dialog>
         </Box>

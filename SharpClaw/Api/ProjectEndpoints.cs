@@ -74,6 +74,37 @@ internal static class ProjectEndpoints
             }
         });
 
+        group.MapDelete("/{projectId}", (string projectId, ProjectLoader loader) =>
+        {
+            try
+            {
+                loader.DeleteProject(projectId);
+                return Results.NoContent();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.NotFound(ex.Message);
+            }
+        });
+
+        // Labels
+        app.MapGet("/api/labels", (ProjectLoader loader) => loader.GetLabels()).WithTags("Labels");
+
+        app.MapPost("/api/labels", (CreateLabelRequest req, ProjectLoader loader) =>
+        {
+            if (string.IsNullOrWhiteSpace(req.Name))
+                return Results.BadRequest("Name is required.");
+
+            var labels = loader.AddLabel(req.Name.Trim());
+            return Results.Ok(labels);
+        }).WithTags("Labels");
+
+        app.MapDelete("/api/labels/{name}", (string name, ProjectLoader loader) =>
+        {
+            loader.RemoveLabel(name);
+            return Results.NoContent();
+        }).WithTags("Labels");
+
         // Tickets
         group.MapGet("/{projectId}/tickets", (string projectId, string? status, ProjectLoader loader) =>
         {
@@ -208,6 +239,7 @@ internal static class ProjectEndpoints
     }
 
     private sealed record CreateProjectRequest(string Title, string? Description);
+    private sealed record CreateLabelRequest(string Name);
     private sealed record CreateTicketRequest(string Title, string? Description, string? Reporter, string? Assignee, string[]? Labels);
     private sealed record UpdateTicketRequest(string? Title, string? Description, string? Status, string? Assignee, string[]? Labels);
 }
