@@ -169,3 +169,63 @@ The extraction prompt instructs the LLM to:
 - Extraction failures are logged as warnings and never affect the user response
 - Fire-and-forget: the user response is returned immediately regardless of extraction status
 - Short exchanges (below length thresholds) are skipped entirely
+
+## Semantic Memory (Phase 3) — Maintenance & MCP Tools
+
+Phase 3 adds trust decay, memory import, and explicit MCP tools for agents to interact with semantic memory directly.
+
+### Trust Decay Worker
+
+`MemoryDecayWorker` is a `BackgroundService` that runs every 7 days:
+
+1. Applies a 0.95× decay multiplier to all memory trust scores
+2. Prunes memories that fall below 0.1 (effectively forgotten)
+3. Logs count of decayed and pruned memories
+
+This ensures rarely-accessed memories gradually fade while frequently-recalled ones stay strong (boosted 5% on each recall, capped at 2.0).
+
+### Memory Import
+
+`MemoryImportService` imports existing file-based memory (`.md` files) into the semantic memory store:
+
+- Splits content into paragraph-sized chunks (30–500 chars)
+- Skips `audit.md` files (append-only logs, not factual memory)
+- Deduplication via cosine similarity (>0.92 = skip)
+- Available per-agent or for all agents at once
+
+Trigger via the `semantic_memory_import` MCP tool or programmatically.
+
+### MCP Tools
+
+Four new MCP tools are exposed via `SemanticMemoryMcpTools`:
+
+| Tool | Description |
+| ---- | ----------- |
+| `semantic_recall` | Search semantic memory by natural language query |
+| `semantic_store` | Explicitly store a fact/decision/preference/learning |
+| `semantic_memory_count` | Get count of stored memories (per-agent or total) |
+| `semantic_memory_import` | Import .md files into semantic memory |
+
+These tools are always registered but return helpful error messages when semantic memory is disabled.
+
+### Full Configuration Reference
+
+```json
+{
+  "SemanticMemory": {
+    "Enabled": true,
+    "ModelPath": "models/all-MiniLM-L6-v2.onnx",
+    "TokenizerPath": "models/tokenizer.json",
+    "DatabasePath": "data/semantic-memory.db",
+    "TopK": 5,
+    "MinScore": 0.3,
+    "EmbeddingDimension": 384,
+    "MaxContextTokens": 1500,
+    "ExtractionEnabled": true,
+    "ExtractionModel": "claude-haiku-4-20250414",
+    "ExtractionMaxTokens": 1024,
+    "MinPromptLengthForExtraction": 20,
+    "MinResponseLengthForExtraction": 50
+  }
+}
+```

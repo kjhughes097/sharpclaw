@@ -157,6 +157,8 @@ if (semanticMemoryEnabled)
     builder.Services.AddSingleton<EmbeddingService>();
     builder.Services.AddSingleton<SemanticMemoryStore>();
     builder.Services.AddSingleton<SemanticMemoryService>();
+    builder.Services.AddSingleton<MemoryImportService>();
+    builder.Services.AddHostedService<MemoryDecayWorker>();
 
     // Extraction requires Anthropic API key
     if (anthropicConfigured)
@@ -172,6 +174,7 @@ else
 {
     builder.Services.AddSingleton<SemanticMemoryService?>(sp => null);
     builder.Services.AddSingleton<MemoryExtractionService?>(sp => null);
+    builder.Services.AddSingleton<MemoryImportService?>(sp => null);
 }
 
 // -- Workspace --
@@ -181,6 +184,7 @@ builder.Services.AddSingleton<WorkspaceInitialiser>();
 builder.Services.AddMcpServer()
     .WithHttpTransport()
     .WithTools<MemoryMcpTools>()
+    .WithTools<SemanticMemoryMcpTools>()
     .WithTools<AnthropicAdminMcpTools>();
 
 // -- Telegram --
