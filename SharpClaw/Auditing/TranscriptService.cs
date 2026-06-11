@@ -14,12 +14,15 @@ public sealed class TranscriptService(IOptions<SharpClawOptions> options, ILogge
         string agentName,
         string sessionId,
         string turnType,
-        string content,
+        string? content,
         TranscriptMetadata? metadata = null,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(_workspaceRoot))
             return Task.CompletedTask;
+
+        if (string.IsNullOrEmpty(content))
+            content = string.Empty;
 
         var safeAgentName = SanitizePathSegment(agentName);
         var safeSessionId = SanitizePathSegment(sessionId);
