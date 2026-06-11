@@ -29,8 +29,10 @@ export interface User {
 
 export const getProjects = () => apiFetch<ProjectSummary[]>('/projects');
 
-export const getProjectTickets = (projectId: string) =>
-    apiFetch<TicketSummary[]>(`/projects/${projectId}/tickets`);
+export const getProjectTickets = async (projectId: string): Promise<TicketSummary[]> => {
+    const tickets = await apiFetch<TicketSummary[]>(`/projects/${projectId}/tickets`);
+    return tickets.map(t => ({ ...t, labels: t.labels ?? [], reporter: t.reporter ?? null, assignee: t.assignee ?? null }));
+};
 
 export const getUsers = () => apiFetch<User[]>('/users');
 
