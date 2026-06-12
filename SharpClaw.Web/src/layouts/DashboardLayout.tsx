@@ -23,7 +23,6 @@ export default function DashboardLayout() {
                         mx: 3,
                         pb: 5,
                         mt: { xs: 8, md: 2 },
-                        maxWidth: 1400,
                     }}
                 >
                     <Outlet />
