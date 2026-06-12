@@ -14,6 +14,7 @@ import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import WidgetsRoundedIcon from '@mui/icons-material/WidgetsRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import ViewKanbanRoundedIcon from '@mui/icons-material/ViewKanbanRounded';
+import DataUsageRoundedIcon from '@mui/icons-material/DataUsageRounded';
 import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 
@@ -25,6 +26,7 @@ const mainItems = [
     { text: 'Skills', icon: <SchoolRoundedIcon />, path: '/skills' },
     { text: 'Tasks', icon: <ScheduleRoundedIcon />, path: '/tasks' },
     { text: 'Projects', icon: <ViewKanbanRoundedIcon />, path: '/projects' },
+    { text: 'Tokens', icon: <DataUsageRoundedIcon />, path: '/tokens' },
     { text: 'Examples', icon: <WidgetsRoundedIcon />, path: '/examples' },
 ];
 

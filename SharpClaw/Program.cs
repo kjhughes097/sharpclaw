@@ -65,6 +65,7 @@ builder.Services.AddOpenTelemetry()
             o.Protocol = OtlpExportProtocol.Grpc;
         }))
     .WithMetrics(metrics => metrics
+        .AddMeter("SharpClaw.Tokens")
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
         .AddOtlpExporter(o =>
@@ -148,6 +149,7 @@ builder.Services.AddSingleton<ICommand, TicketCommand>();
 builder.Services.AddSingleton<MemoryService>();
 builder.Services.AddSingleton<AuditService>();
 builder.Services.AddSingleton<TranscriptService>();
+builder.Services.AddSingleton<TokenUsageService>();
 
 // -- Semantic Memory (conditional) --
 var semanticMemoryEnabled = builder.Configuration.GetValue<bool>("SemanticMemory:Enabled");
@@ -258,6 +260,7 @@ app.MapSkillEndpoints();
 app.MapTaskEndpoints();
 app.MapConfigEndpoints();
 app.MapProjectEndpoints();
+app.MapTokenEndpoints();
 
 app.MapFallbackToFile("index.html");
 

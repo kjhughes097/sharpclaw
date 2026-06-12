@@ -16,6 +16,7 @@ public sealed class AgentInvoker(
     CommandRouter commandRouter,
     AuditService auditService,
     TranscriptService transcriptService,
+    TokenUsageService tokenUsageService,
     SchedulingContextAccessor schedulingContextAccessor,
     SemanticMemoryService? semanticMemory,
     MemoryExtractionService? memoryExtraction,
@@ -181,6 +182,23 @@ public sealed class AgentInvoker(
 
         // Audit the response
         await auditService.LogAsync(session.AgentId, AuditEntryType.Response, responseText ?? string.Empty, ct);
+
+        // Record token usage
+        tokenUsageService.Record(new TokenUsage
+        {
+            TimestampUtc = DateTimeOffset.UtcNow,
+            AgentName = session.AgentId,
+            Provider = agent.Llm ?? "copilot",
+            Model = agent.Model,
+            SessionId = session.SessionId,
+            InputTokens = result.InputTokens,
+            OutputTokens = result.OutputTokens,
+            DurationMs = (DateTimeOffset.UtcNow - requestStartedAt).TotalMilliseconds,
+            ToolCount = agent.ToolNames.Count,
+            McpCount = agent.McpNames.Count,
+            Skills = agent.SkillNames.Count > 0 ? string.Join(",", agent.SkillNames) : null,
+            Success = result.Success
+        });
 
         // Fire-and-forget: extract and store memories from this exchange
         if (result.Success && memoryExtraction is not null && !string.IsNullOrWhiteSpace(responseText))
