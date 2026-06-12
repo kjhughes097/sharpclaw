@@ -329,7 +329,7 @@ export default function ProjectsPage() {
                 <Typography color="text.secondary">No projects found.</Typography>
             )}
 
-            <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', pb: 2 }}>
+            <Box sx={{ display: 'flex', gap: 1, pb: 2, width: '100%' }}>
                 {STATUSES.map(({ key, label }) => (
                     <Paper
                         key={key}
@@ -338,8 +338,8 @@ export default function ProjectsPage() {
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e as unknown as DragEvent, key)}
                         sx={{
-                            flex: '1 1 0',
-                            minWidth: 260,
+                            flex: 1,
+                            minWidth: 0,
                             p: 1.5,
                             bgcolor: dragOverStatus === key ? 'action.hover' : 'background.default',
                             transition: 'background-color 0.15s',
