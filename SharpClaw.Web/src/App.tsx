@@ -14,6 +14,7 @@ import TaskListPage from './pages/TaskListPage';
 import TaskCreatePage from './pages/TaskCreatePage';
 import TaskEditorPage from './pages/TaskEditorPage';
 import ProjectsPage from './pages/ProjectsPage';
+import TokensPage from './pages/TokensPage';
 import ConfigPage from './pages/ConfigPage';
 import ExamplesPage from './pages/ExamplesPage';
 
@@ -38,6 +39,7 @@ export default function App() {
                 <Route path="/tasks/new" element={<TaskCreatePage />} />
                 <Route path="/tasks/:id" element={<TaskEditorPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/tokens" element={<TokensPage />} />
                 <Route path="/config" element={<ConfigPage />} />
                 <Route path="/examples" element={<ExamplesPage />} />
             </Route>
