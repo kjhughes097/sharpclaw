@@ -6,7 +6,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_PATH="/home/khughes/sharpclaw-workspace"
-DB_PATH="$REPO_ROOT/SharpClaw/bin/Debug/net10.0/data/semantic-memory.db"
+DB_PATH="/home/khughes/sharpclaw-workspace/data/semantic-memory.db"
 BACKUP_DIR="/home/khughes/backups/sharpclaw"
 TEST_DIR=$(mktemp -d)
 RESTORE_TEST_DIR=$(mktemp -d)

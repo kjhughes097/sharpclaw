@@ -14,7 +14,7 @@ SharpClaw stores critical data across multiple locations. This guide describes h
   - Session transcripts and conversation history
   - Scheduled task definitions
 
-- Semantic memory database: `SharpClaw/bin/Debug/net10.0/data/semantic-memory.db`
+- Semantic memory database: `/home/khughes/sharpclaw-workspace/data/semantic-memory.db`
   - Embeddings and extracted memories
   - Agent context state
 
@@ -116,10 +116,10 @@ cp -r "$TEMP_DIR/workspace" /home/khughes/sharpclaw-workspace
 
 ```bash
 # Ensure target directory exists
-mkdir -p "SharpClaw/bin/Debug/net10.0/data"
+mkdir -p "/home/khughes/sharpclaw-workspace/data"
 
 # Restore database
-cp "$TEMP_DIR/semantic-memory.db" "SharpClaw/bin/Debug/net10.0/data/semantic-memory.db"
+cp "$TEMP_DIR/semantic-memory.db" "/home/khughes/sharpclaw-workspace/data/semantic-memory.db"
 ```
 
 ### Step 7: Start SharpClaw

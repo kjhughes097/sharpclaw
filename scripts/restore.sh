@@ -5,7 +5,7 @@ set -e
 
 BACKUP_DIR="/home/khughes/backups/sharpclaw"
 WORKSPACE_PATH="/home/khughes/sharpclaw-workspace"
-DB_PATH="/home/khughes/projects/sharpclaw/SharpClaw/bin/Debug/net10.0/data/semantic-memory.db"
+DB_PATH="/home/khughes/sharpclaw-workspace/data/semantic-memory.db"
 
 echo "=== SharpClaw Restore Script ==="
 echo ""
