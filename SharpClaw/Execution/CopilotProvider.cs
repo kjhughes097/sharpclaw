@@ -122,6 +122,18 @@ public sealed class CopilotProvider(ILogger<CopilotProvider> logger) : ILlmProvi
                     adapter.CaptureSchedulingContext();
             }
 
+            // Subscribe to usage events to accumulate token counts across the turn
+            var totalInputTokens = 0.0;
+            var totalOutputTokens = 0.0;
+            using var usageSub = copilotSession.Inner.On(evt =>
+            {
+                if (evt is AssistantUsageEvent usageEvent)
+                {
+                    totalInputTokens += usageEvent.Data.InputTokens ?? 0;
+                    totalOutputTokens += usageEvent.Data.OutputTokens ?? 0;
+                }
+            });
+
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             logger.LogInformation(
                 "Copilot SendAndWaitAsync starting (session={SessionId}, promptLength={PromptLength})",
@@ -134,10 +146,14 @@ public sealed class CopilotProvider(ILogger<CopilotProvider> logger) : ILlmProvi
 
             stopwatch.Stop();
             var content = result?.Data?.Content ?? string.Empty;
+
+            var inputTokens = totalInputTokens > 0 ? (int?)totalInputTokens : null;
+            var outputTokens = totalOutputTokens > 0 ? (int?)totalOutputTokens : null;
+
             logger.LogInformation(
-                "Copilot response received (session={SessionId}, {Length} chars, elapsed={Elapsed})",
-                session.SessionId, content.Length, stopwatch.Elapsed);
-            return AgentRunResult.Ok(content, session.SessionId);
+                "Copilot response received (session={SessionId}, {Length} chars, elapsed={Elapsed}, input={InputTokens}, output={OutputTokens})",
+                session.SessionId, content.Length, stopwatch.Elapsed, inputTokens, outputTokens);
+            return AgentRunResult.Ok(content, session.SessionId, inputTokens, outputTokens);
         }
         catch (TimeoutException ex)
         {
