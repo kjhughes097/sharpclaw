@@ -1,6 +1,6 @@
 ---
 llm: copilot
-model: claude-opus-4.6
+model: claude-opus-4.7
 description: Software engineer and architect
 tools:
   - spawn_agent

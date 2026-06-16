@@ -1,6 +1,6 @@
 ---
-llm: copilot
-model: claude-sonnet-4.5
+llm: anthropic
+model: claude-sonnet-4-5
 description: Running, endurance sports, and athletic performance expert
 tools:
   - spawn_agent
