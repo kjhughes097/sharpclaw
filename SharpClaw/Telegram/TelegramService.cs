@@ -25,6 +25,7 @@ public sealed class TelegramService(
     ChannelFanOutService fanOut,
     IOptions<TelegramOptions> telegramOptions,
     IOptions<SharpClawOptions> sharpClawOptions,
+    ITranscriptionService? transcriptionService,
     ILogger<TelegramService> logger) : BackgroundService
 {
     private const int TelegramMessageChunkSize = 3500;
@@ -115,6 +116,26 @@ public sealed class TelegramService(
             text = message.Caption;
         }
 
+        // Handle voice / audio / video notes via STT
+        if (message.Voice is not null || message.Audio is not null || message.VideoNote is not null)
+        {
+            var transcribed = await TranscribeVoiceAsync(message, chatId, ct);
+            if (transcribed is not null)
+            {
+                // Echo transcription back so the user can verify what was heard.
+                await SendResponseAsync(chatId, $"🎤 _{transcribed}_", ct);
+
+                text = string.IsNullOrWhiteSpace(message.Caption)
+                    ? transcribed
+                    : $"{message.Caption}\n\n{transcribed}";
+            }
+            else if (text is null && fileContext is null)
+            {
+                // Transcription failed and there's no other content
+                return;
+            }
+        }
+
         // Must have either text or a file to process
         if (text is null && fileContext is null) return;
 
@@ -167,6 +188,69 @@ public sealed class TelegramService(
         {
             await typingCts.CancelAsync();
             try { await typingTask; } catch (OperationCanceledException) { }
+        }
+    }
+
+    private async Task<string?> TranscribeVoiceAsync(Message message, long chatId, CancellationToken ct)
+    {
+        if (transcriptionService is null || !transcriptionService.IsAvailable)
+        {
+            await SendResponseAsync(chatId,
+                "_Voice messages aren't enabled. Set Stt:Enabled = true to use them._", ct);
+            return null;
+        }
+
+        string? fileId;
+        string formatHint;
+
+        if (message.Voice is { } voice)
+        {
+            fileId = voice.FileId;
+            formatHint = voice.MimeType ?? "audio/ogg";
+        }
+        else if (message.Audio is { } audio)
+        {
+            fileId = audio.FileId;
+            formatHint = audio.MimeType ?? "audio/mpeg";
+        }
+        else if (message.VideoNote is { } videoNote)
+        {
+            fileId = videoNote.FileId;
+            formatHint = "video/mp4";
+        }
+        else
+        {
+            return null;
+        }
+
+        try
+        {
+            var file = await botClient.GetFile(fileId, ct);
+            if (file.FilePath is null)
+            {
+                logger.LogWarning("Telegram returned no file path for voice FileId {FileId}", fileId);
+                return null;
+            }
+
+            await using var audioStream = new MemoryStream();
+            await botClient.DownloadFile(file.FilePath, audioStream, ct);
+            audioStream.Position = 0;
+
+            var result = await transcriptionService.TranscribeAsync(audioStream, formatHint, language: null, ct);
+
+            if (string.IsNullOrWhiteSpace(result.Text))
+            {
+                await SendResponseAsync(chatId, "_(no speech detected in voice message)_", ct);
+                return null;
+            }
+
+            return result.Text;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Voice transcription failed for chat {ChatId}", chatId);
+            await SendResponseAsync(chatId, $"_Voice transcription failed: {ex.Message}_", ct);
+            return null;
         }
     }
 

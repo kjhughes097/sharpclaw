@@ -6,6 +6,7 @@ using OpenTelemetry.Trace;
 using Telegram.Bot;
 using SharpClaw.Abstractions;
 using SharpClaw.Api;
+using SharpClaw.Audio;
 using SharpClaw.Auditing;
 using SharpClaw.Commands;
 using SharpClaw.Configuration;
@@ -42,6 +43,7 @@ builder.Services.Configure<OpenTelemetryOptions>(builder.Configuration.GetSectio
 builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(AnthropicOptions.SectionName));
 builder.Services.Configure<AnthropicAdminMcpOptions>(builder.Configuration.GetSection(AnthropicAdminMcpOptions.SectionName));
 builder.Services.Configure<SemanticMemoryOptions>(builder.Configuration.GetSection(SemanticMemoryOptions.SectionName));
+builder.Services.Configure<SttOptions>(builder.Configuration.GetSection(SttOptions.SectionName));
 
 // -- Logging: Console with custom format --
 builder.Logging.ClearProviders();
@@ -177,6 +179,22 @@ else
     builder.Services.AddSingleton<SemanticMemoryService?>(sp => null);
     builder.Services.AddSingleton<MemoryExtractionService?>(sp => null);
     builder.Services.AddSingleton<MemoryImportService?>(sp => null);
+}
+
+// -- STT (Speech-to-Text) — conditional --
+var sttEnabled = builder.Configuration.GetValue<bool>("Stt:Enabled");
+if (sttEnabled)
+{
+    builder.Services.AddHttpClient();
+    builder.Services.AddSingleton<AudioConverter>();
+    builder.Services.AddSingleton<WhisperModelDownloader>();
+    builder.Services.AddSingleton<WhisperTranscriptionService>();
+    builder.Services.AddSingleton<ITranscriptionService>(sp =>
+        sp.GetRequiredService<WhisperTranscriptionService>());
+}
+else
+{
+    builder.Services.AddSingleton<ITranscriptionService?>(sp => null);
 }
 
 // -- Workspace --
