@@ -238,35 +238,48 @@ start_watcher() {
     SIGNAL_FILE="${ROOT_DIR}/.sharpclaw.restart"
     PROJECT="'"$(resolve_project)"'"
 
+    FAIL_FILE="${ROOT_DIR}/.sharpclaw.restart.failed"
+
     while true; do
       sleep 2
       [[ -f "${SIGNAL_FILE}" ]] || continue
 
       rm -f "${SIGNAL_FILE}"
-      echo "[watcher] Restart signal detected. Rebuilding..." >> "${LOG_FILE}"
+      rm -f "${FAIL_FILE}"
+      echo "[watcher] Restart signal detected." >> "${LOG_FILE}"
 
-      # Pull latest changes
-      cd "${ROOT_DIR}"
-      git pull --quiet >> "${LOG_FILE}" 2>&1 || true
-
-      # Build first
-      if ! dotnet build "${PROJECT}" --nologo -q >> "${LOG_FILE}" 2>&1; then
-        echo "[watcher] Build failed — restart aborted." >> "${LOG_FILE}"
-        continue
-      fi
-
-      # Stop current process
+      # Stop current process FIRST so it releases locks on bin/ and obj/.
+      # Building while the old app holds file handles intermittently fails
+      # with MSB3492 ("could not read ... AssemblyInfoInputs.cache") and
+      # leaves the user thinking nothing happened.
       if [[ -f "${PID_FILE}" ]]; then
         pid="$(cat "${PID_FILE}")"
         if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+          echo "[watcher] Stopping old SharpClaw (PID ${pid})..." >> "${LOG_FILE}"
           kill "${pid}" 2>/dev/null || true
-          for i in {1..20}; do
+          for i in {1..40}; do
             kill -0 "${pid}" 2>/dev/null || break
             sleep 0.25
           done
           kill -0 "${pid}" 2>/dev/null && kill -9 "${pid}" 2>/dev/null || true
         fi
         rm -f "${PID_FILE}"
+      fi
+
+      # Pull latest changes (after stop, before build)
+      cd "${ROOT_DIR}"
+      git pull --quiet >> "${LOG_FILE}" 2>&1 || true
+
+      # Build with the old process gone — no file locks, deterministic result.
+      # NOTE: do NOT pass `-q` here. In `dotnet build`, `-q` is forwarded to
+      # MSBuild as `--question` (the up-to-date check) and exits non-zero
+      # whenever there is anything to compile — which is exactly when we
+      # want to actually build. Output is redirected to LOG_FILE anyway.
+      echo "[watcher] Building..." >> "${LOG_FILE}"
+      if ! dotnet build "${PROJECT}" --nologo -v q >> "${LOG_FILE}" 2>&1; then
+        echo "[watcher] Build failed — service will NOT be restarted." >> "${LOG_FILE}"
+        date -u +"%Y-%m-%dT%H:%M:%SZ build failed after .restart" > "${FAIL_FILE}"
+        continue
       fi
 
       # Start new process

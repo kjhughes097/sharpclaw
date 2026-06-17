@@ -59,8 +59,21 @@ public sealed class RestartCommand(
             }
         }
 
-        // Build first
         var repoRoot = GetRepoRoot();
+
+        // Surface any build failure from a previous restart attempt so the user
+        // isn't left wondering why a prior .restart silently did nothing.
+        var failFile = Path.Combine(repoRoot, ".sharpclaw.restart.failed");
+        string? priorFailure = null;
+        if (File.Exists(failFile))
+        {
+            try { priorFailure = (await File.ReadAllTextAsync(failFile, ct)).Trim(); } catch { }
+            try { File.Delete(failFile); } catch { }
+        }
+
+        // Validate the build BEFORE killing the process. The watcher will
+        // build again after stopping the process (when file locks are
+        // released), but failing fast here gives immediate feedback.
         var projectPath = Path.Combine("SharpClaw", "SharpClaw.csproj");
         var buildResult = await RunBuildAsync(repoRoot, projectPath, ct);
 
@@ -76,8 +89,12 @@ public sealed class RestartCommand(
         await File.WriteAllTextAsync(signalFile, DateTime.UtcNow.ToString("O"), ct);
         logger.LogInformation("Restart signal written to {SignalFile}", signalFile);
 
+        var prefix = priorFailure is null
+            ? string.Empty
+            : $"⚠️ Previous restart failed in watcher: `{priorFailure}` (cleared)\n\n";
+
         return new CommandResult(true,
-            "✅ **Build succeeded** — restart signal sent. SharpClaw will restart momentarily.");
+            prefix + "✅ **Build succeeded** — restart signal sent. SharpClaw will restart momentarily.");
     }
 
     private async Task<CommandResult> RestartManagedServiceAsync(string name, CancellationToken ct)
