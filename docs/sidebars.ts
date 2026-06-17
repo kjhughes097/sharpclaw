@@ -23,6 +23,7 @@ const sidebars: SidebarsConfig = {
         'features/projects',
         'features/auditing',
         'features/logging',
+        'features/stt',
       ],
     },
   ],
