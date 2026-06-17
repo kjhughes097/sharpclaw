@@ -14,6 +14,7 @@ import TextField from '@mui/material/TextField';
 import MenuItem from '@mui/material/MenuItem';
 import { getTokenSummary, getTokenDaily, getTokenRecent } from '../api/tokens';
 import type { TokenUsageSummary, TokenUsageDaily, TokenUsageEntry } from '../api/tokens';
+import { formatDate, formatDateTime } from '../utils/dateFormat';
 
 function formatNumber(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -119,7 +120,7 @@ export default function TokensPage() {
                             return (
                                 <Stack key={d.date} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                                     <Typography variant="caption" sx={{ minWidth: 80, fontFamily: 'monospace' }}>
-                                        {d.date}
+                                        {formatDate(d.date)}
                                     </Typography>
                                     <Box sx={{ flex: 1, position: 'relative', height: 20 }}>
                                         <Box sx={{
@@ -226,7 +227,7 @@ export default function TokensPage() {
                                 <TableRow key={r.id}>
                                     <TableCell>
                                         <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                                            {new Date(r.timestampUtc).toLocaleString()}
+                                            {formatDateTime(r.timestampUtc)}
                                         </Typography>
                                     </TableCell>
                                     <TableCell>{r.agentName}</TableCell>
