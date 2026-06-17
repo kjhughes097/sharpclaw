@@ -1,6 +1,6 @@
 ---
 llm: anthropic
-model: claude-sonnet-4-5
+model: claude-sonnet-4-6
 description: Running, endurance sports, and athletic performance expert
 tools:
   - spawn_agent

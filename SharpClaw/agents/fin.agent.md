@@ -1,6 +1,6 @@
 ---
 llm: anthropic
-model: claude-sonnet-4-5
+model: claude-sonnet-4-6
 description: Finance, investment, and economics specialist
 tools:
   - spawn_agent

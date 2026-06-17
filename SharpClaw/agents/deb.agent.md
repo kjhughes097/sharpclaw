@@ -1,6 +1,6 @@
 ---
 llm: anthropic
-model: claude-sonnet-4-5
+model: claude-haiku-4-5
 description: Debate, argumentation, and critical reasoning specialist
 tools:
   - spawn_agent

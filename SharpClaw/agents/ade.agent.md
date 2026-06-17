@@ -1,6 +1,6 @@
 ---
 llm: anthropic
-model: claude-sonnet-4-5
+model: claude-haiku-4-5
 description: General assistant and team coordinator
 telegram_chat_id: -5262236285
 tools:
