@@ -12,11 +12,7 @@ import Stack from '@mui/material/Stack';
 import AddIcon from '@mui/icons-material/Add';
 import { getTasks } from '../api/tasks';
 import type { ScheduledTaskSummary } from '../api/tasks';
-
-function formatDate(iso: string | null): string {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleString();
-}
+import { formatDateTime } from '../utils/dateFormat';
 
 export default function TaskListPage() {
     const [tasks, setTasks] = useState<ScheduledTaskSummary[]>([]);
@@ -75,10 +71,10 @@ export default function TaskListPage() {
                                 </Stack>
 
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                    Next run: {formatDate(task.nextRun)}
+                                    Next run: {formatDateTime(task.nextRun)}
                                 </Typography>
                                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                    Last run: {formatDate(task.lastRun)}
+                                    Last run: {formatDateTime(task.lastRun)}
                                 </Typography>
 
                                 {task.prompt && (

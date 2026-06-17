@@ -19,11 +19,7 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Editor from '@monaco-editor/react';
 import { getTask, updateTask, deleteTask } from '../api/tasks';
 import type { ScheduledTaskDetail } from '../api/tasks';
-
-function formatDate(iso: string | null): string {
-    if (!iso) return '—';
-    return new Date(iso).toLocaleString();
-}
+import { formatDateTime } from '../utils/dateFormat';
 
 export default function TaskEditorPage() {
     const { id } = useParams<{ id: string }>();
@@ -191,13 +187,13 @@ export default function TaskEditorPage() {
                             Channel: {task.channelType} ({task.channelKey})
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                            Created: {formatDate(task.created)}
+                            Created: {formatDateTime(task.created)}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                            Next run: {formatDate(task.nextRun)}
+                            Next run: {formatDateTime(task.nextRun)}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                            Last run: {formatDate(task.lastRun)}
+                            Last run: {formatDateTime(task.lastRun)}
                         </Typography>
                     </Stack>
                 </Stack>
