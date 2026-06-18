@@ -44,6 +44,7 @@ builder.Services.Configure<AnthropicOptions>(builder.Configuration.GetSection(An
 builder.Services.Configure<AnthropicAdminMcpOptions>(builder.Configuration.GetSection(AnthropicAdminMcpOptions.SectionName));
 builder.Services.Configure<SemanticMemoryOptions>(builder.Configuration.GetSection(SemanticMemoryOptions.SectionName));
 builder.Services.Configure<SttOptions>(builder.Configuration.GetSection(SttOptions.SectionName));
+builder.Services.Configure<TicketWorkerOptions>(builder.Configuration.GetSection(TicketWorkerOptions.SectionName));
 
 // -- Logging: Console with custom format --
 builder.Logging.ClearProviders();
@@ -223,6 +224,7 @@ builder.Services.AddSingleton<ITaskResultDelivery, WebTaskDelivery>();
 builder.Services.AddSingleton<RegistryWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RegistryWorker>());
 builder.Services.AddHostedService<SchedulerWorker>();
+builder.Services.AddHostedService<TicketAssignmentWorker>();
 builder.Services.AddSingleton<ServiceRunner>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ServiceRunner>());
 
