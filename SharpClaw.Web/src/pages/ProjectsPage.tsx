@@ -26,11 +26,12 @@ import Editor from '@monaco-editor/react';
 import { getProjects, getProjectTickets, getUsers, getLabels, addLabel, removeLabel, createProject, deleteProject, updateTicketStatus, updateTicket, createTicket, improveTicket, moveTicket, deleteTicket } from '../api/projects';
 import type { ProjectSummary, TicketSummary, User } from '../api/projects';
 
-const STATUSES = [
+const STATUSES: { key: string; label: string; accent?: string }[] = [
     { key: 'idea', label: 'Idea' },
     { key: 'planning', label: 'Planning' },
     { key: 'todo', label: 'Todo' },
     { key: 'in_progress', label: 'In Progress' },
+    { key: 'blocked', label: 'Blocked', accent: '#d32f2f' },
     { key: 'for_review', label: 'For Review' },
     { key: 'done', label: 'Done' },
 ];
@@ -330,7 +331,7 @@ export default function ProjectsPage() {
             )}
 
             <Box sx={{ display: 'flex', gap: 1, pb: 2, width: '100%' }}>
-                {STATUSES.map(({ key, label }) => (
+                {STATUSES.map(({ key, label, accent }) => (
                     <Paper
                         key={key}
                         variant="outlined"
@@ -343,10 +344,11 @@ export default function ProjectsPage() {
                             p: 1.5,
                             bgcolor: dragOverStatus === key ? 'action.hover' : 'background.default',
                             transition: 'background-color 0.15s',
+                            ...(accent ? { borderColor: accent, borderTopWidth: 3 } : {}),
                         }}
                     >
                         <Stack direction="row" spacing={1} sx={{ mb: 1.5, alignItems: 'center' }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5, color: accent ?? 'inherit' }}>
                                 {label}
                             </Typography>
                             <Chip label={ticketsByStatus(key).length} size="small" variant="outlined" />

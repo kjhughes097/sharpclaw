@@ -81,6 +81,7 @@ The filename (without `.md`) is the **ticket ID** — a zero-padded number like 
 | Planning      | `planning`        | Being scoped and specified         |
 | Todo          | `todo`            | Planned and ready to be picked up  |
 | In Progress   | `in_progress`     | Actively being worked on           |
+| Blocked       | `blocked`         | Cannot progress (external blocker) |
 | For Review    | `for_review`      | Complete, awaiting review          |
 | Done          | `done`            | Finished                           |
 
