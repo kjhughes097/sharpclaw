@@ -465,3 +465,33 @@ Use the Kanban board in the web UI, chat commands, or agent tools to move ticket
 ### 4. Integration with Agents
 
 Agents with access to the `project` and `ticket` tools can autonomously create, update, and query tickets as part of their workflows. For example, a planning agent could break down a feature request into tickets, or a coding agent could update ticket status as it completes work.
+
+## Automatic Ticket Assignment
+
+A background worker (`TicketAssignmentWorker`) periodically scans every project for tickets in `todo` status whose `assignee` matches the name of a registered agent. When it finds one, it:
+
+1. Moves the ticket to `in_progress`.
+2. Invokes the assigned agent with a directive describing the ticket and asking it to either complete the work (transition to `for_review`) or block it with a reason (transition to `blocked`).
+
+Each agent processes at most one ticket per tick. If multiple tickets are assigned to the same agent, the rest are picked up on subsequent ticks. While an agent is processing a ticket it is locked out of further work, so a long-running task does not get re-dispatched.
+
+Safety net:
+
+- If the agent's invocation fails (LLM error, exception, timeout) the worker moves the ticket to `blocked` and appends the reason to the description.
+- If the agent finishes its turn without transitioning the ticket out of `in_progress`, the worker moves it to `blocked` with a note explaining that human review is required.
+
+For the worker to act on a ticket, the assigned agent must have the `ticket` tool available (either explicitly in its frontmatter `tools` list, or by omitting `tools` so it inherits all registered tools).
+
+### Configuration
+
+```json
+"TicketWorker": {
+  "Enabled": true,
+  "PollingIntervalSeconds": 60
+}
+```
+
+| Setting                  | Default | Description                                                                 |
+| ------------------------ | ------- | --------------------------------------------------------------------------- |
+| `Enabled`                | `true`  | Disable the worker entirely without removing it from the host.              |
+| `PollingIntervalSeconds` | `60`    | How often to scan for newly-assigned `todo` tickets. Minimum effective: 5s. |
