@@ -75,6 +75,13 @@ internal static class TaskEndpoints
             if (taskType == ScheduledTaskType.Agent && string.IsNullOrWhiteSpace(request.Agent))
                 return Results.BadRequest("Agent tasks require an 'agent' field.");
 
+            var channelType = ParseChannelType(request.ChannelType);
+            var channelKey = ResolveChannelKey(channelType, request.ChannelKey, request.Agent);
+            if (channelType == ScheduleChannelType.Telegram && string.IsNullOrWhiteSpace(channelKey))
+                return Results.BadRequest("Telegram channel requires a 'channelKey' (numeric chat ID).");
+            if (channelType == ScheduleChannelType.Telegram && !long.TryParse(channelKey, out _))
+                return Results.BadRequest("Telegram 'channelKey' must be a numeric chat ID.");
+
             var id = Guid.NewGuid().ToString("N")[..12];
             var nextRun = ScheduleStore.ComputeNextRun(request.Cron, DateTimeOffset.UtcNow)
                           ?? DateTimeOffset.UtcNow;
@@ -87,8 +94,8 @@ internal static class TaskEndpoints
                 CronExpression = request.Cron,
                 Description = request.Description ?? string.Empty,
                 IsOneOff = request.IsOneOff ?? false,
-                ChannelKey = $"web:{request.Agent ?? "system"}",
-                ChannelType = ScheduleChannelType.Web,
+                ChannelKey = channelKey!,
+                ChannelType = channelType,
                 TaskType = taskType,
                 Command = taskType == ScheduledTaskType.Command ? request.Command : null,
                 Enabled = request.Enabled ?? true,
@@ -119,6 +126,18 @@ internal static class TaskEndpoints
             var nextRun = ScheduleStore.ComputeNextRun(cronExpr, DateTimeOffset.UtcNow)
                           ?? existing.NextRunUtc;
 
+            var newChannelType = request.ChannelType is null
+                ? existing.ChannelType
+                : ParseChannelType(request.ChannelType);
+            var newAgent = request.Agent ?? existing.AgentId;
+            var newChannelKey = request.ChannelKey
+                ?? (request.ChannelType is null
+                    ? existing.ChannelKey
+                    : ResolveChannelKey(newChannelType, null, newAgent) ?? existing.ChannelKey);
+
+            if (newChannelType == ScheduleChannelType.Telegram && !long.TryParse(newChannelKey, out _))
+                return Results.BadRequest("Telegram 'channelKey' must be a numeric chat ID.");
+
             var updated = existing with
             {
                 Description = request.Description ?? existing.Description,
@@ -126,8 +145,10 @@ internal static class TaskEndpoints
                 Prompt = request.Prompt ?? existing.Prompt,
                 Enabled = request.Enabled ?? existing.Enabled,
                 IsOneOff = request.IsOneOff ?? existing.IsOneOff,
-                AgentId = request.Agent ?? existing.AgentId,
+                AgentId = newAgent,
                 Command = request.Command ?? existing.Command,
+                ChannelType = newChannelType,
+                ChannelKey = newChannelKey,
                 NextRunUtc = nextRun,
             };
 
@@ -141,6 +162,21 @@ internal static class TaskEndpoints
         });
     }
 
+    private static ScheduleChannelType ParseChannelType(string? value) =>
+        string.Equals(value, "telegram", StringComparison.OrdinalIgnoreCase)
+            ? ScheduleChannelType.Telegram
+            : ScheduleChannelType.Web;
+
+    private static string? ResolveChannelKey(ScheduleChannelType type, string? supplied, string? agent)
+    {
+        if (!string.IsNullOrWhiteSpace(supplied))
+            return supplied.Trim();
+
+        return type == ScheduleChannelType.Web
+            ? $"web:{agent ?? "system"}"
+            : null;
+    }
+
 }
 
 internal sealed record TaskCreateRequest(
@@ -151,7 +187,9 @@ internal sealed record TaskCreateRequest(
     string? Prompt,
     string? Description,
     bool? IsOneOff,
-    bool? Enabled
+    bool? Enabled,
+    string? ChannelType,
+    string? ChannelKey
 );
 
 internal sealed record TaskUpdateRequest(
@@ -161,5 +199,7 @@ internal sealed record TaskUpdateRequest(
     bool? Enabled,
     bool? IsOneOff,
     string? Agent,
-    string? Command
+    string? Command,
+    string? ChannelType,
+    string? ChannelKey
 );

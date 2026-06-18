@@ -8,6 +8,8 @@ import Paper from '@mui/material/Paper';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogActions from '@mui/material/DialogActions';
@@ -33,6 +35,8 @@ export default function TaskEditorPage() {
     const [enabled, setEnabled] = useState(true);
     const [isOneOff, setIsOneOff] = useState(false);
     const [prompt, setPrompt] = useState('');
+    const [channelType, setChannelType] = useState<'web' | 'telegram'>('web');
+    const [channelKey, setChannelKey] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
     const [deleteOpen, setDeleteOpen] = useState(false);
@@ -50,6 +54,8 @@ export default function TaskEditorPage() {
                 setEnabled(t.enabled);
                 setIsOneOff(t.isOneOff);
                 setPrompt(t.prompt);
+                setChannelType(t.channelType?.toLowerCase() === 'telegram' ? 'telegram' : 'web');
+                setChannelKey(t.channelKey ?? '');
                 setLoading(false);
             })
             .catch(() => {
@@ -62,6 +68,16 @@ export default function TaskEditorPage() {
         try {
             setError(null);
             setSuccess(null);
+            if (channelType === 'telegram') {
+                if (!channelKey.trim()) {
+                    setError('Telegram chat ID is required.');
+                    return;
+                }
+                if (!/^-?\d+$/.test(channelKey.trim())) {
+                    setError('Telegram chat ID must be a numeric value.');
+                    return;
+                }
+            }
             await updateTask(id!, {
                 description,
                 cron,
@@ -70,6 +86,10 @@ export default function TaskEditorPage() {
                 isOneOff,
                 agent,
                 command: task?.taskType === 'command' ? command : undefined,
+                channelType,
+                channelKey: channelType === 'telegram'
+                    ? channelKey.trim()
+                    : `web:${agent || 'system'}`,
             });
             setSuccess('Task saved successfully.');
         } catch (e: unknown) {
@@ -182,10 +202,34 @@ export default function TaskEditorPage() {
                             label="One-off (delete after run)"
                         />
                     </Stack>
+
+                    <Box>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>Deliver Result To</Typography>
+                        <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
+                            <ToggleButtonGroup
+                                value={channelType}
+                                exclusive
+                                onChange={(_, v) => { if (v) setChannelType(v); }}
+                                size="small"
+                            >
+                                <ToggleButton value="web">Web chat</ToggleButton>
+                                <ToggleButton value="telegram">Telegram</ToggleButton>
+                            </ToggleButtonGroup>
+                            {channelType === 'telegram' && (
+                                <TextField
+                                    label="Chat ID"
+                                    value={channelKey}
+                                    onChange={(e) => setChannelKey(e.target.value)}
+                                    size="small"
+                                    sx={{ width: 200 }}
+                                    helperText="Must be in Telegram:AllowedChatIds"
+                                    required
+                                />
+                            )}
+                        </Stack>
+                    </Box>
+
                     <Stack direction="row" spacing={3}>
-                        <Typography variant="caption" color="text.secondary">
-                            Channel: {task.channelType} ({task.channelKey})
-                        </Typography>
                         <Typography variant="caption" color="text.secondary">
                             Created: {formatDateTime(task.created)}
                         </Typography>
