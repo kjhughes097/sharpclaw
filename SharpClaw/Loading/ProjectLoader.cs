@@ -145,7 +145,7 @@ public sealed class ProjectLoader(
 
         var nextId = GetNextTicketId();
         var now = DateTimeOffset.UtcNow;
-        var ticket = new Ticket(nextId, projectId, title, description, TicketStatus.Planning, now, now, labels ?? [], reporter, assignee);
+        var ticket = new Ticket(nextId, projectId, title, description, TicketStatus.Idea, now, now, labels ?? [], reporter, assignee);
 
         var file = Path.Combine(ticketsDir, $"{nextId}.md");
         WriteTicketFile(file, ticket);
