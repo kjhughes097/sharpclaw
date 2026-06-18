@@ -1,32 +1,44 @@
+using SharpClaw.Auditing;
+using SharpClaw.Interactions;
 using SharpClaw.Models;
 using SharpClaw.Sessions;
 
 namespace SharpClaw.Scheduling;
 
-public sealed class WebTaskDelivery(AgentSessionRegistry sessionRegistry, ILogger<WebTaskDelivery> logger)
-    : ITaskResultDelivery
+public sealed class WebTaskDelivery(
+    AgentSessionRegistry sessionRegistry,
+    ChannelFanOutService fanOut,
+    TranscriptService transcripts,
+    ILogger<WebTaskDelivery> logger) : ITaskResultDelivery
 {
     public ScheduleChannelType ChannelType => ScheduleChannelType.Web;
 
     public async Task DeliverAsync(ScheduledTask task, string result, CancellationToken ct = default)
     {
-        var session = sessionRegistry.Get(task.AgentId);
-        if (session is null)
-        {
-            logger.LogWarning("No active session for agent '{AgentId}' — task {TaskId} result not delivered",
-                task.AgentId, task.Id);
-            return;
-        }
+        var formatted = $"📋 Scheduled task result ({task.Description ?? task.Id}):\n\n{result}";
 
-        var message = new AgentMessage(
+        var session = sessionRegistry.GetOrCreate(task.AgentId);
+
+        await transcripts.LogAsync(
+            agentName: task.AgentId,
+            sessionId: session.SessionId,
+            turnType: "agent",
+            content: formatted,
+            metadata: new TranscriptMetadata(Source: $"scheduler:{task.Id}"),
+            ct: ct);
+
+        await session.PublishAsync(new AgentMessage(
             session.SessionId,
             Guid.NewGuid().ToString(),
             MessageOrigin.Agent,
             task.AgentId,
-            $"📋 Scheduled task result ({task.Description ?? task.Id}):\n\n{result}",
-            DateTimeOffset.UtcNow);
+            formatted,
+            DateTimeOffset.UtcNow), ct);
 
-        await session.PublishAsync(message, ct);
-        logger.LogDebug("Delivered scheduled task {TaskId} result to web session {SessionId}", task.Id, session.SessionId);
+        await fanOut.BroadcastAsync(task.AgentId, formatted, excludeChannelId: null, ct);
+
+        logger.LogInformation(
+            "Delivered scheduled task {TaskId} result to web (agent {AgentId}, session {SessionId})",
+            task.Id, task.AgentId, session.SessionId);
     }
 }

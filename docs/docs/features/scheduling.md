@@ -15,7 +15,9 @@ The scheduling system allows agents to create one-off or recurring tasks that ex
 5. When a task is due:
    - **Agent tasks**: The agent runs the prompt and delivers the result
    - **Command tasks**: The shell command executes and success/failure is delivered
-6. Results are delivered to the original channel (Telegram or web)
+6. Results are delivered to the original channel:
+   - **Telegram**: sent as a message to the originating chat
+   - **Web**: appended to the agent's transcript (so they appear in chat history when you next open the agent) and broadcast to any open browser tabs in real time
 
 ## Task Types
 
