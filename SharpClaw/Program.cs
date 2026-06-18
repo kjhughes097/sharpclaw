@@ -45,6 +45,7 @@ builder.Services.Configure<AnthropicAdminMcpOptions>(builder.Configuration.GetSe
 builder.Services.Configure<SemanticMemoryOptions>(builder.Configuration.GetSection(SemanticMemoryOptions.SectionName));
 builder.Services.Configure<SttOptions>(builder.Configuration.GetSection(SttOptions.SectionName));
 builder.Services.Configure<TicketWorkerOptions>(builder.Configuration.GetSection(TicketWorkerOptions.SectionName));
+builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection(BackupOptions.SectionName));
 
 // -- Logging: Console with custom format --
 builder.Logging.ClearProviders();
@@ -123,6 +124,8 @@ builder.Services.AddSingleton<WorkspaceFileTool>();
 builder.Services.AddSingleton<WorkspaceWriteTool>();
 builder.Services.AddSingleton<ProjectTool>();
 builder.Services.AddSingleton<TicketTool>();
+builder.Services.AddSingleton<SharpClaw.Backup.BackupService>();
+builder.Services.AddSingleton<BackupTool>();
 
 // -- Sessions & Interactions --
 builder.Services.AddSingleton<AgentSessionRegistry>();
@@ -225,6 +228,7 @@ builder.Services.AddSingleton<RegistryWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<RegistryWorker>());
 builder.Services.AddHostedService<SchedulerWorker>();
 builder.Services.AddHostedService<TicketAssignmentWorker>();
+builder.Services.AddHostedService<BackupWorker>();
 builder.Services.AddSingleton<ServiceRunner>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ServiceRunner>());
 
@@ -248,6 +252,7 @@ toolRegistry.Register(app.Services.GetRequiredService<WorkspaceFileTool>());
 toolRegistry.Register(app.Services.GetRequiredService<WorkspaceWriteTool>());
 toolRegistry.Register(app.Services.GetRequiredService<ProjectTool>());
 toolRegistry.Register(app.Services.GetRequiredService<TicketTool>());
+toolRegistry.Register(app.Services.GetRequiredService<BackupTool>());
 
 if (!string.IsNullOrEmpty(telegramToken) && telegramToken != "YOUR_BOT_TOKEN_HERE")
 {

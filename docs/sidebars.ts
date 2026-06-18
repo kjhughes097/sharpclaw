@@ -24,6 +24,7 @@ const sidebars: SidebarsConfig = {
         'features/auditing',
         'features/logging',
         'features/stt',
+        'features/backup',
       ],
     },
   ],
