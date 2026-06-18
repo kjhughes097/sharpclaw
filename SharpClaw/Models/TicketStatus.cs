@@ -6,6 +6,7 @@ public enum TicketStatus
     Planning,
     Todo,
     InProgress,
+    Blocked,
     ForReview,
     Done
 }
@@ -18,6 +19,7 @@ public static class TicketStatusExtensions
         TicketStatus.Planning => "planning",
         TicketStatus.Todo => "todo",
         TicketStatus.InProgress => "in_progress",
+        TicketStatus.Blocked => "blocked",
         TicketStatus.ForReview => "for_review",
         TicketStatus.Done => "done",
         _ => "idea"
@@ -29,6 +31,7 @@ public static class TicketStatusExtensions
         "planning" => TicketStatus.Planning,
         "todo" => TicketStatus.Todo,
         "in_progress" => TicketStatus.InProgress,
+        "blocked" => TicketStatus.Blocked,
         "for_review" => TicketStatus.ForReview,
         "done" => TicketStatus.Done,
         _ => TicketStatus.Idea
