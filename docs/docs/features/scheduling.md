@@ -15,9 +15,18 @@ The scheduling system allows agents to create one-off or recurring tasks that ex
 5. When a task is due:
    - **Agent tasks**: The agent runs the prompt and delivers the result
    - **Command tasks**: The shell command executes and success/failure is delivered
-6. Results are delivered to the original channel:
-   - **Telegram**: sent as a message to the originating chat
-   - **Web**: appended to the agent's transcript (so they appear in chat history when you next open the agent) and broadcast to any open browser tabs in real time
+6. Results are delivered to the channel selected when the task was created:
+   - **Telegram**: sent as a message to the configured chat ID, **and** appended to the agent's transcript so it also shows up in the web UI history
+   - **Web**: appended to the agent's transcript (visible in chat history when you next open the agent) and broadcast live to any open browser tab
+
+## Choosing the Delivery Channel
+
+When you create a task in the web UI you can choose where the result is delivered:
+
+- **Web chat** (default) — result is written to the agent's chat transcript and pushed to any open browser tab in real time. Use this when you want the result to land in the SharpClaw web UI alongside your normal chat history.
+- **Telegram** — result is sent as a Telegram message to the chat ID you provide. The chat ID must be in `Telegram:AllowedChatIds`. The result is also written to the agent's transcript so it remains visible in the web UI.
+
+When tasks are scheduled programmatically via the `schedule_task` tool, the channel is inherited from the originating chat (Telegram chat → Telegram delivery, web chat → web delivery).
 
 ## Task Types
 

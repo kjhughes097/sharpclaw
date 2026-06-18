@@ -27,6 +27,8 @@ export default function TaskCreatePage() {
     const [enabled, setEnabled] = useState(true);
     const [isOneOff, setIsOneOff] = useState(false);
     const [prompt, setPrompt] = useState('');
+    const [channelType, setChannelType] = useState<'web' | 'telegram'>('web');
+    const [channelKey, setChannelKey] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
@@ -48,6 +50,17 @@ export default function TaskCreatePage() {
             return;
         }
 
+        if (channelType === 'telegram') {
+            if (!channelKey.trim()) {
+                setError('Telegram chat ID is required when delivering to Telegram.');
+                return;
+            }
+            if (!/^-?\d+$/.test(channelKey.trim())) {
+                setError('Telegram chat ID must be a numeric value.');
+                return;
+            }
+        }
+
         try {
             setSaving(true);
             const result = await createTask({
@@ -59,6 +72,8 @@ export default function TaskCreatePage() {
                 description: description.trim() || undefined,
                 isOneOff,
                 enabled,
+                channelType,
+                channelKey: channelType === 'telegram' ? channelKey.trim() : undefined,
             });
             navigate(`/tasks/${result.id}`);
         } catch (e: unknown) {
@@ -163,6 +178,38 @@ export default function TaskCreatePage() {
                             label="One-off (delete after run)"
                         />
                     </Stack>
+
+                    <Box>
+                        <Typography variant="subtitle2" sx={{ mb: 1 }}>Deliver Result To</Typography>
+                        <Stack direction="row" spacing={2} sx={{ alignItems: 'flex-start' }}>
+                            <ToggleButtonGroup
+                                value={channelType}
+                                exclusive
+                                onChange={(_, v) => { if (v) setChannelType(v); }}
+                                size="small"
+                            >
+                                <ToggleButton value="web">Web chat</ToggleButton>
+                                <ToggleButton value="telegram">Telegram</ToggleButton>
+                            </ToggleButtonGroup>
+                            {channelType === 'telegram' && (
+                                <TextField
+                                    label="Chat ID"
+                                    value={channelKey}
+                                    onChange={(e) => setChannelKey(e.target.value)}
+                                    size="small"
+                                    sx={{ width: 200 }}
+                                    placeholder="e.g. 123456789"
+                                    helperText="Must be in Telegram:AllowedChatIds"
+                                    required
+                                />
+                            )}
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                            {channelType === 'web'
+                                ? 'Result is appended to the agent\'s chat transcript and broadcast to open browser tabs.'
+                                : 'Result is sent to the specified Telegram chat (and also written to the agent\'s transcript).'}
+                        </Typography>
+                    </Box>
                 </Stack>
             </Paper>
 

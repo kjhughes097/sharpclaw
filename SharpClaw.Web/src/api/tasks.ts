@@ -41,6 +41,8 @@ export interface TaskUpdateRequest {
     isOneOff?: boolean;
     agent?: string;
     command?: string;
+    channelType?: string;
+    channelKey?: string;
 }
 
 export interface TaskCreateRequest {
@@ -52,6 +54,8 @@ export interface TaskCreateRequest {
     description?: string;
     isOneOff?: boolean;
     enabled?: boolean;
+    channelType?: string;
+    channelKey?: string;
 }
 
 export const getTasks = () => apiFetch<ScheduledTaskSummary[]>('/tasks');
