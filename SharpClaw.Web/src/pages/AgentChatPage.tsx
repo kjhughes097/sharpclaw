@@ -107,7 +107,7 @@ export default function AgentChatPage() {
     const yMax = agent ? Math.max(1, ...agent.activity.map((d) => d.turns)) : 1;
 
     return (
-        <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 100px)', overflow: 'hidden' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', height: { xs: 'calc(100vh - 140px)', md: 'calc(100vh - 100px)' }, overflow: 'hidden' }}>
             {/* Agent Info Row */}
             {agent && (
                 <Card sx={{ mb: 2, flexShrink: 0, bgcolor: 'primary.main', color: 'primary.contrastText', '& .MuiTypography-caption': { color: 'primary.contrastText', opacity: 0.7 }, '& .MuiChip-root': { borderColor: 'rgba(255,255,255,0.5)', color: 'primary.contrastText' } }}>
@@ -213,11 +213,12 @@ export default function AgentChatPage() {
                                         sx={{
                                             px: 2,
                                             py: 1,
-                                            maxWidth: '75%',
+                                            maxWidth: { xs: '90%', sm: '75%' },
                                             fontSize: '0.875rem',
                                             bgcolor: msg.turnType === 'request' ? 'primary.main' : 'grey.100',
                                             color: msg.turnType === 'request' ? 'primary.contrastText' : 'text.primary',
                                             borderRadius: 2,
+                                            wordBreak: 'break-word',
                                             '& p': { m: 0 },
                                             '& pre': { overflow: 'auto', bgcolor: 'grey.900', color: 'grey.100', p: 1, borderRadius: 1, fontSize: '0.75rem' },
                                             '& code': { fontSize: '0.75rem' },

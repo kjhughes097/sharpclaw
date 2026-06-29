@@ -397,12 +397,21 @@ The **Projects** page in the web UI (`/projects`) displays a Kanban board with d
 
 - **Columns** represent statuses: Idea → Planning → Todo → In Progress → For Review → Done
 - **Cards** show the ticket number, title, and a colour-coded project chip
-- **Drag and drop** tickets between columns to change status
+- **Drag and drop** tickets between columns to change status (desktop)
 - **Click** a card to open an editor dialog with the full markdown description
+- **Change status** via the Status dropdown in the edit dialog (works on touch devices where native drag-and-drop is unavailable)
 - **Move tickets** between projects using the Project dropdown in the edit dialog
 - **Delete tickets** via the Delete button in the edit dialog (with confirmation prompt)
 - **Filter** by project using the chips at the top
 - **Improve** button uses AI to enhance the ticket description
+
+### Mobile
+
+The board is responsive and works on phones and tablets:
+
+- Columns scroll horizontally with snap-to-column behaviour on small screens
+- Ticket dialogs open full-screen on mobile for easier editing
+- Touch users move tickets between columns by tapping a card and changing the Status dropdown (HTML5 drag-and-drop is disabled on mobile because it is not reliably supported)
 
 ## Configuration
 

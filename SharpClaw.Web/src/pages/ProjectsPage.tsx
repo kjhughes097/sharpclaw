@@ -22,6 +22,8 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemSecondaryAction from '@mui/material/ListItemSecondaryAction';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 import Editor from '@monaco-editor/react';
 import { getProjects, getProjectTickets, getUsers, getLabels, addLabel, removeLabel, createProject, deleteProject, updateTicketStatus, updateTicket, createTicket, improveTicket, moveTicket, deleteTicket } from '../api/projects';
 import type { ProjectSummary, TicketSummary, User } from '../api/projects';
@@ -47,6 +49,8 @@ function getProjectColour(projectId: string, projects: ProjectSummary[]): string
 }
 
 export default function ProjectsPage() {
+    const theme = useTheme();
+    const isMobile = useMediaQuery(theme.breakpoints.down('md'));
     const [projects, setProjects] = useState<ProjectSummary[]>([]);
     const [tickets, setTickets] = useState<TicketSummary[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -60,6 +64,7 @@ export default function ProjectsPage() {
     const [editAssignee, setEditAssignee] = useState('');
     const [editLabels, setEditLabels] = useState<string[]>([]);
     const [editProjectId, setEditProjectId] = useState('');
+    const [editStatus, setEditStatus] = useState('');
     const [saving, setSaving] = useState(false);
     const [improving, setImproving] = useState(false);
     const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -139,6 +144,7 @@ export default function ProjectsPage() {
         setEditAssignee(ticket.assignee ?? '');
         setEditLabels(ticket.labels ?? []);
         setEditProjectId(ticket.projectId);
+        setEditStatus(ticket.status);
     }, []);
 
     const handleEditorClose = useCallback(() => {
@@ -149,39 +155,28 @@ export default function ProjectsPage() {
         if (!editingTicket) return;
         setSaving(true);
         try {
+            const targetProjectId = editProjectId;
             // Handle project move first
             if (editProjectId !== editingTicket.projectId) {
                 const moved = await moveTicket(editingTicket.projectId, editingTicket.id, editProjectId);
                 setTickets(prev => prev.map(t => t.id === editingTicket.id ? moved : t));
-                // Update remaining fields on the moved ticket
-                const data: { title?: string; description?: string; assignee?: string; labels?: string[] } = {};
-                if (editTitle !== editingTicket.title) data.title = editTitle;
-                if (editDescription !== (editingTicket.description ?? '')) data.description = editDescription;
-                if (editAssignee !== (editingTicket.assignee ?? '')) data.assignee = editAssignee || undefined;
-                const existingLabels = editingTicket.labels ?? [];
-                if (JSON.stringify(editLabels.slice().sort()) !== JSON.stringify(existingLabels.slice().sort())) data.labels = editLabels;
-                if (Object.keys(data).length > 0) {
-                    const updated = await updateTicket(editProjectId, editingTicket.id, data);
-                    setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
-                }
-            } else {
-                const data: { title?: string; description?: string; assignee?: string; labels?: string[] } = {};
-                if (editTitle !== editingTicket.title) data.title = editTitle;
-                if (editDescription !== (editingTicket.description ?? '')) data.description = editDescription;
-                if (editAssignee !== (editingTicket.assignee ?? '')) data.assignee = editAssignee || undefined;
-                const existingLabels = editingTicket.labels ?? [];
-                if (JSON.stringify(editLabels.slice().sort()) !== JSON.stringify(existingLabels.slice().sort())) data.labels = editLabels;
-
-                if (Object.keys(data).length > 0) {
-                    const updated = await updateTicket(editingTicket.projectId, editingTicket.id, data);
-                    setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
-                }
+            }
+            const data: { title?: string; description?: string; assignee?: string; labels?: string[]; status?: string } = {};
+            if (editTitle !== editingTicket.title) data.title = editTitle;
+            if (editDescription !== (editingTicket.description ?? '')) data.description = editDescription;
+            if (editAssignee !== (editingTicket.assignee ?? '')) data.assignee = editAssignee || undefined;
+            const existingLabels = editingTicket.labels ?? [];
+            if (JSON.stringify(editLabels.slice().sort()) !== JSON.stringify(existingLabels.slice().sort())) data.labels = editLabels;
+            if (editStatus !== editingTicket.status) data.status = editStatus;
+            if (Object.keys(data).length > 0) {
+                const updated = await updateTicket(targetProjectId, editingTicket.id, data);
+                setTickets(prev => prev.map(t => t.id === updated.id ? updated : t));
             }
             setEditingTicket(null);
         } finally {
             setSaving(false);
         }
-    }, [editingTicket, editTitle, editDescription, editAssignee, editLabels, editProjectId]);
+    }, [editingTicket, editTitle, editDescription, editAssignee, editLabels, editProjectId, editStatus]);
 
     const handleImprove = useCallback(async () => {
         if (!editingTicket) return;
@@ -330,7 +325,19 @@ export default function ProjectsPage() {
                 <Typography color="text.secondary">No projects found.</Typography>
             )}
 
-            <Box sx={{ display: 'flex', gap: 1, pb: 2, width: '100%' }}>
+            <Box
+                sx={{
+                    display: 'flex',
+                    gap: 1,
+                    pb: 2,
+                    width: '100%',
+                    overflowX: { xs: 'auto', md: 'visible' },
+                    WebkitOverflowScrolling: 'touch',
+                    scrollSnapType: { xs: 'x mandatory', md: 'none' },
+                    mx: { xs: -1.5, sm: -2, md: 0 },
+                    px: { xs: 1.5, sm: 2, md: 0 },
+                }}
+            >
                 {STATUSES.map(({ key, label, accent }) => (
                     <Paper
                         key={key}
@@ -339,9 +346,11 @@ export default function ProjectsPage() {
                         onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e as unknown as DragEvent, key)}
                         sx={{
-                            flex: 1,
+                            flex: { xs: '0 0 80vw', sm: '0 0 280px', md: 1 },
+                            maxWidth: { xs: '85vw', sm: 300, md: 'none' },
                             minWidth: 0,
                             p: 1.5,
+                            scrollSnapAlign: { xs: 'start', md: 'none' },
                             bgcolor: dragOverStatus === key ? 'action.hover' : 'background.default',
                             transition: 'background-color 0.15s',
                             ...(accent ? { borderColor: accent, borderTopWidth: 3 } : {}),
@@ -359,12 +368,12 @@ export default function ProjectsPage() {
                                 <Card
                                     key={ticket.id}
                                     variant="outlined"
-                                    draggable
+                                    draggable={!isMobile}
                                     onDragStart={(e) => handleDragStart(e as unknown as DragEvent, ticket.id)}
                                     onDragEnd={handleDragEnd}
                                     onClick={() => handleTicketClick(ticket)}
                                     sx={{
-                                        cursor: 'grab',
+                                        cursor: isMobile ? 'pointer' : 'grab',
                                         opacity: draggedTicketId === ticket.id ? 0.5 : 1,
                                         '&:hover': { borderColor: 'primary.main' },
                                         transition: 'opacity 0.15s, border-color 0.15s',
@@ -423,6 +432,7 @@ export default function ProjectsPage() {
                 onClose={handleEditorClose}
                 maxWidth="md"
                 fullWidth
+                fullScreen={isMobile}
             >
                 <DialogTitle>
                     <TextField
@@ -432,7 +442,11 @@ export default function ProjectsPage() {
                         fullWidth
                         slotProps={{ input: { sx: { fontSize: '1.25rem', fontWeight: 600 } } }}
                     />
-                    <Stack direction="row" spacing={2} sx={{ mt: 1, alignItems: 'center' }}>
+                    <Stack
+                        direction={{ xs: 'column', sm: 'row' }}
+                        spacing={{ xs: 1.5, sm: 2 }}
+                        sx={{ mt: 1, alignItems: { xs: 'stretch', sm: 'center' }, flexWrap: 'wrap' }}
+                    >
                         {editingTicket?.reporter && (
                             <Typography variant="caption" color="text.secondary">
                                 Reporter: {editingTicket.reporter}
@@ -440,11 +454,23 @@ export default function ProjectsPage() {
                         )}
                         <TextField
                             select
+                            label="Status"
+                            value={editStatus}
+                            onChange={(e) => setEditStatus(e.target.value)}
+                            size="small"
+                            sx={{ minWidth: { xs: '100%', sm: 150 } }}
+                        >
+                            {STATUSES.map((s) => (
+                                <MenuItem key={s.key} value={s.key}>{s.label}</MenuItem>
+                            ))}
+                        </TextField>
+                        <TextField
+                            select
                             label="Project"
                             value={editProjectId}
                             onChange={(e) => setEditProjectId(e.target.value)}
                             size="small"
-                            sx={{ minWidth: 150 }}
+                            sx={{ minWidth: { xs: '100%', sm: 150 } }}
                         >
                             {projects.map((p) => (
                                 <MenuItem key={p.id} value={p.id}>{p.title}</MenuItem>
@@ -456,7 +482,7 @@ export default function ProjectsPage() {
                             value={editAssignee}
                             onChange={(e) => setEditAssignee(e.target.value)}
                             size="small"
-                            sx={{ minWidth: 150 }}
+                            sx={{ minWidth: { xs: '100%', sm: 150 } }}
                         >
                             <MenuItem value="">Unassigned</MenuItem>
                             {users.map((u) => (
@@ -471,11 +497,11 @@ export default function ProjectsPage() {
                             value={editLabels}
                             onChange={(_, val) => setEditLabels(val)}
                             renderInput={(params) => <TextField {...params} label="Labels" size="small" />}
-                            sx={{ minWidth: 200 }}
+                            sx={{ minWidth: { xs: '100%', sm: 200 }, flex: { sm: 1 } }}
                         />
                     </Stack>
                 </DialogTitle>
-                <DialogContent sx={{ p: 0, height: 450 }}>
+                <DialogContent sx={{ p: 0, height: { xs: 'auto', sm: 450 }, flex: { xs: 1, sm: 'initial' }, minHeight: { xs: 300, sm: 450 } }}>
                     <Editor
                         height="100%"
                         defaultLanguage="markdown"
@@ -520,6 +546,7 @@ export default function ProjectsPage() {
                 onClose={() => setCreatingTicket(false)}
                 maxWidth="md"
                 fullWidth
+                fullScreen={isMobile}
             >
                 <DialogTitle>New Ticket</DialogTitle>
                 <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
@@ -589,10 +616,10 @@ export default function ProjectsPage() {
             </Dialog>
 
             {/* Manage Projects Dialog */}
-            <Dialog open={managingProjects} onClose={() => setManagingProjects(false)} maxWidth="sm" fullWidth>
+            <Dialog open={managingProjects} onClose={() => setManagingProjects(false)} maxWidth="sm" fullWidth fullScreen={isMobile}>
                 <DialogTitle>Manage Projects</DialogTitle>
                 <DialogContent>
-                    <Stack direction="row" spacing={1} sx={{ mb: 2, mt: 1 }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 2, mt: 1 }}>
                         <TextField
                             label="New project title"
                             value={newProjectTitle}
@@ -651,7 +678,7 @@ export default function ProjectsPage() {
             </Dialog>
 
             {/* Manage Labels Dialog */}
-            <Dialog open={managingLabels} onClose={() => setManagingLabels(false)} maxWidth="sm" fullWidth>
+            <Dialog open={managingLabels} onClose={() => setManagingLabels(false)} maxWidth="sm" fullWidth fullScreen={isMobile}>
                 <DialogTitle>Manage Labels</DialogTitle>
                 <DialogContent>
                     <Stack direction="row" spacing={1} sx={{ mb: 2, mt: 1 }}>
