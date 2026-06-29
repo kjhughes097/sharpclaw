@@ -181,3 +181,42 @@ tools:
   - schedule_task
   - cancel_task
 ```
+
+## Task Comments
+
+Each scheduled task can have comments attached, useful for tracking context, notes, agent observations, or post-run discussion.
+
+Comments are stored as JSON files (one per task) in `{workspace}/task-comments/`. They are deleted automatically when the parent task is deleted.
+
+### Fields
+
+| Field       | Description                                              |
+|-------------|----------------------------------------------------------|
+| `id`        | 12-char generated ID                                     |
+| `taskId`    | Parent task ID                                           |
+| `author`    | Name of the user or agent that wrote the comment         |
+| `content`   | Comment text                                             |
+| `created`   | Creation timestamp (UTC)                                 |
+| `updated`   | Last-edit timestamp (UTC), `null` if never edited        |
+
+### API Endpoints
+
+| Method | Path                                          | Description                          |
+|--------|-----------------------------------------------|--------------------------------------|
+| GET    | `/api/tasks/{id}/comments`                    | List comments (oldest first)         |
+| POST   | `/api/tasks/{id}/comments`                    | Add a comment (`{author, content}`)  |
+| PUT    | `/api/tasks/{id}/comments/{commentId}`        | Edit a comment (author must match)   |
+| DELETE | `/api/tasks/{id}/comments/{commentId}?author=…` | Delete a comment (author must match) |
+
+Edits and deletes require the request to specify the same `author` as the original comment — this provides lightweight ownership without coupling to an auth system.
+
+### UI
+
+Comments appear in a dedicated panel at the bottom of the task editor page. The panel:
+
+- Lists comments oldest-first with author chip and timestamp
+- Visually distinguishes agent comments (filled primary chip) from user comments
+- Shows an `(edited)` marker with tooltip when a comment has been updated
+- Provides inline edit/delete controls (only enabled for the current author)
+- Persists the author name in `localStorage` so it carries between sessions
+- Confirms deletion via a dialog

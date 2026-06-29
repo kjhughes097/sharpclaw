@@ -114,6 +114,7 @@ builder.Services.AddSingleton<AgentRunner>();
 // -- Scheduling --
 builder.Services.AddSingleton<SchedulingContextAccessor>();
 builder.Services.AddSingleton<ScheduleStore>();
+builder.Services.AddSingleton<TaskCommentStore>();
 
 // -- Tools --
 builder.Services.AddSingleton<SpawnAgentTool>();
