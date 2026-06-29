@@ -20,9 +20,9 @@ export default function DashboardLayout() {
                 <Stack
                     spacing={2}
                     sx={{
-                        mx: 3,
+                        mx: { xs: 1.5, sm: 2, md: 3 },
                         pb: 5,
-                        mt: { xs: 8, md: 2 },
+                        mt: { xs: 9, md: 2 },
                     }}
                 >
                     <Outlet />
