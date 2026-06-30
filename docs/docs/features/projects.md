@@ -486,8 +486,10 @@ Each agent processes at most one ticket per tick. If multiple tickets are assign
 
 Safety net:
 
-- If the agent's invocation fails (LLM error, exception, timeout) the worker moves the ticket to `blocked` and appends the reason to the description.
-- If the agent finishes its turn without transitioning the ticket out of `in_progress`, the worker moves it to `blocked` with a note explaining that human review is required.
+- If the agent's invocation fails (LLM error, exception, timeout) the worker moves the ticket to `blocked` and posts a comment (authored as `ticket-worker`) explaining the reason.
+- If the agent finishes its turn without transitioning the ticket out of `in_progress`, the worker moves it to `blocked` with a comment noting that human review is required.
+
+The ticket **description** is never modified by the worker or by agents during a status transition — all status-related context lives in **comments**. This keeps the original requirement intact and gives every ticket a clean audit trail.
 
 For the worker to act on a ticket, the assigned agent must have the `ticket` tool available (either explicitly in its frontmatter `tools` list, or by omitting `tools` so it inherits all registered tools).
 
@@ -543,3 +545,28 @@ Comments appear in a panel beneath the description editor inside the ticket edit
 - Provides inline edit/delete controls (only enabled for the current author)
 - Persists the author name in `localStorage` so it carries between sessions
 - Confirms deletion via a dialog
+
+### Agent Access via the `ticket` Tool
+
+Agents interact with comments through two additional actions on the `ticket` tool:
+
+| Action          | Parameters                                              | Purpose                                       |
+|-----------------|---------------------------------------------------------|-----------------------------------------------|
+| `list_comments` | `project_id`, `ticket_id`                               | Read the comment thread (oldest first)        |
+| `add_comment`   | `project_id`, `ticket_id`, `comment`, `author` (opt.)   | Append a new comment                          |
+
+`get_ticket` also returns the comment thread inline, so agents typically do not
+need a separate `list_comments` call when picking up a ticket.
+
+Status-transition comments follow a conventional format so they can be parsed
+visually and by tooling:
+
+- **Blocked** — `**Blocked:** <clear explanation of what is blocking you>`
+- **For review** — `**Ready for review.** <summary>. PR: <url>`
+- **Auto-blocked by the worker** — `**Auto-blocked by ticket worker:** <reason>` (authored as `ticket-worker`)
+
+When an auto-dispatched agent transitions a ticket to `blocked` or `for_review`,
+it is required to add such a comment **before** calling `update_ticket` to change
+the status. The agent must **never** modify the ticket description as part of a
+status change — the description is the original requirement and is treated as
+immutable once the ticket exists.
