@@ -46,6 +46,34 @@ For the Web UI in development:
 cd SharpClaw.Web && npm run dev   # Dev server with HMR on :5173
 ```
 
+## Project Structure
+
+```
+sharpclaw/
+├── SharpClaw/              # .NET 10 backend (Web SDK)
+│   ├── agents/             # *.agent.md agent definitions
+│   ├── mcps/               # MCP server JSON definitions
+│   ├── skills/             # Reusable prompt fragments
+│   ├── services/           # External service definitions
+│   ├── Tools/              # ITool implementations
+│   ├── Registry/           # Agent / Tool / MCP / Skill registries
+│   ├── Execution/          # AgentRunner and LLM providers
+│   ├── Mcp/                # MCP server hosting + bridging
+│   ├── Telegram/           # Telegram bot integration
+│   ├── Api/                # HTTP + WebSocket endpoints
+│   ├── Workers/            # BackgroundService implementations
+│   ├── wwwroot/            # Web UI build output (generated)
+│   └── Program.cs
+├── SharpClaw.Web/          # Vite 9 + React 19 + MUI v9 frontend
+├── SharpClaw.Tests/        # xUnit test suite
+├── docs/                   # Docusaurus documentation site
+├── docker/                 # Observability stack (Loki, Tempo, Mimir, Grafana, OTel)
+├── scripts/                # Backup, restore, and utility shell scripts
+├── sharpclaw.sh            # Local control script (start/stop/logs/test/etc.)
+├── SharpClaw.slnx          # Solution file
+└── README.md
+```
+
 ## Architecture
 
 ### Core Components
@@ -299,6 +327,28 @@ Use the root script to run common workflows from one command:
 - MCP connections are per-session and disposed when the session ends
 - Requires `Anthropic:ApiKey` in configuration (conditional registration when key is set)
 
+## Observability
+
+The `docker/` directory contains a Grafana observability stack used during local development:
+
+- **OpenTelemetry Collector** — receives OTLP traces, metrics, and logs from SharpClaw
+- **Loki** — log aggregation (default endpoint `http://127.0.0.1:3100`)
+- **Tempo** — distributed tracing backend
+- **Mimir** — metrics backend
+- **Grafana** — unified UI for logs/metrics/traces
+
+Bring the stack up alongside SharpClaw via `./sharpclaw.sh start`, and use `./sharpclaw.sh logs` to open the Grafana logs UI filtered to `service_name="SharpClaw"`.
+
+## Backups
+
+The `scripts/` directory contains backup tooling:
+
+- `scripts/backup.sh` — back up agent definitions, MCP configs, projects, transcripts, and other persistent state
+- `scripts/restore.sh` — restore from a backup archive
+- `scripts/test-backup-restore.sh` — round-trip verification
+
+A `BackupService` inside SharpClaw also exposes scheduled backups; see `SharpClaw.Tests/BackupServiceTests.cs` for the contract.
+
 ## Documentation
 
 Full documentation is available in the [docs/](docs/) directory, built with Docusaurus:
@@ -330,3 +380,26 @@ When making changes:
 2. Update documentation in [docs/](docs/) for behavioral or interface changes
 3. Ensure tests pass: `dotnet test`
 4. Check that agents, tools, and MCP servers load correctly after your changes
+
+### Branching & Pull Requests
+
+- **Never commit directly to `main`.** All changes flow through a feature branch and pull request.
+- Create a descriptive branch off `main`:
+
+  ```bash
+  git checkout main && git pull
+  git checkout -b <short-description>      # e.g. fix-timeout-handling
+  ```
+
+- Keep one logical change per branch/PR — don't bundle unrelated work.
+- Run the relevant build/lint/test commands before pushing:
+
+  ```bash
+  dotnet build
+  dotnet test
+  cd SharpClaw.Web && npm run build   # if Web UI changed
+  cd docs && npm run build            # if docs changed
+  ```
+
+- Push your branch and open a PR against `main` with a description covering **what** changed, **why**, and any **testing** performed.
+- Address review feedback in additional commits on the same branch; squash on merge if appropriate.
