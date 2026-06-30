@@ -504,3 +504,42 @@ For the worker to act on a ticket, the assigned agent must have the `ticket` too
 | ------------------------ | ------- | --------------------------------------------------------------------------- |
 | `Enabled`                | `true`  | Disable the worker entirely without removing it from the host.              |
 | `PollingIntervalSeconds` | `60`    | How often to scan for newly-assigned `todo` tickets. Minimum effective: 5s. |
+
+## Ticket Comments
+
+Each ticket supports a thread of comments — useful for clarifying questions, recording blockers, agent observations, review feedback, or links to PRs.
+
+Comments are stored as JSON files (one per ticket) under `{workspace}/ticket-comments/{ticketId}.json`. Because ticket IDs are globally unique, the comments survive moving a ticket between projects. They are deleted automatically when the parent ticket is deleted.
+
+### Fields
+
+| Field      | Description                                              |
+|------------|----------------------------------------------------------|
+| `id`       | 12-char generated comment ID                             |
+| `ticketId` | Parent ticket ID                                         |
+| `author`   | Name of the user or agent that wrote the comment         |
+| `content`  | Comment text                                             |
+| `created`  | Creation timestamp (UTC)                                 |
+| `updated`  | Last-edit timestamp (UTC), `null` if never edited        |
+
+### API Endpoints
+
+| Method | Path                                                                  | Description                          |
+|--------|-----------------------------------------------------------------------|--------------------------------------|
+| GET    | `/api/projects/{projectId}/tickets/{ticketId}/comments`               | List comments (oldest first)         |
+| POST   | `/api/projects/{projectId}/tickets/{ticketId}/comments`               | Add a comment (`{author, content}`)  |
+| PUT    | `/api/projects/{projectId}/tickets/{ticketId}/comments/{commentId}`   | Edit a comment (author must match)   |
+| DELETE | `/api/projects/{projectId}/tickets/{ticketId}/comments/{commentId}?author=…` | Delete a comment (author must match) |
+
+Edits and deletes require the request to supply the same `author` as the original comment — this is lightweight ownership without coupling to an auth system.
+
+### UI
+
+Comments appear in a panel beneath the description editor inside the ticket edit dialog. The panel:
+
+- Lists comments oldest-first with author chip and timestamp
+- Visually distinguishes agent comments (filled primary chip) from human comments
+- Shows an `(edited)` marker with tooltip when a comment has been updated
+- Provides inline edit/delete controls (only enabled for the current author)
+- Persists the author name in `localStorage` so it carries between sessions
+- Confirms deletion via a dialog

@@ -27,6 +27,7 @@ import { useTheme } from '@mui/material/styles';
 import Editor from '@monaco-editor/react';
 import { getProjects, getProjectTickets, getUsers, getLabels, addLabel, removeLabel, createProject, deleteProject, updateTicketStatus, updateTicket, createTicket, improveTicket, moveTicket, deleteTicket } from '../api/projects';
 import type { ProjectSummary, TicketSummary, User } from '../api/projects';
+import TicketCommentsPanel from '../components/TicketCommentsPanel';
 
 const STATUSES: { key: string; label: string; accent?: string }[] = [
     { key: 'idea', label: 'Idea' },
@@ -501,15 +502,25 @@ export default function ProjectsPage() {
                         />
                     </Stack>
                 </DialogTitle>
-                <DialogContent sx={{ p: 0, height: { xs: 'auto', sm: 450 }, flex: { xs: 1, sm: 'initial' }, minHeight: { xs: 300, sm: 450 } }}>
-                    <Editor
-                        height="100%"
-                        defaultLanguage="markdown"
-                        value={editDescription}
-                        onChange={(v) => setEditDescription(v ?? '')}
-                        theme="vs-dark"
-                        options={{ minimap: { enabled: false }, wordWrap: 'on', fontSize: 14, lineNumbers: 'off' }}
-                    />
+                <DialogContent sx={{ p: 0, display: 'flex', flexDirection: 'column', flex: { xs: 1, sm: 'initial' } }}>
+                    <Box sx={{ height: { xs: 300, sm: 450 }, flexShrink: 0 }}>
+                        <Editor
+                            height="100%"
+                            defaultLanguage="markdown"
+                            value={editDescription}
+                            onChange={(v) => setEditDescription(v ?? '')}
+                            theme="vs-dark"
+                            options={{ minimap: { enabled: false }, wordWrap: 'on', fontSize: 14, lineNumbers: 'off' }}
+                        />
+                    </Box>
+                    {editingTicket && (
+                        <Box sx={{ p: 2 }}>
+                            <TicketCommentsPanel
+                                projectId={editingTicket.projectId}
+                                ticketId={editingTicket.id}
+                            />
+                        </Box>
+                    )}
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={handleImprove} disabled={improving || saving} color="secondary">

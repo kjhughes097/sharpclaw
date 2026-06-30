@@ -22,7 +22,6 @@ import Editor from '@monaco-editor/react';
 import { getTask, updateTask, deleteTask } from '../api/tasks';
 import type { ScheduledTaskDetail } from '../api/tasks';
 import { formatDateTime } from '../utils/dateFormat';
-import TaskCommentsPanel from '../components/TaskCommentsPanel';
 
 export default function TaskEditorPage() {
     const { id } = useParams<{ id: string }>();
@@ -265,8 +264,6 @@ export default function TaskEditorPage() {
                     <Button color="error" onClick={handleDelete}>Delete</Button>
                 </DialogActions>
             </Dialog>
-
-            {id && <TaskCommentsPanel taskId={id} />}
         </Box>
     );
 }

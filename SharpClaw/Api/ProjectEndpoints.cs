@@ -229,11 +229,53 @@ internal static class ProjectEndpoints
             }
         });
 
-        group.MapDelete("/{projectId}/tickets/{ticketId}", (string projectId, string ticketId, ProjectLoader loader) =>
+        group.MapDelete("/{projectId}/tickets/{ticketId}", (string projectId, string ticketId, ProjectLoader loader, TicketCommentStore commentStore) =>
         {
             var deleted = loader.DeleteTicket(projectId, ticketId);
             if (!deleted) return Results.NotFound();
+            commentStore.DeleteAllForTicket(ticketId);
             return Results.NoContent();
+        });
+
+        // -- Comments --
+        group.MapGet("/{projectId}/tickets/{ticketId}/comments", (string projectId, string ticketId, ProjectLoader loader, TicketCommentStore comments) =>
+        {
+            if (loader.GetTicket(projectId, ticketId) is null) return Results.NotFound();
+            return Results.Ok(comments.GetForTicket(ticketId).Select(SerializeComment));
+        });
+
+        group.MapPost("/{projectId}/tickets/{ticketId}/comments", (string projectId, string ticketId, CommentCreateRequest req, ProjectLoader loader, TicketCommentStore comments) =>
+        {
+            if (loader.GetTicket(projectId, ticketId) is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(req.Content))
+                return Results.BadRequest("Comment content is required.");
+
+            var comment = comments.Add(ticketId, req.Author ?? "user", req.Content.Trim());
+            return Results.Created($"/api/projects/{projectId}/tickets/{ticketId}/comments/{comment.Id}", SerializeComment(comment));
+        });
+
+        group.MapPut("/{projectId}/tickets/{ticketId}/comments/{commentId}", (string projectId, string ticketId, string commentId, CommentUpdateRequest req, ProjectLoader loader, TicketCommentStore comments) =>
+        {
+            if (loader.GetTicket(projectId, ticketId) is null) return Results.NotFound();
+            if (string.IsNullOrWhiteSpace(req.Content))
+                return Results.BadRequest("Comment content is required.");
+
+            if (comments.Get(ticketId, commentId) is null) return Results.NotFound();
+
+            var updated = comments.Update(ticketId, commentId, req.Content.Trim(), req.Author);
+            if (updated is null) return Results.Forbid();
+
+            return Results.Ok(SerializeComment(updated));
+        });
+
+        group.MapDelete("/{projectId}/tickets/{ticketId}/comments/{commentId}", (string projectId, string ticketId, string commentId, string? author, ProjectLoader loader, TicketCommentStore comments) =>
+        {
+            if (loader.GetTicket(projectId, ticketId) is null) return Results.NotFound();
+            if (comments.Get(ticketId, commentId) is null) return Results.NotFound();
+
+            return comments.Delete(ticketId, commentId, author)
+                ? Results.NoContent()
+                : Results.Forbid();
         });
 
         group.MapPost("/{projectId}/tickets/{ticketId}/improve", async (
@@ -283,4 +325,16 @@ internal static class ProjectEndpoints
     private sealed record CreateTicketRequest(string Title, string? Description, string? Reporter, string? Assignee, string[]? Labels);
     private sealed record UpdateTicketRequest(string? Title, string? Description, string? Status, string? Assignee, string[]? Labels);
     private sealed record MoveTicketRequest(string TargetProjectId);
+    private sealed record CommentCreateRequest(string? Author, string Content);
+    private sealed record CommentUpdateRequest(string? Author, string Content);
+
+    private static object SerializeComment(TicketComment c) => new
+    {
+        c.Id,
+        c.TicketId,
+        c.Author,
+        c.Content,
+        Created = c.CreatedUtc,
+        Updated = c.UpdatedUtc,
+    };
 }

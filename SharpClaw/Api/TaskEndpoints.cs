@@ -156,75 +156,13 @@ internal static class TaskEndpoints
             return Results.Ok(new { updated.Id, Message = "Task updated." });
         });
 
-        group.MapDelete("/{id}", (string id, ScheduleStore store, TaskCommentStore commentStore) =>
+        group.MapDelete("/{id}", (string id, ScheduleStore store) =>
         {
             if (!store.Delete(id))
                 return Results.NotFound();
-            commentStore.DeleteAllForTask(id);
             return Results.NoContent();
         });
-
-        // -- Comments --
-        group.MapGet("/{id}/comments", (string id, ScheduleStore store, TaskCommentStore comments) =>
-        {
-            if (store.Get(id) is null)
-                return Results.NotFound();
-            return Results.Ok(comments.GetForTask(id).Select(SerializeComment));
-        });
-
-        group.MapPost("/{id}/comments", (string id, CommentCreateRequest request, ScheduleStore store, TaskCommentStore comments) =>
-        {
-            if (store.Get(id) is null)
-                return Results.NotFound();
-            if (string.IsNullOrWhiteSpace(request.Content))
-                return Results.BadRequest("Comment content is required.");
-
-            var comment = comments.Add(id, request.Author ?? "user", request.Content.Trim());
-            return Results.Created($"/api/tasks/{id}/comments/{comment.Id}", SerializeComment(comment));
-        });
-
-        group.MapPut("/{id}/comments/{commentId}", (string id, string commentId, CommentUpdateRequest request, ScheduleStore store, TaskCommentStore comments) =>
-        {
-            if (store.Get(id) is null)
-                return Results.NotFound();
-            if (string.IsNullOrWhiteSpace(request.Content))
-                return Results.BadRequest("Comment content is required.");
-
-            var existing = comments.Get(id, commentId);
-            if (existing is null)
-                return Results.NotFound();
-
-            var updated = comments.Update(id, commentId, request.Content.Trim(), request.Author);
-            if (updated is null)
-                return Results.Forbid();
-
-            return Results.Ok(SerializeComment(updated));
-        });
-
-        group.MapDelete("/{id}/comments/{commentId}", (string id, string commentId, string? author, ScheduleStore store, TaskCommentStore comments) =>
-        {
-            if (store.Get(id) is null)
-                return Results.NotFound();
-
-            var existing = comments.Get(id, commentId);
-            if (existing is null)
-                return Results.NotFound();
-
-            return comments.Delete(id, commentId, author)
-                ? Results.NoContent()
-                : Results.Forbid();
-        });
     }
-
-    private static object SerializeComment(SharpClaw.Models.TaskComment c) => new
-    {
-        c.Id,
-        c.TaskId,
-        c.Author,
-        c.Content,
-        Created = c.CreatedUtc,
-        Updated = c.UpdatedUtc,
-    };
 
     private static ScheduleChannelType ParseChannelType(string? value) =>
         string.Equals(value, "telegram", StringComparison.OrdinalIgnoreCase)
@@ -268,6 +206,4 @@ internal sealed record TaskUpdateRequest(
     string? ChannelKey
 );
 
-internal sealed record CommentCreateRequest(string? Author, string Content);
 
-internal sealed record CommentUpdateRequest(string? Author, string Content);

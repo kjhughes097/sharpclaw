@@ -18,12 +18,12 @@ import SaveIcon from '@mui/icons-material/Save';
 import CloseIcon from '@mui/icons-material/Close';
 import SendIcon from '@mui/icons-material/Send';
 import {
-    getTaskComments,
-    createTaskComment,
-    updateTaskComment,
-    deleteTaskComment,
-    type TaskComment,
-} from '../api/tasks';
+    getTicketComments,
+    createTicketComment,
+    updateTicketComment,
+    deleteTicketComment,
+    type TicketComment,
+} from '../api/projects';
 import { formatDateTime } from '../utils/dateFormat';
 
 const AUTHOR_KEY = 'sharpclaw.commentAuthor';
@@ -43,22 +43,23 @@ function saveAuthor(value: string) {
 }
 
 interface Props {
-    taskId: string;
+    projectId: string;
+    ticketId: string;
 }
 
-export default function TaskCommentsPanel({ taskId }: Props) {
-    const [comments, setComments] = useState<TaskComment[]>([]);
+export default function TicketCommentsPanel({ projectId, ticketId }: Props) {
+    const [comments, setComments] = useState<TicketComment[]>([]);
     const [author, setAuthor] = useState(loadAuthor());
     const [content, setContent] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingContent, setEditingContent] = useState('');
-    const [deleteTarget, setDeleteTarget] = useState<TaskComment | null>(null);
+    const [deleteTarget, setDeleteTarget] = useState<TicketComment | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     const reload = async () => {
         try {
-            const data = await getTaskComments(taskId);
+            const data = await getTicketComments(projectId, ticketId);
             setComments(data);
             setError(null);
         } catch (e) {
@@ -72,7 +73,7 @@ export default function TaskCommentsPanel({ taskId }: Props) {
         setLoading(true);
         reload();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [taskId]);
+    }, [projectId, ticketId]);
 
     const handleAuthorChange = (value: string) => {
         setAuthor(value);
@@ -82,7 +83,7 @@ export default function TaskCommentsPanel({ taskId }: Props) {
     const handleAdd = async () => {
         if (!content.trim()) return;
         try {
-            await createTaskComment(taskId, content.trim(), author.trim() || 'user');
+            await createTicketComment(projectId, ticketId, content.trim(), author.trim() || 'user');
             setContent('');
             await reload();
         } catch (e) {
@@ -90,7 +91,7 @@ export default function TaskCommentsPanel({ taskId }: Props) {
         }
     };
 
-    const startEdit = (c: TaskComment) => {
+    const startEdit = (c: TicketComment) => {
         setEditingId(c.id);
         setEditingContent(c.content);
     };
@@ -100,10 +101,10 @@ export default function TaskCommentsPanel({ taskId }: Props) {
         setEditingContent('');
     };
 
-    const saveEdit = async (c: TaskComment) => {
+    const saveEdit = async (c: TicketComment) => {
         if (!editingContent.trim()) return;
         try {
-            await updateTaskComment(taskId, c.id, editingContent.trim(), c.author);
+            await updateTicketComment(projectId, ticketId, c.id, editingContent.trim(), c.author);
             cancelEdit();
             await reload();
         } catch (e) {
@@ -114,7 +115,7 @@ export default function TaskCommentsPanel({ taskId }: Props) {
     const confirmDelete = async () => {
         if (!deleteTarget) return;
         try {
-            await deleteTaskComment(taskId, deleteTarget.id, deleteTarget.author);
+            await deleteTicketComment(projectId, ticketId, deleteTarget.id, deleteTarget.author);
             setDeleteTarget(null);
             await reload();
         } catch (e) {
@@ -122,10 +123,10 @@ export default function TaskCommentsPanel({ taskId }: Props) {
         }
     };
 
-    const isAgent = (a: string) => a.toLowerCase() !== 'user' && a.toLowerCase() !== 'me';
+    const isAgent = (a: string) => a.toLowerCase() !== 'user' && a.toLowerCase() !== 'me' && a.toLowerCase() !== 'ken';
 
     return (
-        <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
+        <Paper variant="outlined" sx={{ p: 2 }}>
             <Typography variant="subtitle1" sx={{ mb: 1.5, fontWeight: 600 }}>
                 Comments ({comments.length})
             </Typography>

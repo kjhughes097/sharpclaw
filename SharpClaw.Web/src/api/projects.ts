@@ -81,3 +81,34 @@ export const moveTicket = (projectId: string, ticketId: string, targetProjectId:
 
 export const deleteTicket = (projectId: string, ticketId: string) =>
     apiFetch<void>(`/projects/${projectId}/tickets/${ticketId}`, { method: 'DELETE' });
+
+// -- Comments --
+
+export interface TicketComment {
+    id: string;
+    ticketId: string;
+    author: string;
+    content: string;
+    created: string;
+    updated: string | null;
+}
+
+export const getTicketComments = (projectId: string, ticketId: string) =>
+    apiFetch<TicketComment[]>(`/projects/${projectId}/tickets/${ticketId}/comments`);
+
+export const createTicketComment = (projectId: string, ticketId: string, content: string, author: string) =>
+    apiFetch<TicketComment>(`/projects/${projectId}/tickets/${ticketId}/comments`, {
+        method: 'POST',
+        body: JSON.stringify({ author, content }),
+    });
+
+export const updateTicketComment = (projectId: string, ticketId: string, commentId: string, content: string, author: string) =>
+    apiFetch<TicketComment>(`/projects/${projectId}/tickets/${ticketId}/comments/${commentId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ author, content }),
+    });
+
+export const deleteTicketComment = (projectId: string, ticketId: string, commentId: string, author: string) =>
+    apiFetch<void>(`/projects/${projectId}/tickets/${ticketId}/comments/${commentId}?author=${encodeURIComponent(author)}`, {
+        method: 'DELETE',
+    });
