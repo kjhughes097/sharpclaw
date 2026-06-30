@@ -31,16 +31,36 @@ public sealed class AnthropicProvider(
         McpToolBridge? mcpBridge = null;
         var allTools = new List<AITool>();
 
+        // Anthropic rejects requests whose tools array contains duplicate names.
+        // Track seen names and keep only the first occurrence of each.
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddDistinct(AITool tool)
+        {
+            if (seenNames.Add(tool.Name))
+            {
+                allTools.Add(tool);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Skipping duplicate tool '{ToolName}' for Anthropic session — a tool with this name is already registered",
+                    tool.Name);
+            }
+        }
+
         if (request.McpServers is { Count: > 0 })
         {
             mcpBridge = await McpToolBridge.CreateAsync(request.McpServers, loggerFactory, ct);
-            allTools.AddRange(mcpBridge.Tools);
+            foreach (var tool in mcpBridge.Tools)
+                AddDistinct(tool);
         }
 
         // Add ITool adapters (already wrapped as AIFunction)
         if (request.Tools is { Count: > 0 })
         {
-            allTools.AddRange(request.Tools);
+            foreach (var tool in request.Tools)
+                AddDistinct(tool);
         }
 
         // Create activation tools for lazy MCP servers
@@ -51,7 +71,7 @@ public sealed class AnthropicProvider(
             {
                 var activationTool = new LazyMcpActivationTool(name, def, loggerFactory, allTools);
                 lazyActivationTools.Add(activationTool);
-                allTools.Add(activationTool);
+                AddDistinct(activationTool);
             }
         }
 

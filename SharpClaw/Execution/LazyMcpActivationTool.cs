@@ -77,12 +77,28 @@ public sealed class LazyMcpActivationTool : AIFunction, IAsyncDisposable
             _client = await McpClient.CreateAsync(transport, McpToolBridge.DefaultClientOptions, loggerFactory: _loggerFactory, cancellationToken: cancellationToken);
             var tools = await _client.ListToolsAsync(cancellationToken: cancellationToken);
 
-            // Inject discovered tools into the session's live tool list
-            _sessionTools.AddRange(tools);
+            // Inject discovered tools into the session's live tool list.
+            // Anthropic rejects duplicate tool names, so skip any name already present.
+            var existingNames = new HashSet<string>(_sessionTools.Select(t => t.Name), StringComparer.Ordinal);
+            var added = new List<McpClientTool>();
+            foreach (var tool in tools)
+            {
+                if (existingNames.Add(tool.Name))
+                {
+                    _sessionTools.Add(tool);
+                    added.Add(tool);
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Lazy MCP '{Server}' exposes tool '{Tool}' that is already registered — skipping to avoid duplicate tool name",
+                        _serverName, tool.Name);
+                }
+            }
 
             _activated = true;
 
-            var toolNames = tools.Select(t => t.Name).OrderBy(n => n).ToList();
+            var toolNames = added.Select(t => t.Name).OrderBy(n => n).ToList();
             _logger.LogInformation(
                 "Lazy MCP '{Server}' activated: {Count} tools discovered ({Tools})",
                 _serverName, toolNames.Count, string.Join(", ", toolNames));
