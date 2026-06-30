@@ -76,34 +76,3 @@ export const updateTask = (id: string, data: TaskUpdateRequest) =>
 
 export const deleteTask = (id: string) =>
     apiFetch<void>(`/tasks/${id}`, { method: 'DELETE' });
-
-// -- Comments --
-
-export interface TaskComment {
-    id: string;
-    taskId: string;
-    author: string;
-    content: string;
-    created: string;
-    updated: string | null;
-}
-
-export const getTaskComments = (taskId: string) =>
-    apiFetch<TaskComment[]>(`/tasks/${taskId}/comments`);
-
-export const createTaskComment = (taskId: string, content: string, author: string) =>
-    apiFetch<TaskComment>(`/tasks/${taskId}/comments`, {
-        method: 'POST',
-        body: JSON.stringify({ author, content }),
-    });
-
-export const updateTaskComment = (taskId: string, commentId: string, content: string, author: string) =>
-    apiFetch<TaskComment>(`/tasks/${taskId}/comments/${commentId}`, {
-        method: 'PUT',
-        body: JSON.stringify({ author, content }),
-    });
-
-export const deleteTaskComment = (taskId: string, commentId: string, author: string) =>
-    apiFetch<void>(`/tasks/${taskId}/comments/${commentId}?author=${encodeURIComponent(author)}`, {
-        method: 'DELETE',
-    });
