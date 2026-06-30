@@ -22,6 +22,7 @@ public sealed class TicketAssignmentWorker(
     IOptions<TicketWorkerOptions> options,
     IAgentRegistry agentRegistry,
     ProjectLoader projectLoader,
+    TicketCommentStore commentStore,
     AgentRunner runner,
     ILogger<TicketAssignmentWorker> logger) : BackgroundService
 {
@@ -151,7 +152,7 @@ public sealed class TicketAssignmentWorker(
                 return;
             }
 
-            var prompt = BuildPrompt(projectId, ticket);
+            var prompt = BuildPrompt(projectId, ticket, agentName);
             var request = new AgentRunRequest(
                 Prompt: prompt,
                 Llm: agent.Llm,
@@ -226,10 +227,11 @@ public sealed class TicketAssignmentWorker(
     {
         try
         {
-            var note = $"\n\n---\n\n**Auto-blocked by ticket worker ({DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC):** {reason}";
-            var existing = ticket.Description ?? string.Empty;
-            var newDescription = existing + note;
-            projectLoader.UpdateTicket(projectId, ticket.Id, TicketStatus.Blocked, description: newDescription);
+            commentStore.Add(
+                ticket.Id,
+                "ticket-worker",
+                $"**Auto-blocked by ticket worker:** {reason}");
+            projectLoader.UpdateTicket(projectId, ticket.Id, TicketStatus.Blocked);
         }
         catch (Exception ex)
         {
@@ -238,37 +240,77 @@ public sealed class TicketAssignmentWorker(
         }
     }
 
-    private static string BuildPrompt(string projectId, Ticket ticket)
+    private string BuildPrompt(string projectId, Ticket ticket, string agentName)
     {
         var description = string.IsNullOrWhiteSpace(ticket.Description)
             ? "(no description)"
             : ticket.Description;
+
+        var existingComments = commentStore.GetForTicket(ticket.Id);
+        string commentsSection;
+        if (existingComments.Count == 0)
+        {
+            commentsSection = "(no prior comments)";
+        }
+        else
+        {
+            var lines = existingComments.Select(c =>
+                $"- `{c.Id}` **{c.Author}** ({c.CreatedUtc:yyyy-MM-dd HH:mm} UTC): {c.Content}");
+            commentsSection = string.Join('\n', lines);
+        }
 
         return $$"""
             You have been assigned ticket `{{ticket.Id}}` in project `{{projectId}}`.
 
             **Title:** {{ticket.Title}}
 
-            **Ticket description:**
+            **Ticket description (do NOT modify this):**
             {{description}}
+
+            **Existing comments (oldest first):**
+            {{commentsSection}}
 
             ---
 
-            This ticket has been automatically moved to `in_progress`. Work on it now until you
-            reach one of these terminal states:
+            This ticket has been automatically moved to `in_progress`. Review the existing
+            comments above — they are the canonical audit trail for this ticket. If the
+            ticket was previously `blocked`, the most recent comments will contain the
+            blocking reason and any unblocking details from a human; use them to inform
+            how you resume work.
 
-            1. **Complete** — implement the work, then use the `ticket` tool to move it to
-               `for_review`:
-               `ticket(action="update_ticket", project_id="{{projectId}}", ticket_id="{{ticket.Id}}", status="for_review")`
+            **Important rules:**
+            - **Never** modify the ticket description via `update_ticket`. The description
+              is the original requirement and must remain intact.
+            - All status-change context (blocking reasons, completion summaries, PR links)
+              goes into **comments**, not the description.
+            - Author your comments as `{{agentName}}`.
 
-            2. **Blocked** — if you cannot make further progress (missing requirements, external
-               dependency, ambiguity needing human input, etc):
-               - Use `ticket(action="get_ticket", ...)` to read the current description.
-               - Use `ticket(action="update_ticket", ...)` to append a clear explanation of
-                 what is blocking you to the description, and set `status="blocked"`.
+            Work on the ticket now until you reach one of these terminal states:
 
-            Do not leave the ticket in `in_progress`. You only have this one turn — finish or
-            block before you stop. Begin now.
+            1. **Complete** — add a comment summarising the work and including a link to
+               the pull request (if any), then move the ticket to `for_review`:
+
+               ```
+               ticket(action="add_comment", project_id="{{projectId}}", ticket_id="{{ticket.Id}}",
+                      author="{{agentName}}",
+                      comment="**Ready for review.** <summary>. PR: <url>")
+               ticket(action="update_ticket", project_id="{{projectId}}", ticket_id="{{ticket.Id}}",
+                      status="for_review")
+               ```
+
+            2. **Blocked** — if you cannot make further progress (missing requirements,
+               external dependency, ambiguity needing human input, etc):
+
+               ```
+               ticket(action="add_comment", project_id="{{projectId}}", ticket_id="{{ticket.Id}}",
+                      author="{{agentName}}",
+                      comment="**Blocked:** <clear explanation of what is blocking you>")
+               ticket(action="update_ticket", project_id="{{projectId}}", ticket_id="{{ticket.Id}}",
+                      status="blocked")
+               ```
+
+            Do not leave the ticket in `in_progress`. You only have this one turn — finish
+            or block before you stop. Begin now.
             """;
     }
 }

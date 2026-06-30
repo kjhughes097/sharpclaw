@@ -4,20 +4,22 @@ using SharpClaw.Models;
 
 namespace SharpClaw.Tools;
 
-public sealed class TicketTool(ProjectLoader loader) : ITool
+public sealed class TicketTool(ProjectLoader loader, TicketCommentStore comments) : ITool
 {
     public string Name => "ticket";
-    public string Description => "Manage project tickets. Actions: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket.";
+    public string Description => "Manage project tickets. Actions: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket, list_comments, add_comment.";
 
     public IReadOnlyList<ToolParameterDefinition> Parameters { get; } =
     [
-        new("action", "string", "The action to perform: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket.", Required: true),
+        new("action", "string", "The action to perform: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket, list_comments, add_comment.", Required: true),
         new("project_id", "string", "Project ID (slug). Required for all actions.", Required: true),
-        new("ticket_id", "string", "Ticket ID (e.g. '001'). Required for get_ticket, update_ticket, move_ticket, delete_ticket.", Required: false),
+        new("ticket_id", "string", "Ticket ID (e.g. '001'). Required for get_ticket, update_ticket, move_ticket, delete_ticket, list_comments, add_comment.", Required: false),
         new("title", "string", "Ticket title. Required for create_ticket, optional for update_ticket.", Required: false),
-        new("description", "string", "Ticket description. Optional for create_ticket and update_ticket.", Required: false),
+        new("description", "string", "Ticket description. Optional for create_ticket and update_ticket. NEVER pass this when only changing status — use add_comment instead.", Required: false),
         new("status", "string", "Ticket status: idea, planning, todo, in_progress, blocked, for_review, done. Optional for update_ticket.", Required: false),
         new("target_project_id", "string", "Target project ID for move_ticket.", Required: false),
+        new("comment", "string", "Comment body for add_comment.", Required: false),
+        new("author", "string", "Author name for add_comment. Defaults to the current agent name if available, otherwise 'agent'.", Required: false),
     ];
 
     public Task<object?> ExecuteAsync(ToolCallContext context, CancellationToken ct = default)
@@ -32,7 +34,9 @@ public sealed class TicketTool(ProjectLoader loader) : ITool
             "get_ticket" => GetTicket(context),
             "move_ticket" => MoveTicket(context),
             "delete_ticket" => DeleteTicket(context),
-            _ => Task.FromResult<object?>($"Error: Unknown action '{action}'. Use: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket.")
+            "list_comments" => ListComments(context),
+            "add_comment" => AddComment(context),
+            _ => Task.FromResult<object?>($"Error: Unknown action '{action}'. Use: list_tickets, create_ticket, update_ticket, get_ticket, move_ticket, delete_ticket, list_comments, add_comment.")
         };
     }
 
@@ -125,7 +129,64 @@ public sealed class TicketTool(ProjectLoader loader) : ITool
         if (!string.IsNullOrEmpty(ticket.Description))
             result += $"\n\n{ticket.Description}";
 
+        var ticketComments = comments.GetForTicket(ticket.Id);
+        if (ticketComments.Count > 0)
+        {
+            result += "\n\n## Comments\n";
+            foreach (var c in ticketComments)
+            {
+                result += $"\n- `{c.Id}` **{c.Author}** ({c.CreatedUtc:yyyy-MM-dd HH:mm} UTC): {c.Content}";
+            }
+        }
+
         return Task.FromResult<object?>(result);
+    }
+
+    private Task<object?> ListComments(ToolCallContext context)
+    {
+        var projectId = context.GetString("project_id");
+        var ticketId = context.GetString("ticket_id");
+
+        if (string.IsNullOrWhiteSpace(projectId))
+            return Task.FromResult<object?>("Error: 'project_id' is required.");
+        if (string.IsNullOrWhiteSpace(ticketId))
+            return Task.FromResult<object?>("Error: 'ticket_id' is required for list_comments.");
+
+        var ticket = loader.GetTicket(projectId, ticketId);
+        if (ticket is null)
+            return Task.FromResult<object?>($"Error: Ticket '{ticketId}' not found in project '{projectId}'.");
+
+        var ticketComments = comments.GetForTicket(ticketId);
+        if (ticketComments.Count == 0)
+            return Task.FromResult<object?>($"No comments on ticket `{ticketId}`.");
+
+        var lines = ticketComments.Select(c =>
+            $"- `{c.Id}` **{c.Author}** ({c.CreatedUtc:yyyy-MM-dd HH:mm} UTC): {c.Content}");
+        return Task.FromResult<object?>(string.Join('\n', lines));
+    }
+
+    private Task<object?> AddComment(ToolCallContext context)
+    {
+        var projectId = context.GetString("project_id");
+        var ticketId = context.GetString("ticket_id");
+        var commentText = context.GetString("comment");
+        var author = context.GetString("author");
+
+        if (string.IsNullOrWhiteSpace(projectId))
+            return Task.FromResult<object?>("Error: 'project_id' is required.");
+        if (string.IsNullOrWhiteSpace(ticketId))
+            return Task.FromResult<object?>("Error: 'ticket_id' is required for add_comment.");
+        if (string.IsNullOrWhiteSpace(commentText))
+            return Task.FromResult<object?>("Error: 'comment' is required for add_comment.");
+
+        var ticket = loader.GetTicket(projectId, ticketId);
+        if (ticket is null)
+            return Task.FromResult<object?>($"Error: Ticket '{ticketId}' not found in project '{projectId}'.");
+
+        var authorName = string.IsNullOrWhiteSpace(author) ? "agent" : author.Trim();
+        var added = comments.Add(ticketId, authorName, commentText);
+        return Task.FromResult<object?>(
+            $"Added comment `{added.Id}` on ticket `{ticketId}` as **{added.Author}**.");
     }
 
     private Task<object?> MoveTicket(ToolCallContext context)
