@@ -106,6 +106,10 @@ start_service() {
   # Clean up any stale restart signal
   rm -f "${ROOT_DIR}/.sharpclaw.restart"
 
+  # Pull latest changes before launching so the new process runs the newest code.
+  echo "Pulling latest changes..."
+  (cd "${ROOT_DIR}" && git pull --quiet) || true
+
   echo "Starting SharpClaw service..."
   (
     cd "${ROOT_DIR}"
@@ -154,10 +158,6 @@ start_docs() {
 }
 
 start_web() {
-  # Pull latest changes
-  echo "Pulling latest changes..."
-  (cd "${ROOT_DIR}" && git pull --quiet) || true
-
   # Kill existing web dev server if running
   if [[ -f "${WEB_PID_FILE}" ]]; then
     local old_pid
