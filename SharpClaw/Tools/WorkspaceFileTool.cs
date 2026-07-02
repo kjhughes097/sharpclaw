@@ -30,7 +30,7 @@ public sealed class WorkspaceFileTool(
 
         var resolvedPath = ResolvePath(currentAgent, path);
         if (!File.Exists(resolvedPath))
-            return Task.FromResult<object?>(string.Empty);
+            return Task.FromResult<object?>($"Error: file not found at '{path}' (resolved to '{resolvedPath}').");
 
         return Task.FromResult<object?>(File.ReadAllText(resolvedPath));
     }
