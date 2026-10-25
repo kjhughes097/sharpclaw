@@ -1,6 +1,6 @@
-# SharpClaw V3 — Phase 3.1
+# SharpClaw V3
 
-A personal multi-agent system. Phase 3.1 proves the architecture end to end with the smallest
+A personal multi-agent system. Phase 3.1 proved the architecture end to end with the smallest
 possible system:
 
 > CLI → gateway → agent → gateway → OpenRouter → back to the CLI, streamed, with the agent
@@ -10,8 +10,12 @@ possible system:
 The **gateway** is the single trust boundary. Agents are untrusted workloads: they hold no
 provider keys, have no direct internet access, and reach the world only through the gateway.
 
-See [docs/sharpclaw-3.1-implementation-spec.md](docs/sharpclaw-3.1-implementation-spec.md) for the
-full specification.
+Phase 3.2 adds **agent tools with policy and approval**: the agent scores each tool call's risk
+from its arguments and asks the user before running anything above its allowed risk level, and
+every tool call is audited (see [Agent tools](#agent-tools-phase-32)).
+
+Specifications: [Phase 3.1](docs/sharpclaw-3.1-implementation-spec.md),
+[Phase 3.2](docs/sharpclaw-3.2-implementation-spec.md). Roadmap: [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md).
 
 ## Projects
 
@@ -50,6 +54,9 @@ secrets or network required.
 - **Messaging.** Clients post user messages to a thread; agents claim them via a long-poll inbox
   (atomic single-statement claim), answer via the chat endpoint, and post a reply. Live output
   reaches clients over `GET /api/threads/{id}/stream` (SSE, no replay).
+- **Tools (3.2).** The agent owns its tool loop, risk scoring and approval decisions; its container
+  is the sandbox. The gateway forwards tools to the model, records every tool call the model
+  requests, brokers approvals to the CLI, and caps LLM calls per message.
 - **Budgets.** Each agent has a daily USD cap. Spend is the sum of `llm_calls.cost_usd` since the
   start of the current UTC day; exceeding it returns `429` with `Retry-After` and records a
   `rejected` call. Budgets reset at UTC midnight.
@@ -75,12 +82,14 @@ ASP.NET `__` syntax).
 | `Inbox:MaxWaitSeconds` | `60` | Upper clamp for long-poll `wait` |
 | `Inbox:ClaimTimeoutSeconds` | `300` | Stale claims return to `pending` |
 | `Messages:MaxContentChars` | `32000` | |
+| `Approvals:TimeoutSeconds` | `300` | Pending approvals expire (count as denied) after this |
+| `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
 
 Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 
 **Agent** (environment): `GATEWAY_URL` (required), `AGENT_TOKEN` (required), `SOUL_PATH`
-(`/config/soul.md`), `WORKSPACE_PATH` (`/workspace`, unused in 3.1), `LONG_POLL_SECONDS` (`30`),
-`LOG_LEVEL` (`Information`).
+(`/config/soul.md`), `AGENT_CONFIG_PATH` (`/config/agent.json`, tool policy), `WORKSPACE_PATH`
+(`/workspace`), `LONG_POLL_SECONDS` (`30`), `LOG_LEVEL` (`Information`).
 
 **CLI** (environment): `SHARPCLAW_URL` (default `http://localhost:8080`) and
 `SHARPCLAW_ADMIN_KEY` (required).
@@ -96,7 +105,9 @@ Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
    ```bash
    cd docker && docker compose up -d gateway
    ```
-3. Create the first agent and copy its token into `docker/.env` as `AGENT_ASSISTANT_TOKEN`:
+3. Create the first agent and copy its token into `docker/.env` as `AGENT_ASSISTANT_TOKEN`
+   (also set `AGENT_UID`/`AGENT_GID` to the owner of `docker/agents/assistant/workspace` if it
+   isn't 1000:1000, so workspace tools can write):
    ```bash
    export SHARPCLAW_URL=http://localhost:8080 SHARPCLAW_ADMIN_KEY=<your admin key>
    dotnet run --project src/SharpClaw.Cli -- agents create assistant --model <id> --daily-budget 1
@@ -139,8 +150,50 @@ dotnet run --project src/SharpClaw.Cli -- ask assistant "hello"
 | `sharpclaw chat <agent> [--thread <id>]` | Interactive chat; `/exit` quits |
 | `sharpclaw ask <agent> "<text>"` | One-shot chat |
 | `sharpclaw audit [--agent <name>] [--limit N]` | Recent LLM calls |
+| `sharpclaw audit tools [--agent <name>] [--limit N]` | Recent tool calls: status, decision, risk, taint |
 
-The chat client opens the SSE stream **before** posting a message (streams have no replay).
+The chat client opens the SSE stream **before** posting a message (streams have no replay). During
+`chat` and `ask` it prints a `[tool] <name>` line for each tool call and, when the agent needs
+approval, shows the request and asks `Allow? [y/N]` (anything but `y`/`yes` denies).
+
+## Agent tools (Phase 3.2)
+
+Each agent reads its tool policy once at startup from a read-only file (`/config/agent.json`,
+e.g. [docker/agents/assistant/config/agent.json](docker/agents/assistant/config/agent.json)):
+
+```json
+{
+  "allowedRiskLevel": "low",
+  "smartMode": true,
+  "maxToolIterations": 10,
+  "tools": ["workspace_list", "workspace_read", "workspace_write", "workspace_delete"]
+}
+```
+
+A missing file runs the agent without tools; an invalid one stops it (exit code 1).
+
+| Tool | Risk |
+|---|---|
+| `workspace_list` | low |
+| `workspace_read` | low (content is untrusted: later calls in the turn are scored one level higher) |
+| `workspace_write` | new file low, overwrite medium; scripts, executables and dotfiles uncertain |
+| `workspace_delete` | high |
+
+How a call is decided (all in the agent's `ToolDispatcher`):
+
+1. **Hardline rules** block it outright: absolute paths, paths outside the workspace, symbolic
+   links, size caps. Blocked calls are never offered for approval.
+2. **Risk** comes from the arguments. *Uncertain* calls are classified by an extra LLM call when
+   `smartMode` is on (only the tool name and a content-free summary are sent), otherwise treated
+   as high. After untrusted content has been read in the turn, risk goes up one level.
+3. **Above `allowedRiskLevel`**, the agent asks the user through the gateway. Nobody watching the
+   thread means an immediate denial; no answer within 300 s means expired. Denials go back to the
+   model as a tool error so it can adapt.
+4. Every call is **audited**: the gateway records what the model requested, the agent reports the
+   outcome (`sharpclaw audit tools`). Arguments are truncated in the database and never logged.
+
+No tool executes code or shell commands. The agent container (no network, read-only root
+filesystem, only its own `/workspace`) contains anything a tool does.
 
 ## Telemetry
 
