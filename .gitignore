@@ -1,0 +1,28 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+
+# Rider / VS
+.idea/
+.vs/
+
+# Secrets and local env
+.env
+
+# SQLite database files
+*.db
+*.db-shm
+*.db-wal
+
+# Agent workspace contents (mounted read-write, not source)
+docker/agents/*/workspace/*
+!docker/agents/*/workspace/.gitkeep
+
+# Fake provider local script
+docker/fake-provider/script.json
+
+# OS
+.DS_Store

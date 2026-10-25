@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SharpClaw.Agent/SharpClaw.Agent.csproj" />
+    <Project Path="src/SharpClaw.Cli/SharpClaw.Cli.csproj" />
+    <Project Path="src/SharpClaw.Contracts/SharpClaw.Contracts.csproj" />
+    <Project Path="src/SharpClaw.Gateway/SharpClaw.Gateway.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SharpClaw.Agent.Tests/SharpClaw.Agent.Tests.csproj" />
+    <Project Path="tests/SharpClaw.Gateway.Tests/SharpClaw.Gateway.Tests.csproj" />
+  </Folder>
+</Solution>
