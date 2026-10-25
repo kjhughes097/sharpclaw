@@ -45,6 +45,34 @@ public sealed class ChatChunkWriter
         });
     });
 
+    /// <summary>One complete tool call, sent as a single delta.</summary>
+    public string ToolCallChunk(int index, string id, string name, string argumentsJson) => Line(w =>
+    {
+        WriteEnvelope(w, choices =>
+        {
+            choices.WriteStartObject();
+            choices.WriteNumber("index", 0);
+            choices.WritePropertyName("delta");
+            choices.WriteStartObject();
+            choices.WritePropertyName("tool_calls");
+            choices.WriteStartArray();
+            choices.WriteStartObject();
+            choices.WriteNumber("index", index);
+            choices.WriteString("id", id);
+            choices.WriteString("type", "function");
+            choices.WritePropertyName("function");
+            choices.WriteStartObject();
+            choices.WriteString("name", name);
+            choices.WriteString("arguments", argumentsJson);
+            choices.WriteEndObject();
+            choices.WriteEndObject();
+            choices.WriteEndArray();
+            choices.WriteEndObject();
+            choices.WriteNull("finish_reason");
+            choices.WriteEndObject();
+        });
+    });
+
     public string FinishChunk(string finishReason) => Line(w =>
     {
         WriteEnvelope(w, choices =>

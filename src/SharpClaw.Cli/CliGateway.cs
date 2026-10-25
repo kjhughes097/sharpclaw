@@ -98,6 +98,23 @@ public sealed class CliGateway : ICliGateway, IDisposable
         return await ReadAsync<AuditResponse>(resp);
     }
 
+    public async Task<ToolCallAuditResponse> AuditToolCallsAsync(string? agent, int? limit)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(agent)) query.Add($"agent={Uri.EscapeDataString(agent)}");
+        if (limit is { } l) query.Add($"limit={l}");
+        var qs = query.Count > 0 ? "?" + string.Join("&", query) : "";
+        using var resp = await _http.GetAsync($"{_baseUrl}/api/audit/tool-calls{qs}");
+        return await ReadAsync<ToolCallAuditResponse>(resp);
+    }
+
+    public async Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision)
+    {
+        using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/approvals/{approvalId}",
+            new DecideApprovalRequest(decision), SharpClawJson.Options);
+        return (await ReadAsync<ApprovalResponse>(resp)).Approval;
+    }
+
     private static async Task<T> ReadAsync<T>(HttpResponseMessage resp)
     {
         await EnsureAsync(resp);

@@ -19,9 +19,19 @@ public sealed class FakeErrorSpec
     public int? AfterChars { get; init; }
 }
 
+/// <summary>A tool call a script rule returns. <c>ArgumentsJson</c> is a JSON object as a string.</summary>
+public sealed record FakeToolCall(string Name, string ArgumentsJson);
+
 public sealed class FakeRule
 {
+    /// <summary>Tested against the content of the request's last message.</summary>
     public required Regex Match { get; init; }
+
+    /// <summary>When set, the last message must also have this role (e.g. <c>tool</c>).</summary>
+    public string? Role { get; init; }
+
+    /// <summary>Tool calls to return after any response text (finish reason <c>tool_calls</c>).</summary>
+    public IReadOnlyList<FakeToolCall> ToolCalls { get; init; } = Array.Empty<FakeToolCall>();
     public string? Response { get; init; }
     public int? ChunkSize { get; init; }
     public int DelayMs { get; init; }
@@ -90,9 +100,23 @@ public sealed class FakeScript
                 };
             }
 
+            var toolCalls = new List<FakeToolCall>();
+            if (r["toolCalls"] is JsonArray calls)
+            {
+                foreach (var c in calls.OfType<JsonObject>())
+                {
+                    var name = (string?)c["name"]
+                        ?? throw new InvalidOperationException("Fake script toolCalls entries need a name.");
+                    var args = c["arguments"]?.ToJsonString() ?? "{}";
+                    toolCalls.Add(new FakeToolCall(name, args));
+                }
+            }
+
             rules.Add(new FakeRule
             {
                 Match = new Regex(match, RegexOptions.Compiled),
+                Role = (string?)r["role"],
+                ToolCalls = toolCalls,
                 Response = (string?)r["response"],
                 ChunkSize = (int?)r["chunkSize"],
                 DelayMs = (int?)r["delayMs"] ?? 0,

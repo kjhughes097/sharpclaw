@@ -24,7 +24,7 @@ public static class Commands
                 await Audit(parsed, gateway, output);
                 break;
             case "ask":
-                await Ask(parsed, gateway, output, ct);
+                await Ask(parsed, gateway, output, input, ct);
                 break;
             case "chat":
                 await Chat(parsed, gateway, output, input, ct);
@@ -118,6 +118,12 @@ public static class Commands
 
     private static async Task Audit(ParsedArgs a, ICliGateway gw, TextWriter o)
     {
+        if (a.Positionals.ElementAtOrDefault(1) == "tools")
+        {
+            await AuditTools(a, gw, o);
+            return;
+        }
+
         var result = await gw.AuditAsync(a.Get("agent"), a.GetInt("limit"));
         await o.WriteLineAsync($"{"CREATED",-22} {"MODEL",-24} {"STATUS",-10} {"PROMPT",-7} {"COMPL",-7} {"COST",-10} {"MS",-7}");
         foreach (var c in result.Calls)
@@ -125,12 +131,21 @@ public static class Commands
                 $"{c.CreatedAt:u} {c.Model,-24} {c.Status,-10} {c.PromptTokens,-7} {c.CompletionTokens,-7} {c.CostUsd,-10:0.######} {c.LatencyMs,-7}");
     }
 
-    private static async Task Ask(ParsedArgs a, ICliGateway gw, TextWriter o, CancellationToken ct)
+    private static async Task AuditTools(ParsedArgs a, ICliGateway gw, TextWriter o)
+    {
+        var result = await gw.AuditToolCallsAsync(a.Get("agent"), a.GetInt("limit"));
+        await o.WriteLineAsync($"{"CREATED",-22} {"TOOL",-18} {"STATUS",-18} {"DECISION",-9} {"RISK",-9} {"TAINT",-6} {"MS",-6}");
+        foreach (var c in result.Calls)
+            await o.WriteLineAsync(
+                $"{c.CreatedAt:u} {c.ToolName,-18} {c.Status,-18} {c.Decision ?? "-",-9} {c.Risk ?? "-",-9} {(c.Tainted ? "yes" : "no"),-6} {c.DurationMs?.ToString() ?? "-",-6}");
+    }
+
+    private static async Task Ask(ParsedArgs a, ICliGateway gw, TextWriter o, TextReader input, CancellationToken ct)
     {
         var agent = a.Positionals.ElementAtOrDefault(1) ?? throw new CliException("agent is required.");
         var text = a.Positionals.ElementAtOrDefault(2) ?? throw new CliException("message text is required.");
         var thread = await ResolveThread(a, gw, agent);
-        await ChatRunner.RunOnceAsync(gw, thread, text, o, ct);
+        await ChatRunner.RunOnceAsync(gw, thread, text, o, input, ct);
     }
 
     private static async Task Chat(ParsedArgs a, ICliGateway gw, TextWriter o, TextReader input, CancellationToken ct)
@@ -146,7 +161,7 @@ public static class Commands
             var line = await input.ReadLineAsync(ct);
             if (line is null || line.Trim() == "/exit") break;
             if (line.Length == 0) continue;
-            await ChatRunner.RunOnceAsync(gw, thread, line, o, ct);
+            await ChatRunner.RunOnceAsync(gw, thread, line, o, input, ct);
         }
     }
 
@@ -184,5 +199,6 @@ public static class Commands
           sharpclaw chat <agent> [--thread <id>]
           sharpclaw ask <agent> "<text>"
           sharpclaw audit [--agent <name>] [--limit N]
+          sharpclaw audit tools [--agent <name>] [--limit N]
         """;
 }

@@ -103,3 +103,57 @@ public sealed record LlmCallDto(
     DateTime CreatedAt);
 
 public sealed record AuditResponse(IReadOnlyList<LlmCallDto> Calls);
+
+// ----- Tool calls (3.2) -----
+
+/// <summary>The agent's report of what happened to a tool call the model requested.</summary>
+public sealed record ToolCallReportRequest(
+    Guid CorrelationId,
+    string ToolCallId,
+    string Status,
+    string? Decision,
+    string? Risk,
+    bool Tainted,
+    Guid? ApprovalId,
+    string? ErrorCode,
+    int? DurationMs);
+
+public sealed record ToolCallDto(
+    Guid Id,
+    Guid AgentId,
+    Guid ThreadId,
+    Guid CorrelationId,
+    Guid LlmCallId,
+    string ToolCallId,
+    string ToolName,
+    string Arguments,
+    string Status,
+    string? Decision,
+    string? Risk,
+    bool Tainted,
+    Guid? ApprovalId,
+    string? ErrorCode,
+    int? DurationMs,
+    DateTime CreatedAt,
+    DateTime? ReportedAt);
+
+public sealed record ToolCallAuditResponse(IReadOnlyList<ToolCallDto> Calls);
+
+// ----- Approvals (3.2) -----
+
+/// <summary>The agent asks the human to allow a tool call. <c>Summary</c> never contains content.</summary>
+public sealed record CreateApprovalRequest(
+    Guid CorrelationId,
+    Guid ThreadId,
+    string ToolCallId,
+    string ToolName,
+    string Summary,
+    string Risk,
+    string Reason);
+
+public sealed record ApprovalDto(Guid Id, string Status, string? DecidedBy, DateTime ExpiresAt);
+
+public sealed record ApprovalResponse(ApprovalDto Approval);
+
+/// <summary><c>Decision</c> is <c>approved</c> or <c>denied</c>.</summary>
+public sealed record DecideApprovalRequest(string Decision);

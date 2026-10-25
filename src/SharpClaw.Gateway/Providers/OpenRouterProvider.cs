@@ -61,6 +61,8 @@ public sealed class OpenRouterProvider : IChatProvider
 
             string? finishReason = null;
             ChatStreamEvent.Usage? usage = null;
+            // Tool calls arrive as fragments keyed by index; emit each once it is complete.
+            var toolCalls = new SortedDictionary<int, ToolCallBuilder>();
 
             while (true)
             {
@@ -89,30 +91,65 @@ public sealed class OpenRouterProvider : IChatProvider
                 var parsed = ParseChunk(data);
                 foreach (var text in parsed.Deltas)
                     yield return new ChatStreamEvent.Delta(text);
+                foreach (var fragment in parsed.ToolCallFragments)
+                {
+                    if (!toolCalls.TryGetValue(fragment.Index, out var builder))
+                        toolCalls[fragment.Index] = builder = new ToolCallBuilder();
+                    builder.Add(fragment);
+                }
                 if (parsed.FinishReason is not null)
                     finishReason = parsed.FinishReason;
                 if (parsed.Usage is not null)
                     usage = parsed.Usage;
             }
 
+            foreach (var call in toolCalls.Values)
+                yield return call.Build();
             if (usage is not null)
                 yield return usage;
-            yield return new ChatStreamEvent.Done(finishReason ?? "stop");
+            yield return new ChatStreamEvent.Done(finishReason ?? (toolCalls.Count > 0 ? "tool_calls" : "stop"));
         }
     }
 
     private readonly record struct ChunkResult(
-        IReadOnlyList<string> Deltas, string? FinishReason, ChatStreamEvent.Usage? Usage);
+        IReadOnlyList<string> Deltas, IReadOnlyList<ToolCallFragment> ToolCallFragments,
+        string? FinishReason, ChatStreamEvent.Usage? Usage);
+
+    /// <summary>Part of a streamed tool call; any field may be absent in a given chunk.</summary>
+    private readonly record struct ToolCallFragment(int Index, string? Id, string? Name, string? Arguments);
+
+    private sealed class ToolCallBuilder
+    {
+        private string? _id;
+        private string? _name;
+        private readonly StringBuilder _arguments = new();
+
+        public void Add(ToolCallFragment f)
+        {
+            _id ??= f.Id;
+            _name ??= f.Name;
+            _arguments.Append(f.Arguments);
+        }
+
+        public ChatStreamEvent.ToolCall Build()
+        {
+            if (string.IsNullOrEmpty(_name))
+                throw new ProviderException(ProviderErrorKind.Upstream, null, "upstream tool call without a name");
+            var args = _arguments.Length == 0 ? "{}" : _arguments.ToString();
+            return new ChatStreamEvent.ToolCall(_id ?? $"call_{Guid.NewGuid():N}", _name, args);
+        }
+    }
 
     private static ChunkResult ParseChunk(string data)
     {
         var deltas = new List<string>();
+        var fragments = new List<ToolCallFragment>();
         string? finishReason = null;
         ChatStreamEvent.Usage? usage = null;
 
         JsonDocument doc;
         try { doc = JsonDocument.Parse(data); }
-        catch (JsonException) { return new ChunkResult(deltas, null, null); }
+        catch (JsonException) { return new ChunkResult(deltas, fragments, null, null); }
 
         using (doc)
         {
@@ -134,6 +171,14 @@ public sealed class OpenRouterProvider : IChatProvider
                             deltas.Add(text);
                     }
 
+                    if (choice.TryGetProperty("delta", out var toolDelta) &&
+                        toolDelta.TryGetProperty("tool_calls", out var calls) &&
+                        calls.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var call in calls.EnumerateArray())
+                            fragments.Add(ParseFragment(call));
+                    }
+
                     if (choice.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
                         finishReason = fr.GetString();
                 }
@@ -149,7 +194,65 @@ public sealed class OpenRouterProvider : IChatProvider
             }
         }
 
-        return new ChunkResult(deltas, finishReason, usage);
+        return new ChunkResult(deltas, fragments, finishReason, usage);
+    }
+
+    private static ToolCallFragment ParseFragment(JsonElement call)
+    {
+        var index = call.TryGetProperty("index", out var i) && i.TryGetInt32(out var iv) ? iv : 0;
+        var id = call.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String ? idEl.GetString() : null;
+        string? name = null, args = null;
+        if (call.TryGetProperty("function", out var fn) && fn.ValueKind == JsonValueKind.Object)
+        {
+            if (fn.TryGetProperty("name", out var n) && n.ValueKind == JsonValueKind.String) name = n.GetString();
+            if (fn.TryGetProperty("arguments", out var a) && a.ValueKind == JsonValueKind.String) args = a.GetString();
+        }
+        return new ToolCallFragment(index, id, name, args);
+    }
+
+    private static void WriteMessage(Utf8JsonWriter w, ProviderChatMessage m)
+    {
+        w.WriteStartObject();
+        w.WriteString("role", m.Role);
+        if (m.Content is null) w.WriteNull("content");
+        else w.WriteString("content", m.Content);
+        if (m.ToolCallId is { } toolCallId) w.WriteString("tool_call_id", toolCallId);
+        if (m.ToolCalls is { Count: > 0 })
+        {
+            w.WritePropertyName("tool_calls");
+            w.WriteStartArray();
+            foreach (var c in m.ToolCalls)
+            {
+                w.WriteStartObject();
+                w.WriteString("id", c.Id);
+                w.WriteString("type", "function");
+                w.WritePropertyName("function");
+                w.WriteStartObject();
+                w.WriteString("name", c.Name);
+                w.WriteString("arguments", c.ArgumentsJson);
+                w.WriteEndObject();
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+        }
+        w.WriteEndObject();
+    }
+
+    private static void WriteTool(Utf8JsonWriter w, ProviderTool t)
+    {
+        w.WriteStartObject();
+        w.WriteString("type", "function");
+        w.WritePropertyName("function");
+        w.WriteStartObject();
+        w.WriteString("name", t.Name);
+        if (t.Description is { } d) w.WriteString("description", d);
+        if (t.ParametersJson is { } p)
+        {
+            w.WritePropertyName("parameters");
+            w.WriteRawValue(p);
+        }
+        w.WriteEndObject();
+        w.WriteEndObject();
     }
 
     private string BuildBody(ProviderChatRequest request)
@@ -164,13 +267,18 @@ public sealed class OpenRouterProvider : IChatProvider
             w.WritePropertyName("messages");
             w.WriteStartArray();
             foreach (var m in request.Messages)
-            {
-                w.WriteStartObject();
-                w.WriteString("role", m.Role);
-                w.WriteString("content", m.Content);
-                w.WriteEndObject();
-            }
+                WriteMessage(w, m);
             w.WriteEndArray();
+
+            if (request.Tools is { Count: > 0 })
+            {
+                w.WritePropertyName("tools");
+                w.WriteStartArray();
+                foreach (var tool in request.Tools)
+                    WriteTool(w, tool);
+                w.WriteEndArray();
+            }
+            if (request.ToolChoice is { } choice) w.WriteString("tool_choice", choice);
 
             if (request.Temperature is { } t) w.WriteNumber("temperature", t);
             if (request.MaxTokens is { } mt) w.WriteNumber("max_tokens", mt);

@@ -17,6 +17,15 @@ public static class InboxRepository
               AND claimed_at IS NOT NULL AND claimed_at < {thresholdUtc}", ct);
     }
 
+    /// <summary>
+    /// Claim heartbeat: refreshes <c>claimed_at</c> on the agent's claimed message so a long tool
+    /// turn or approval wait isn't mistaken for a crashed agent and requeued.
+    /// </summary>
+    public static Task TouchClaimAsync(SharpClawDbContext db, Guid agentId, Guid messageId, DateTime nowUtc, CancellationToken ct) =>
+        db.Database.ExecuteSqlInterpolatedAsync($@"
+            UPDATE messages SET claimed_at = {nowUtc}
+            WHERE id = {messageId} AND agent_id = {agentId} AND role = 'user' AND status = 'claimed'", ct);
+
     /// <summary>Atomically claims the oldest pending user message for the agent (single statement).</summary>
     public static async Task<InboxMessageDto?> ClaimNextAsync(
         SharpClawDbContext db, Guid agentId, DateTime nowUtc, CancellationToken ct)

@@ -178,7 +178,8 @@ public class AgentLoopTests
         public Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct) =>
             Task.FromResult(History);
         public Task<ChatOutcome> StreamChatAsync(
-            IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct)
+            IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<SharpClaw.Agent.Tools.IAgentTool> tools,
+            Guid correlationId, Guid threadId, CancellationToken ct)
         {
             LastChatMessages = messages;
             return Task.FromResult(NextChat);
@@ -193,6 +194,15 @@ public class AgentLoopTests
             Failures.Add((messageId, reason));
             return Task.CompletedTask;
         }
+
+        public Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct) =>
+            throw new NotSupportedException();
+        public Task<ApprovalDto> PollApprovalAsync(Guid approvalId, int waitSeconds, CancellationToken ct) =>
+            throw new NotSupportedException();
+        public Task ReportToolCallAsync(ToolCallReportRequest report, CancellationToken ct) => Task.CompletedTask;
+        public Task<string?> ClassifyRiskAsync(
+            IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct) =>
+            Task.FromResult<string?>(null);
     }
 
     private sealed class FixedSoul : ISoulProvider
