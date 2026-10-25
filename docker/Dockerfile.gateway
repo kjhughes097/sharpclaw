@@ -1,0 +1,25 @@
+# Gateway image: multi-stage build, non-root, no secrets baked in.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY Directory.Build.props ./
+COPY src/SharpClaw.Contracts/ src/SharpClaw.Contracts/
+COPY src/SharpClaw.Gateway/ src/SharpClaw.Gateway/
+RUN dotnet restore src/SharpClaw.Gateway/SharpClaw.Gateway.csproj
+RUN dotnet publish src/SharpClaw.Gateway/SharpClaw.Gateway.csproj -c Release -o /app
+
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app .
+
+# Kestrel endpoints are configured in code (8080 client, 8081 agent); disable the
+# image default so we do not double-bind a port.
+ENV ASPNETCORE_HTTP_PORTS=
+
+# Non-root user; /data holds the SQLite file on a named volume.
+# The .NET images ship a predefined non-root user named "app".
+RUN mkdir -p /data && chown app:app /data
+USER app
+
+EXPOSE 8080 8081
+ENTRYPOINT ["dotnet", "SharpClaw.Gateway.dll"]

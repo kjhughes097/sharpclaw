@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "match": "^weather",
+      "response": "It is always sunny in the fake provider.",
+      "chunkSize": 4,
+      "delayMs": 20,
+      "usage": { "promptTokens": 20, "completionTokens": 10, "costUsd": 0.0003 }
+    },
+    { "match": "^fail-http$", "error": { "type": "http", "status": 500 } },
+    { "match": "^fail-timeout$", "error": { "type": "timeout" } },
+    {
+      "match": "^fail-midstream$",
+      "response": "this reply stops partway",
+      "error": { "type": "midstream", "afterChars": 4 }
+    },
+    { "match": "^no-usage$", "response": "I report no usage.", "usage": null }
+  ]
+}

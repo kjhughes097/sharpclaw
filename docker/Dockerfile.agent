@@ -1,0 +1,18 @@
+# Agent image: multi-stage build, non-root, no secrets baked in.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+COPY Directory.Build.props ./
+COPY src/SharpClaw.Contracts/ src/SharpClaw.Contracts/
+COPY src/SharpClaw.Agent/ src/SharpClaw.Agent/
+RUN dotnet restore src/SharpClaw.Agent/SharpClaw.Agent.csproj
+RUN dotnet publish src/SharpClaw.Agent/SharpClaw.Agent.csproj -c Release -o /app
+
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS runtime
+WORKDIR /app
+COPY --from=build /app .
+
+# The .NET images ship a predefined non-root user named "app".
+USER app
+
+ENTRYPOINT ["dotnet", "SharpClaw.Agent.dll"]

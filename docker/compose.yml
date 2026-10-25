@@ -1,0 +1,52 @@
+name: sharpclaw
+
+networks:
+  internal:
+    internal: true        # no route to the outside world
+  external: {}
+
+volumes:
+  gateway-data: {}
+
+services:
+  gateway:
+    build: { context: .., dockerfile: docker/Dockerfile.gateway }
+    environment:
+      Auth__AdminKey: ${ADMIN_KEY}
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      Provider__Type: ${PROVIDER_TYPE:-OpenRouter}
+      Fake__ScriptPath: ${FAKE_SCRIPT_PATH:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_LOGS_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: cumulative
+      OTEL_SERVICE_NAME: sharpclaw-gateway
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=home
+    ports:
+      - "127.0.0.1:8080:8080"     # client API only; 8081 is never published
+    networks: [internal, external]
+    volumes:
+      - gateway-data:/data
+    healthcheck:
+      test: ["CMD", "dotnet", "SharpClaw.Gateway.dll", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  agent-assistant:
+    build: { context: .., dockerfile: docker/Dockerfile.agent }
+    depends_on:
+      gateway: { condition: service_healthy }
+    environment:
+      GATEWAY_URL: http://gateway:8081
+      AGENT_TOKEN: ${AGENT_ASSISTANT_TOKEN}
+    networks: [internal]            # internal only
+    volumes:
+      - ./agents/assistant/config:/config:ro
+      - ./agents/assistant/workspace:/workspace
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
