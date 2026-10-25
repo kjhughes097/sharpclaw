@@ -27,6 +27,14 @@ network-isolated workloads that hold no provider keys and reach the world only v
 - **SOLID, pragmatically:** keep classes focused on one responsibility and depend on abstractions
   at real boundaries (providers, HTTP, filesystem, time), but don't let SOLID become an excuse for
   extra layers — simplicity wins when they conflict.
+- **Watch for creeping complexity:** when a change makes code noticeably harder to follow, or you
+  notice it in existing code (long methods, many parameters, duplicated logic, growing files,
+  needless layers), **call it out** to the user and propose a simplification or refactor. Don't
+  silently refactor unrelated code in the same change.
+- **Tech debt register:** record known and accepted debt in
+  [docs/tech-debt.md](../docs/tech-debt.md): what it is, why it was accepted, and when to fix it.
+  Add an entry when you knowingly take a shortcut; remove it in the PR that pays it down. Check it
+  before working in an area — the fix may be due.
 
 ## Build and Test
 
