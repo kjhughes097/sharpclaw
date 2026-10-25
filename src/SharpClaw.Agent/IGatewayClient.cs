@@ -29,6 +29,24 @@ public interface IGatewayClient
         IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct);
     Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct);
     Task FailAsync(Guid messageId, string reason, CancellationToken ct);
+
+    // ----- Tools (3.2) -----
+
+    /// <summary>Asks the gateway to put an approval in front of the human.</summary>
+    Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct);
+
+    /// <summary>Long-polls an approval until it is decided or <paramref name="waitSeconds"/> elapse.</summary>
+    Task<ApprovalDto> PollApprovalAsync(Guid approvalId, int waitSeconds, CancellationToken ct);
+
+    /// <summary>Reports what happened to a tool call the model requested (for the audit).</summary>
+    Task ReportToolCallAsync(ToolCallReportRequest report, CancellationToken ct);
+
+    /// <summary>
+    /// Smart mode: asks the LLM to classify a call's risk (purpose <c>risk_assessment</c>, never
+    /// shown to the user). Returns the reply text, or null if the call failed.
+    /// </summary>
+    Task<string?> ClassifyRiskAsync(
+        IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct);
 }
 
 public interface ISoulProvider

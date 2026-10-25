@@ -60,7 +60,7 @@ public sealed class GatewayHttpClient : IGatewayClient
             .ToList();
     }
 
-    public async Task<ChatOutcome> StreamChatAsync(
+    public Task<ChatOutcome> StreamChatAsync(
         IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct)
     {
         var payload = new
@@ -68,12 +68,20 @@ public sealed class GatewayHttpClient : IGatewayClient
             stream = true,
             messages = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray(),
         };
+        return SendChatAsync(payload, correlationId, threadId, LlmCallPurpose.Chat, ct);
+    }
+
+    /// <summary>Posts a streaming chat request and accumulates the reply (or a short fail code).</summary>
+    private async Task<ChatOutcome> SendChatAsync(
+        object payload, Guid correlationId, Guid threadId, string purpose, CancellationToken ct)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/v1/chat/completions")
         {
             Content = JsonContent.Create(payload, options: SharpClawJson.Options),
         };
         request.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId.ToString());
         request.Headers.TryAddWithoutValidation("X-Thread-Id", threadId.ToString());
+        request.Headers.TryAddWithoutValidation("X-SharpClaw-Purpose", purpose);
 
         try
         {
@@ -134,5 +142,39 @@ public sealed class GatewayHttpClient : IGatewayClient
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/agent/messages/{messageId}/fail",
             new FailMessageRequest(reason), SharpClawJson.Options, ct);
         resp.EnsureSuccessStatusCode();
+    }
+
+    public async Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct)
+    {
+        using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/agent/approvals", request, SharpClawJson.Options, ct);
+        resp.EnsureSuccessStatusCode();
+        var body = await resp.Content.ReadFromJsonAsync<ApprovalResponse>(SharpClawJson.Options, ct);
+        return body?.Approval ?? throw new InvalidOperationException("empty approval response");
+    }
+
+    public async Task<ApprovalDto> PollApprovalAsync(Guid approvalId, int waitSeconds, CancellationToken ct)
+    {
+        using var resp = await _http.GetAsync($"{_baseUrl}/agent/approvals/{approvalId}?wait={waitSeconds}", ct);
+        resp.EnsureSuccessStatusCode();
+        var body = await resp.Content.ReadFromJsonAsync<ApprovalResponse>(SharpClawJson.Options, ct);
+        return body?.Approval ?? throw new InvalidOperationException("empty approval response");
+    }
+
+    public async Task ReportToolCallAsync(ToolCallReportRequest report, CancellationToken ct)
+    {
+        using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/agent/tool-calls", report, SharpClawJson.Options, ct);
+        resp.EnsureSuccessStatusCode();
+    }
+
+    public async Task<string?> ClassifyRiskAsync(
+        IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct)
+    {
+        var payload = new
+        {
+            stream = true,
+            messages = messages.Select(m => new { role = m.Role, content = m.Content }).ToArray(),
+        };
+        var outcome = await SendChatAsync(payload, correlationId, threadId, LlmCallPurpose.RiskAssessment, ct);
+        return outcome.Success ? outcome.Content : null;
     }
 }

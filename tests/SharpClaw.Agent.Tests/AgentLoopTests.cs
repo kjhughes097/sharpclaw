@@ -193,6 +193,15 @@ public class AgentLoopTests
             Failures.Add((messageId, reason));
             return Task.CompletedTask;
         }
+
+        public Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct) =>
+            throw new NotSupportedException();
+        public Task<ApprovalDto> PollApprovalAsync(Guid approvalId, int waitSeconds, CancellationToken ct) =>
+            throw new NotSupportedException();
+        public Task ReportToolCallAsync(ToolCallReportRequest report, CancellationToken ct) => Task.CompletedTask;
+        public Task<string?> ClassifyRiskAsync(
+            IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct) =>
+            Task.FromResult<string?>(null);
     }
 
     private sealed class FixedSoul : ISoulProvider
