@@ -140,6 +140,28 @@ dotnet run --project src/SharpClaw.Cli -- ask assistant "hello"
 
 ## CLI
 
+To get a `sharpclaw` command on your PATH, publish the CLI and add a small launcher (assumes
+`~/.local/bin` is on your PATH, as it is by default on Ubuntu):
+
+```bash
+dotnet publish src/SharpClaw.Cli -c Release -o ~/.local/share/sharpclaw-cli
+cat > ~/.local/bin/sharpclaw <<'EOF'
+#!/usr/bin/env bash
+SHARPCLAW_REPO="${SHARPCLAW_REPO:-$HOME/projects/sharpclaw}"
+export SHARPCLAW_URL="${SHARPCLAW_URL:-http://localhost:8080}"
+# Fall back to the admin key in the repo's .env when SHARPCLAW_ADMIN_KEY isn't set.
+if [ -z "${SHARPCLAW_ADMIN_KEY:-}" ] && [ -f "$SHARPCLAW_REPO/.env" ]; then
+  SHARPCLAW_ADMIN_KEY="$(grep -E '^ADMIN_KEY=' "$SHARPCLAW_REPO/.env" | head -n1 | cut -d= -f2-)"
+  export SHARPCLAW_ADMIN_KEY
+fi
+exec dotnet "$HOME/.local/share/sharpclaw-cli/sharpclaw.dll" "$@"
+EOF
+chmod +x ~/.local/bin/sharpclaw
+```
+
+Re-run the `dotnet publish` line after pulling CLI changes. Without installing, use
+`dotnet run --project src/SharpClaw.Cli -- <command>` instead of `sharpclaw <command>`.
+
 | Command | Behaviour |
 |---|---|
 | `sharpclaw agents create <name> --model <id> --daily-budget <usd>` | Creates the agent and its first token (shown once) |
