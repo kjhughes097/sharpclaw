@@ -217,9 +217,11 @@ public static class ChatEndpoints
                 await WriteAsync(_writer.UsageChunk(_promptTokens, _completionTokens), ct);
             else
                 _logger.LogWarning("Provider reported no usage for correlation {CorrelationId}", _correlationId);
-            await WriteAsync(ChatChunkWriter.DoneLine, ct);
 
+            // Record before [DONE]: clients read until [DONE], so the llm_calls and tool_calls rows
+            // exist by the time an agent reports a tool call's outcome.
             await _recorder.RecordAsync(Succeeded(), ct, _toolCalls);
+            await WriteAsync(ChatChunkWriter.DoneLine, ct);
             return Results.Empty;
         }
 

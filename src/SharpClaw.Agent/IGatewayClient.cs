@@ -1,3 +1,4 @@
+using SharpClaw.Agent.Tools;
 using SharpClaw.Contracts;
 
 namespace SharpClaw.Agent;
@@ -13,10 +14,17 @@ public sealed record InboxResult(InboxStatus Status, InboxMessageDto? Message)
     public static InboxResult Of(InboxMessageDto m) => new(InboxStatus.Message, m);
 }
 
-/// <summary>Outcome of streaming a completion: either accumulated content or a short fail code.</summary>
+/// <summary>
+/// Outcome of streaming a completion: the accumulated content and any tool calls the model
+/// requested, or a short fail code.
+/// </summary>
 public sealed record ChatOutcome(bool Success, string? Content, string? FailCode)
 {
-    public static ChatOutcome Ok(string content) => new(true, content, null);
+    public IReadOnlyList<ChatToolCall> ToolCalls { get; init; } = Array.Empty<ChatToolCall>();
+
+    public static ChatOutcome Ok(string content, IReadOnlyList<ChatToolCall>? toolCalls = null) =>
+        new(true, content, null) { ToolCalls = toolCalls ?? Array.Empty<ChatToolCall>() };
+
     public static ChatOutcome Fail(string code) => new(false, null, code);
 }
 
@@ -25,8 +33,10 @@ public interface IGatewayClient
 {
     Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct);
     Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct);
+    /// <summary>Streams a completion, offering <paramref name="tools"/> to the model (none if empty).</summary>
     Task<ChatOutcome> StreamChatAsync(
-        IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct);
+        IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,
+        Guid correlationId, Guid threadId, CancellationToken ct);
     Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct);
     Task FailAsync(Guid messageId, string reason, CancellationToken ct);
 

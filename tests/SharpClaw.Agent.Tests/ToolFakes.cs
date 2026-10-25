@@ -73,8 +73,8 @@ internal sealed class RecordingGateway : IGatewayClient
 
     public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => throw new NotSupportedException();
     public Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct) => throw new NotSupportedException();
-    public Task<ChatOutcome> StreamChatAsync(IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct) =>
-        throw new NotSupportedException();
+    public Task<ChatOutcome> StreamChatAsync(IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,
+        Guid correlationId, Guid threadId, CancellationToken ct) => throw new NotSupportedException();
     public Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct) => throw new NotSupportedException();
     public Task FailAsync(Guid messageId, string reason, CancellationToken ct) => throw new NotSupportedException();
 }

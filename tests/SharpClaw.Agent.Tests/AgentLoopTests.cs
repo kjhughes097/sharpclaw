@@ -178,7 +178,8 @@ public class AgentLoopTests
         public Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct) =>
             Task.FromResult(History);
         public Task<ChatOutcome> StreamChatAsync(
-            IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct)
+            IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<SharpClaw.Agent.Tools.IAgentTool> tools,
+            Guid correlationId, Guid threadId, CancellationToken ct)
         {
             LastChatMessages = messages;
             return Task.FromResult(NextChat);
