@@ -262,6 +262,29 @@ Not yet done: importing `docker/grafana/sharpclaw-dashboard.json` into Grafana (
 credentials). Import it via *Dashboards → New → Import*; the queries were checked directly against
 VictoriaMetrics.
 
+### Phase 3.2 acceptance (2026-10-25)
+
+**Fake provider (automated):** `AgentToolEndToEndTests` runs the real agent (HTTP client, loop,
+dispatcher, workspace tools) against the real gateway with a scripted FakeProvider: multi-step
+write → read → reply; high-risk delete approved and denied by a watching user; unattended delete
+denied immediately; `../../etc/passwd` blocked by the hardline rules. All automated tests pass
+(gateway 101, agent 72, CLI 11).
+
+**Real OpenRouter** (`openai/gpt-4o-mini`, Docker Compose stack, `allowedRiskLevel: low`,
+smart mode on):
+
+| Scenario | Result |
+|---|---|
+| Multi-step: create `notes/shopping.md`, read it back, report | `[tool] workspace_write`, `[tool] workspace_read`, correct reply; file on the host |
+| Delete `notes/old.md`, user answers `n` | Prompt shown (`high risk: delete notes/old.md`); denied; file kept; model explained |
+| Same, user answers `y` | Approved; file deleted |
+| Delete with nobody watching the thread | Denied immediately by the gateway; file kept; model said no approver was available |
+| Write `scripts/hello.sh` (uncertain) | Smart mode classified it `low` via one `risk_assessment` LLM call; allowed |
+| Read a file, then write a new file in the same turn | Taint raised the write from low to **medium**; approval prompt; approved |
+| Audit | `sharpclaw audit tools` showed every call with status, decision, risk and taint |
+| Telemetry | `sharpclaw.tool.calls` and `sharpclaw.approvals` landed in VictoriaMetrics |
+| Isolation | `scripts/verify-isolation.sh` passed all checks; agent writes `/workspace`, `/config` read-only |
+
 ## Known gaps and tech debt
 
 Accepted Phase 3.1 limitations and known code-level debt are tracked in
