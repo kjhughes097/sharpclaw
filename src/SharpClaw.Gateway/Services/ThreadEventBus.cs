@@ -11,6 +11,9 @@ public interface IThreadEventBus
 {
     IDisposable Subscribe(Guid threadId, out ChannelReader<ThreadSseEvent> reader);
     void Publish(Guid threadId, ThreadSseEvent evt);
+
+    /// <summary>How many clients are currently watching the thread (0 = nobody can answer).</summary>
+    int SubscriberCount(Guid threadId);
 }
 
 public sealed class ThreadEventBus : IThreadEventBus
@@ -37,6 +40,9 @@ public sealed class ThreadEventBus : IThreadEventBus
             foreach (var channel in map.Values)
                 channel.Writer.TryWrite(evt);
     }
+
+    public int SubscriberCount(Guid threadId) =>
+        _subscribers.TryGetValue(threadId, out var map) ? map.Count : 0;
 
     private void Unsubscribe(Guid threadId, Guid id)
     {

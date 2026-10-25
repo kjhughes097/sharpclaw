@@ -69,6 +69,8 @@ public static class ChatEndpoints
                 return parseError;
 
             var now = time.GetUtcNow().UtcDateTime;
+            // Claim heartbeat: a multi-round tool turn must not be requeued as if the agent had died.
+            await InboxRepository.TouchClaimAsync(db, agent.Id, correlationId, now, ct);
             var recorder = new LlmCallRecorder(db, metrics, logger, agent, threadId, correlationId, now, purpose);
 
             var spent = await AgentQueries.TodaySpendAsync(db, time, agent.Id, ct);

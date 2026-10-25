@@ -96,3 +96,22 @@ public class ToolCallRecord
     public DateTime CreatedAt { get; set; }
     public DateTime? ReportedAt { get; set; }
 }
+
+/// <summary>A request for the human to allow a tool call (3.2).</summary>
+public class Approval
+{
+    public Guid Id { get; set; }
+    public Guid AgentId { get; set; }
+    public Guid ThreadId { get; set; }
+    public Guid CorrelationId { get; set; }
+    public string ToolCallId { get; set; } = "";
+    public string ToolName { get; set; } = "";
+    public string Summary { get; set; } = "";
+    public string Risk { get; set; } = "";
+    public string Reason { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string? DecidedBy { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime? DecidedAt { get; set; }
+}

@@ -9,12 +9,14 @@ public static partial class GatewayEndpoints
         AgentsEndpoints.Map(client);
         ThreadsEndpoints.Map(client);
         AuditEndpoints.Map(client);
+        ApprovalEndpoints.MapClient(client);
     }
 
     static partial void MapAgentEndpoints(WebApplication app, RouteGroupBuilder agent, RouteGroupBuilder v1)
     {
         AgentEndpoints.Map(agent);
         ToolCallEndpoints.Map(agent);
+        ApprovalEndpoints.MapAgent(agent);
         ChatEndpoints.Map(v1);
     }
 }

@@ -13,6 +13,7 @@ public class SharpClawDbContext : DbContext
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<LlmCall> LlmCalls => Set<LlmCall>();
     public DbSet<ToolCallRecord> ToolCalls => Set<ToolCallRecord>();
+    public DbSet<Approval> Approvals => Set<Approval>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -89,6 +90,14 @@ public class SharpClawDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.CorrelationId, x.ToolCallId }).IsUnique();
             e.HasIndex(x => new { x.AgentId, x.CreatedAt });
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
+        });
+
+        b.Entity<Approval>(e =>
+        {
+            e.ToTable("approvals");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.CorrelationId);
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
         });
     }

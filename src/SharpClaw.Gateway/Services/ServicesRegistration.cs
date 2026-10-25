@@ -8,5 +8,6 @@ public static partial class GatewayServices
     {
         builder.Services.AddSingleton<IThreadEventBus, ThreadEventBus>();
         builder.Services.AddSingleton<IAgentInboxSignal, AgentInboxSignal>();
+        builder.Services.AddSingleton<ApprovalSignal>();
     }
 }

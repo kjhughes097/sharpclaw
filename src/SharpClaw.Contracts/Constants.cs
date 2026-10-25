@@ -88,3 +88,19 @@ public static class ToolCallStatuses
     public static readonly IReadOnlyList<string> Reportable =
         new[] { Succeeded, Failed, Denied, Blocked, Expired, UnknownTool, InvalidArguments };
 }
+
+/// <summary>Lifecycle of an approval request (3.2 spec section 8.2).</summary>
+public static class ApprovalStatuses
+{
+    public const string Pending = "pending";
+    public const string Approved = "approved";
+    public const string Denied = "denied";
+    public const string Expired = "expired";
+}
+
+/// <summary>Who decided an approval: the human, or the gateway (nobody watching, or timeout).</summary>
+public static class ApprovalDecidedBy
+{
+    public const string User = "user";
+    public const string System = "system";
+}

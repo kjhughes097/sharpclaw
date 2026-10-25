@@ -53,3 +53,11 @@ public sealed class MessagesOptions
     public const string Section = "Messages";
     public int MaxContentChars { get; set; } = 32000;
 }
+
+public sealed class ApprovalsOptions
+{
+    public const string Section = "Approvals";
+
+    /// <summary>A pending approval expires (counts as denied) after this many seconds.</summary>
+    public int TimeoutSeconds { get; set; } = 300;
+}
