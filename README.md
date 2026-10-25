@@ -209,12 +209,7 @@ Not yet done: importing `docker/grafana/sharpclaw-dashboard.json` into Grafana (
 credentials). Import it via *Dashboards → New → Import*; the queries were checked directly against
 VictoriaMetrics.
 
-## Known gaps (accepted for 3.1)
+## Known gaps and tech debt
 
-- Full thread history is sent on every LLM call; no truncation or summarisation.
-- No provider retries; a transient provider failure fails the message.
-- Small budget overshoot is possible with concurrent/in-flight calls; cancelled calls may incur
-  upstream cost that is not recorded.
-- No SSE replay; clients read history for missed events.
-- A single gateway process and a single SQLite file; no high availability.
-- Streaming only; no tools; no traces.
+Accepted Phase 3.1 limitations and known code-level debt are tracked in
+[docs/tech-debt.md](docs/tech-debt.md).
