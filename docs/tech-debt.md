@@ -26,7 +26,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 
 | # | Item | Severity | Why accepted | Fix when / how |
 |---|---|---|---|---|
-| 1 | **`ChatEndpoints.cs` is the most complex file (~355 lines).** `FinalizeCall` takes 16 parameters and is called from 5 places; streaming, budget, request parsing and recording are all in one class. | Medium | Got the endpoint working end to end first. | Before adding more chat behaviour: introduce a small per-call record (e.g. `LlmCallOutcome`) and move request parsing into its own class. |
 | 2 | **`OpenRouterProvider` has no automated tests.** It was verified only manually against the live API. | Medium | The spec's test list focuses on `FakeProvider`; the real provider needed live verification. | Add unit tests using a fake `HttpMessageHandler` serving canned SSE: deltas, final usage chunk, mid-stream `error` chunk, non-2xx, idle timeout. |
 | 3 | **Partial-method indirection for wiring.** `GatewayServices` and `GatewayEndpoints` are split into `partial` classes with `partial void` hooks across several files. | Low | Kept registration close to each feature. | It's one more hop than needed. Consider plain extension methods (`AddAuth()`, `MapAgentEndpoints()`) called directly from `GatewayBuilder`. |
 | 4 | **String literals instead of constants in `GatewayMetrics.ObserveInboxDepth`** (`"user"`, `"pending"`). | Low | Oversight. | Use `Roles.User` / `MessageStatus.Pending`. |
