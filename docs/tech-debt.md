@@ -26,7 +26,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 
 | # | Item | Severity | Why accepted | Fix when / how |
 |---|---|---|---|---|
-| 2 | **`OpenRouterProvider` has no automated tests.** It was verified only manually against the live API. | Medium | The spec's test list focuses on `FakeProvider`; the real provider needed live verification. | Add unit tests using a fake `HttpMessageHandler` serving canned SSE: deltas, final usage chunk, mid-stream `error` chunk, non-2xx, idle timeout. |
 | 3 | **Partial-method indirection for wiring.** `GatewayServices` and `GatewayEndpoints` are split into `partial` classes with `partial void` hooks across several files. | Low | Kept registration close to each feature. | It's one more hop than needed. Consider plain extension methods (`AddAuth()`, `MapAgentEndpoints()`) called directly from `GatewayBuilder`. |
 | 4 | **String literals instead of constants in `GatewayMetrics.ObserveInboxDepth`** (`"user"`, `"pending"`). | Low | Oversight. | Use `Roles.User` / `MessageStatus.Pending`. |
 | 5 | **Observable gauges query the database on every collection.** `budget.remaining_usd` loads all agents and runs one spend query per agent. | Low | Cheap at personal scale (a handful of agents, 60 s export interval). | If agent count grows, replace with a single grouped query or an in-memory cache. |
