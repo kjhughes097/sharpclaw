@@ -48,3 +48,43 @@ public static class LlmCallPurpose
     public const string Chat = "chat";
     public const string RiskAssessment = "risk_assessment";
 }
+
+/// <summary>Tool-call risk levels, in increasing order (3.2 spec section 3).</summary>
+public static class RiskLevels
+{
+    public const string Low = "low";
+    public const string Medium = "medium";
+    public const string High = "high";
+    public const string Critical = "critical";
+
+    public static readonly IReadOnlyList<string> All = new[] { Low, Medium, High, Critical };
+}
+
+/// <summary>How the agent decided on a tool call.</summary>
+public static class ToolDecisions
+{
+    public const string Allowed = "allowed";
+    public const string Approved = "approved";
+    public const string Denied = "denied";
+    public const string Expired = "expired";
+    public const string Blocked = "blocked";
+
+    public static readonly IReadOnlyList<string> All = new[] { Allowed, Approved, Denied, Expired, Blocked };
+}
+
+/// <summary>Lifecycle of a <c>tool_calls</c> row. <c>requested</c> until the agent reports.</summary>
+public static class ToolCallStatuses
+{
+    public const string Requested = "requested";
+    public const string Succeeded = "succeeded";
+    public const string Failed = "failed";
+    public const string Denied = "denied";
+    public const string Blocked = "blocked";
+    public const string Expired = "expired";
+    public const string UnknownTool = "unknown_tool";
+    public const string InvalidArguments = "invalid_arguments";
+
+    /// <summary>Statuses an agent may report (everything except <c>requested</c>).</summary>
+    public static readonly IReadOnlyList<string> Reportable =
+        new[] { Succeeded, Failed, Denied, Blocked, Expired, UnknownTool, InvalidArguments };
+}

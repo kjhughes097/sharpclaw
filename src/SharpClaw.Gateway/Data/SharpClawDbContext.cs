@@ -12,6 +12,7 @@ public class SharpClawDbContext : DbContext
     public DbSet<ConversationThread> Threads => Set<ConversationThread>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<LlmCall> LlmCalls => Set<LlmCall>();
+    public DbSet<ToolCallRecord> ToolCalls => Set<ToolCallRecord>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -80,6 +81,15 @@ public class SharpClawDbContext : DbContext
             e.Property(x => x.Purpose).HasDefaultValue("chat");
             e.HasIndex(x => new { x.AgentId, x.CreatedAt });
             e.HasIndex(x => x.CorrelationId);
+        });
+
+        b.Entity<ToolCallRecord>(e =>
+        {
+            e.ToTable("tool_calls");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.CorrelationId, x.ToolCallId }).IsUnique();
+            e.HasIndex(x => new { x.AgentId, x.CreatedAt });
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
         });
     }
 

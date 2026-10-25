@@ -14,6 +14,7 @@ public static partial class GatewayEndpoints
     static partial void MapAgentEndpoints(WebApplication app, RouteGroupBuilder agent, RouteGroupBuilder v1)
     {
         AgentEndpoints.Map(agent);
+        ToolCallEndpoints.Map(agent);
         ChatEndpoints.Map(v1);
     }
 }

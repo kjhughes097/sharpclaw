@@ -217,7 +217,7 @@ public static class ChatEndpoints
                 _logger.LogWarning("Provider reported no usage for correlation {CorrelationId}", _correlationId);
             await WriteAsync(ChatChunkWriter.DoneLine, ct);
 
-            await _recorder.RecordAsync(Succeeded(), ct);
+            await _recorder.RecordAsync(Succeeded(), ct, _toolCalls);
             return Results.Empty;
         }
 

@@ -1,6 +1,7 @@
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Auth;
 using SharpClaw.Gateway.Data;
+using SharpClaw.Gateway.Providers;
 using SharpClaw.Gateway.Telemetry;
 
 namespace SharpClaw.Gateway.Endpoints;
@@ -55,8 +56,15 @@ public sealed class LlmCallRecorder
         _startedAt = startedAt;
     }
 
-    /// <summary>Persists the call and emits telemetry. Returns the stored row.</summary>
-    public async Task<LlmCall> RecordAsync(LlmCallOutcome outcome, CancellationToken ct)
+    /// <summary>Stored tool-call arguments are truncated to this many characters.</summary>
+    public const int MaxStoredArgumentChars = 1000;
+
+    /// <summary>
+    /// Persists the call and emits telemetry. Any tool calls the model requested are stored in the
+    /// same save, so the gateway's audit of them never depends on the agent reporting.
+    /// </summary>
+    public async Task<LlmCall> RecordAsync(
+        LlmCallOutcome outcome, CancellationToken ct, IReadOnlyList<ChatStreamEvent.ToolCall>? toolCalls = null)
     {
         // Cost is only meaningful when the provider reported usage.
         var cost = outcome.UsageKnown ? outcome.CostUsd : 0;
@@ -81,6 +89,22 @@ public sealed class LlmCallRecorder
             CreatedAt = _startedAt,
         };
         _db.LlmCalls.Add(row);
+        foreach (var call in toolCalls ?? Array.Empty<ChatStreamEvent.ToolCall>())
+        {
+            _db.ToolCalls.Add(new ToolCallRecord
+            {
+                Id = Guid.CreateVersion7(),
+                AgentId = _agent.Id,
+                ThreadId = _threadId,
+                CorrelationId = _correlationId,
+                LlmCallId = row.Id,
+                ToolCallId = call.Id,
+                ToolName = call.Name,
+                Arguments = Truncate(call.ArgumentsJson, MaxStoredArgumentChars)!,
+                Status = ToolCallStatuses.Requested,
+                CreatedAt = _startedAt,
+            });
+        }
         await _db.SaveChangesAsync(ct);
 
         if (outcome.Status == LlmCallStatus.Rejected)
