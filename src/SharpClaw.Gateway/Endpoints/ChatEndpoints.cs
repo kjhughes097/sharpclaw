@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Auth;
+using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Infrastructure;
 using SharpClaw.Gateway.Providers;
@@ -26,7 +28,7 @@ public static class ChatEndpoints
     private static async Task<IResult> Completions(
         HttpContext http, SharpClawDbContext db, TimeProvider time,
         IChatProvider provider, IThreadEventBus bus, GatewayMetrics metrics,
-        ILoggerFactory loggerFactory)
+        IOptions<ChatOptions> chatOptions, ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Chat");
         var agent = AuthContext.Agent(http);
@@ -72,6 +74,16 @@ public static class ChatEndpoints
             // Claim heartbeat: a multi-round tool turn must not be requeued as if the agent had died.
             await InboxRepository.TouchClaimAsync(db, agent.Id, correlationId, now, ct);
             var recorder = new LlmCallRecorder(db, metrics, logger, agent, threadId, correlationId, now, purpose);
+
+            var callsSoFar = await db.LlmCalls.CountAsync(c => c.CorrelationId == correlationId, ct);
+            if (callsSoFar >= chatOptions.Value.MaxLlmCallsPerMessage)
+            {
+                await recorder.RecordAsync(LlmCallOutcome.Rejected(ErrorCodes.LoopLimitExceeded), ct);
+                logger.LogWarning("llm call rejected: loop_limit_exceeded calls={Calls} max={Max}",
+                    callsSoFar, chatOptions.Value.MaxLlmCallsPerMessage);
+                return ApiResults.Error(429, ErrorCodes.LoopLimitExceeded,
+                    $"This message has reached the limit of {chatOptions.Value.MaxLlmCallsPerMessage} LLM calls.");
+            }
 
             var spent = await AgentQueries.TodaySpendAsync(db, time, agent.Id, ct);
             if (spent >= agent.DailyBudgetUsd)

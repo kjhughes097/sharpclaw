@@ -10,6 +10,7 @@ public static class ErrorCodes
     public const string NotFound = "not_found";
     public const string Conflict = "conflict";
     public const string BudgetExceeded = "budget_exceeded";
+    public const string LoopLimitExceeded = "loop_limit_exceeded";
     public const string ProviderError = "provider_error";
     public const string ProviderTimeout = "provider_timeout";
     public const string InternalError = "internal_error";

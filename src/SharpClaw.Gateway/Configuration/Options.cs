@@ -61,3 +61,14 @@ public sealed class ApprovalsOptions
     /// <summary>A pending approval expires (counts as denied) after this many seconds.</summary>
     public int TimeoutSeconds { get; set; } = 300;
 }
+
+public sealed class ChatOptions
+{
+    public const string Section = "Chat";
+
+    /// <summary>
+    /// Backstop against runaway tool loops: the most LLM calls one user message may make,
+    /// whatever the agent's own limit says (3.2 spec section 8.1).
+    /// </summary>
+    public int MaxLlmCallsPerMessage { get; set; } = 20;
+}
