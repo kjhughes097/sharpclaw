@@ -1,3 +1,4 @@
+using SharpClaw.Gateway.Auth;
 using SharpClaw.Gateway.Infrastructure;
 
 namespace SharpClaw.Gateway;
@@ -7,9 +8,17 @@ public static partial class GatewayEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var client = app.MapGroup("/api").RequireListener(Listener.Client);
-        var agent = app.MapGroup("/agent").RequireListener(Listener.Agent);
-        var v1 = app.MapGroup("/v1").RequireListener(Listener.Agent);
+        var client = app.MapGroup("/api")
+            .RequireListener(Listener.Client)
+            .AddEndpointFilter<AdminAuthFilter>();
+
+        var agent = app.MapGroup("/agent")
+            .RequireListener(Listener.Agent)
+            .AddEndpointFilter<AgentAuthFilter>();
+
+        var v1 = app.MapGroup("/v1")
+            .RequireListener(Listener.Agent)
+            .AddEndpointFilter<AgentAuthFilter>();
 
         MapClientEndpoints(app, client);
         MapAgentEndpoints(app, agent, v1);
