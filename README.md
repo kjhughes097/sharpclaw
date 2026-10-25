@@ -166,7 +166,7 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment=home
 - **Dashboard:** `docker/grafana/sharpclaw-dashboard.json` is an importable starter dashboard
   (LLM calls by status, cost vs budget, duration/TTFT percentiles, tokens, inbox depth, last-seen
   age, budget rejections, auth failures, and a Loki logs panel with a `correlation_id` variable).
-  Reconcile the panel metric names with the actual landed names from the smoke test.
+  Panel queries use the actual landed names (dotted OTel names via `{__name__="…"}`).
 
 ## Isolation verification
 
@@ -191,12 +191,23 @@ Verified in this environment with the **fake provider** (no secrets or external 
   `sharpclaw ask` streamed a reply through the containerised agent.
 - `scripts/verify-isolation.sh` passed all checks against the running stack.
 
-Pending human-provided inputs (spec section 19), **not yet done in this environment**:
+Verified against the live environment (2026-10-25):
 
-- The telemetry smoke test and Grafana verification require the live VictoriaMetrics/Loki OTLP
-  endpoints and the VictoriaMetrics naming flags.
-- One end-to-end chat against the **real OpenRouter** provider requires an OpenRouter API key and a
-  (cheap) model id.
+- **Telemetry:** the smoke test and gateway metrics land in VictoriaMetrics, and logs land in Loki
+  with `correlation_id` as structured metadata. One message was traced end to end in Loki by
+  `correlation_id`. Landed metric names and findings are in
+  [docs/telemetry-notes.md](docs/telemetry-notes.md); the dashboard uses those names.
+- **Real OpenRouter** (`openai/gpt-4o-mini`, Docker Compose stack): `sharpclaw ask` streamed real
+  replies through the isolated agent. Each call was audited with tokens, cost (e.g. 68/28 tokens,
+  $0.000027, 1235 ms) and status `ok`.
+- **Budget, live:** lowering the cap below today's spend gave `429` → `fail(budget_exceeded)` →
+  `Error: budget_exceeded` in the CLI, plus a `rejected` audit row.
+- `scripts/verify-isolation.sh` passed all checks on the OpenRouter-backed stack.
+- No prompt or reply text found in the gateway logs in Loki.
+
+Not yet done: importing `docker/grafana/sharpclaw-dashboard.json` into Grafana (its API needs
+credentials). Import it via *Dashboards → New → Import*; the queries were checked directly against
+VictoriaMetrics.
 
 ## Known gaps (accepted for 3.1)
 

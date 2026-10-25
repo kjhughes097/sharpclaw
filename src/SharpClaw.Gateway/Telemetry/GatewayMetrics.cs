@@ -37,10 +37,19 @@ public sealed class GatewayMetrics : IDisposable
         _calls = _meter.CreateCounter<long>("sharpclaw.llm.calls", "{call}");
         _tokens = _meter.CreateCounter<long>("sharpclaw.llm.tokens", "{token}");
         _cost = _meter.CreateCounter<double>("sharpclaw.llm.cost_usd", "USD");
-        _duration = _meter.CreateHistogram<double>("sharpclaw.llm.duration", "s");
-        _ttft = _meter.CreateHistogram<double>("sharpclaw.llm.time_to_first_token", "s");
+        // Second-scale buckets: the SDK defaults are designed for milliseconds.
+        var llmBuckets = new InstrumentAdvice<double>
+        {
+            HistogramBucketBoundaries = [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120],
+        };
+        var messageBuckets = new InstrumentAdvice<double>
+        {
+            HistogramBucketBoundaries = [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60, 120, 300],
+        };
+        _duration = _meter.CreateHistogram("sharpclaw.llm.duration", "s", null, null, llmBuckets);
+        _ttft = _meter.CreateHistogram("sharpclaw.llm.time_to_first_token", "s", null, null, llmBuckets);
         _budgetExceeded = _meter.CreateCounter<long>("sharpclaw.budget.exceeded", "{rejection}");
-        _messageDuration = _meter.CreateHistogram<double>("sharpclaw.message.duration", "s");
+        _messageDuration = _meter.CreateHistogram("sharpclaw.message.duration", "s", null, null, messageBuckets);
         _authFailures = _meter.CreateCounter<long>("sharpclaw.auth.failures", "{failure}");
 
         _meter.CreateObservableGauge("sharpclaw.budget.remaining_usd", ObserveBudgetRemaining, "USD");

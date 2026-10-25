@@ -1,50 +1,69 @@
 # Telemetry notes (task T1)
 
-This file records the real behaviour of the telemetry backends, discovered by running
-`scripts/telemetry-smoke-test` against the live VictoriaMetrics and Loki endpoints.
+Findings from running `scripts/telemetry-smoke-test` and the gateway against the live backends on
+2026-10-25.
 
-## Status: pending live verification
+## Backends
 
-The smoke test project and the gateway telemetry wiring are implemented, but the end-to-end
-verification (metric lands in VictoriaMetrics, log accepted by Loki as structured metadata, both
-visible in Grafana Explore) **requires live endpoints that must be supplied by the human**
-(spec section 19):
+| Backend | Endpoint | Version |
+|---|---|---|
+| VictoriaMetrics | `http://192.168.1.10:8428/opentelemetry/v1/metrics` | 2.24.0 |
+| Loki | `http://192.168.1.10:3100/otlp/v1/logs` | 3.7.8 |
+| Grafana | `http://192.168.1.10:3000` | 13.2.2 (API requires auth) |
 
-- The OTLP endpoints for VictoriaMetrics and Loki (hosts, ports, any auth headers or tenant id),
-  and confirmation that the Docker host can reach them.
-- The VictoriaMetrics metric-naming flags in use.
-- The Loki version and whether structured metadata is enabled (needs a recent schema — v13 with
-  TSDB).
+No auth headers or tenant id are needed for the OTLP endpoints.
 
-Until those are provided, this environment cannot reach the backends, so the landed metric name
-and Loki behaviour below are **not yet filled in**.
+## Exporter configuration gotcha
 
-## How to run the smoke test
+With OpenTelemetry .NET 1.20.1 the signal-specific `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` /
+`OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` variables were **not** applied by `AddOtlpExporter()`; the
+exporter silently fell back to `http://localhost:4318/v1/metrics` (found via OTel
+self-diagnostics, `OTEL_DIAGNOSTICS.json`). Both the gateway and the smoke test now read these
+variables and set `Endpoint` (used as the full URL) and `Protocol = HttpProtobuf` explicitly, with
+cumulative temporality for metrics.
 
-```bash
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://<host>:8428/opentelemetry/v1/metrics
-export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=http://<host>:3100/otlp/v1/logs
-export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
-export OTEL_SERVICE_NAME=sharpclaw-smoke
-export OTEL_RESOURCE_ATTRIBUTES=deployment.environment=home
+## VictoriaMetrics: landed metric names
 
-dotnet run --project scripts/telemetry-smoke-test
-```
+OTel names are stored **verbatim**: dots are kept, counters get **no** `_total` suffix, and no
+unit suffix is added. Histograms only gain `_bucket`, `_sum` and `_count`.
 
-Then, in Grafana Explore:
+| OTel instrument | Landed name(s) |
+|---|---|
+| `sharpclaw.smoke.counter` | `sharpclaw.smoke.counter` |
+| `sharpclaw.llm.calls` | `sharpclaw.llm.calls` |
+| `sharpclaw.llm.tokens` | `sharpclaw.llm.tokens` |
+| `sharpclaw.llm.cost_usd` | `sharpclaw.llm.cost_usd` |
+| `sharpclaw.llm.duration` | `sharpclaw.llm.duration_bucket` / `_sum` / `_count` |
+| `sharpclaw.llm.time_to_first_token` | `sharpclaw.llm.time_to_first_token_bucket` / `_sum` / `_count` |
+| `sharpclaw.message.duration` | `sharpclaw.message.duration_bucket` / `_sum` / `_count` |
+| `sharpclaw.budget.remaining_usd` | `sharpclaw.budget.remaining_usd` |
+| `sharpclaw.budget.exceeded` | `sharpclaw.budget.exceeded` |
+| `sharpclaw.agent.last_seen` | `sharpclaw.agent.last_seen` |
+| `sharpclaw.inbox.depth` | `sharpclaw.inbox.depth` (only present while messages are pending) |
+| `sharpclaw.auth.failures` | `sharpclaw.auth.failures` (only present after a failure) |
 
-1. VictoriaMetrics: search for the smoke counter and record the **exact** name it landed under
-   (dots vs underscores, any `_total`/unit suffix). Fill this in below.
-2. Loki: query `{service_name="sharpclaw-smoke"}` and confirm `correlation_id` is queryable as
-   structured metadata (`| correlation_id="…"`), not rejected and not promoted to a label.
+Because the names contain dots, PromQL/MetricsQL must select them as
+`{__name__="sharpclaw.llm.calls", agent="assistant"}`.
 
-## Findings (fill in after a live run)
+Resource attributes also become labels (`service.name`, `service.instance.id`,
+`deployment.environment`, `scope.name`, `telemetry.sdk.*`). `service.instance.id` changes on every
+gateway restart, so dashboard queries aggregate with `sum by (...)` / `max by (...)`.
 
-- Landed metric name in VictoriaMetrics: `TODO` (e.g. `sharpclaw_smoke_counter_total`).
-- Loki accepted `correlation_id` as structured metadata: `TODO (yes/no)`.
-- Loki version / schema: `TODO`.
-- Notes / anomalies: `TODO`.
+Histogram buckets: the SDK default boundaries (0, 5, 10, 25, … 10000) are designed for
+milliseconds; the gateway sets second-scale boundaries via `InstrumentAdvice`
+(0.05 … 120 s for LLM duration/TTFT, 0.1 … 300 s for message duration). Series recorded before
+this change use the old boundaries and age out naturally.
 
-> If Loki rejects the logs, the usual cause is structured metadata not being enabled (needs a
-> recent schema, v13 with TSDB). Report that to the human rather than working around it.
+## Loki
+
+- Logs are accepted over OTLP (structured metadata is enabled).
+- Index labels are only `service_name`, `service_instance_id` and `deployment_environment`.
+- Log attributes and scope values (`correlation_id`, `thread_id`, `agent`, `agent_id`) arrive as
+  **structured metadata**, not labels, and are queryable:
+  ```
+  {service_name="sharpclaw-gateway"} | correlation_id="<user message id>"
+  ```
+- A single message is traceable end to end: `message queued` → `message claimed` →
+  `llm call finished` (status, tokens, cost, latency, ttft) → `message completed` (or
+  `message failed`).
+- Verified that prompt and reply text never appear in Loki.

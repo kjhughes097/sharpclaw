@@ -2,6 +2,7 @@ using System.Diagnostics.Metrics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;
+using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -26,9 +27,9 @@ const string meterName = "SharpClaw.Smoke";
 var metricsEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT");
 var logsEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT");
 
-if (string.IsNullOrWhiteSpace(metricsEndpoint) && string.IsNullOrWhiteSpace(logsEndpoint))
+if (string.IsNullOrWhiteSpace(metricsEndpoint) || string.IsNullOrWhiteSpace(logsEndpoint))
 {
-    Console.Error.WriteLine("Set OTEL_EXPORTER_OTLP_METRICS_ENDPOINT and/or OTEL_EXPORTER_OTLP_LOGS_ENDPOINT first.");
+    Console.Error.WriteLine("Set OTEL_EXPORTER_OTLP_METRICS_ENDPOINT and OTEL_EXPORTER_OTLP_LOGS_ENDPOINT first.");
     return 1;
 }
 
@@ -37,7 +38,12 @@ var resource = ResourceBuilder.CreateDefault().AddService("sharpclaw-smoke");
 using var meterProvider = Sdk.CreateMeterProviderBuilder()
     .SetResourceBuilder(resource)
     .AddMeter(meterName)
-    .AddOtlpExporter()
+    .AddOtlpExporter((o, reader) =>
+    {
+        o.Endpoint = new Uri(metricsEndpoint!);
+        o.Protocol = OtlpExportProtocol.HttpProtobuf;
+        reader.TemporalityPreference = MetricReaderTemporalityPreference.Cumulative;
+    })
     .Build();
 
 using var loggerFactory = LoggerFactory.Create(builder =>
@@ -47,7 +53,11 @@ using var loggerFactory = LoggerFactory.Create(builder =>
         o.IncludeScopes = true;
         o.IncludeFormattedMessage = true;
         o.SetResourceBuilder(resource);
-        o.AddOtlpExporter();
+        o.AddOtlpExporter(e =>
+        {
+            e.Endpoint = new Uri(logsEndpoint!);
+            e.Protocol = OtlpExportProtocol.HttpProtobuf;
+        });
     });
 });
 

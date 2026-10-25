@@ -74,7 +74,8 @@ public static class ThreadsEndpoints
 
     private static async Task<IResult> PostMessage(
         Guid id, PostMessageRequest? body, SharpClawDbContext db, TimeProvider time,
-        IAgentInboxSignal signal, IOptions<MessagesOptions> messages, CancellationToken ct)
+        IAgentInboxSignal signal, IOptions<MessagesOptions> messages, ILoggerFactory loggerFactory,
+        CancellationToken ct)
     {
         var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
         if (thread is null)
@@ -99,6 +100,15 @@ public static class ThreadsEndpoints
         await db.SaveChangesAsync(ct);
 
         signal.Signal(thread.AgentId);
+
+        var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
+        using (logger.BeginScope(new Dictionary<string, object>
+        {
+            ["agent_id"] = thread.AgentId.ToString(),
+            ["thread_id"] = thread.Id.ToString(),
+            ["correlation_id"] = message.Id.ToString(),
+        }))
+            logger.LogInformation("message queued");
 
         var dto = new QueuedMessageDto(message.Id, message.Status, message.CreatedAt);
         return Results.Json(new QueuedMessageResponse(dto), SharpClawJson.Options, statusCode: 202);

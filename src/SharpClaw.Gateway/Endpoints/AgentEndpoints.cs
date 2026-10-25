@@ -24,8 +24,9 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Inbox(
         HttpContext http, int? wait, SharpClawDbContext db, TimeProvider time,
-        IAgentInboxSignal signal, IOptions<InboxOptions> inboxOpt, CancellationToken ct)
+        IAgentInboxSignal signal, IOptions<InboxOptions> inboxOpt, ILoggerFactory loggerFactory, CancellationToken ct)
     {
+        var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Inbox");
         var agent = AuthContext.Agent(http);
         var opt = inboxOpt.Value;
         var waitSeconds = Math.Clamp(wait ?? 30, 0, opt.MaxWaitSeconds);
@@ -39,7 +40,15 @@ public static class AgentEndpoints
 
             var claimed = await InboxRepository.ClaimNextAsync(db, agent.Id, now, ct);
             if (claimed is not null)
+            {
+                using (logger.BeginScope(new Dictionary<string, object>
+                {
+                    ["thread_id"] = claimed.ThreadId.ToString(),
+                    ["correlation_id"] = claimed.Id.ToString(),
+                }))
+                    logger.LogInformation("message claimed");
                 return Results.Json(new InboxMessageResponse(claimed), SharpClawJson.Options);
+            }
 
             var remaining = TimeSpan.FromSeconds(waitSeconds) - sw.Elapsed;
             if (remaining <= TimeSpan.Zero)
@@ -71,9 +80,11 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Reply(
         Guid id, AgentReplyRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IThreadEventBus bus, GatewayMetrics metrics, IOptions<MessagesOptions> messages, CancellationToken ct)
+        IThreadEventBus bus, GatewayMetrics metrics, IOptions<MessagesOptions> messages,
+        ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
+        var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
         if (body is null || string.IsNullOrEmpty(body.Content))
             return ApiResults.ValidationFailed("content is required.");
         if (body.Content.Length > messages.Value.MaxContentChars)
@@ -115,7 +126,15 @@ public static class AgentEndpoints
 
         Publish(bus, id, SseEventNames.MessageCompleted,
             new MessageCompletedEvent(body.CorrelationId, assistant.Id, body.Content));
-        metrics.RecordMessageDuration(agent.Name, (now - userMsg.CreatedAt).TotalSeconds);
+        var messageSeconds = (now - userMsg.CreatedAt).TotalSeconds;
+        metrics.RecordMessageDuration(agent.Name, messageSeconds);
+        using (logger.BeginScope(new Dictionary<string, object>
+        {
+            ["thread_id"] = id.ToString(),
+            ["correlation_id"] = body.CorrelationId.ToString(),
+        }))
+            logger.LogInformation("message completed: reply_id={ReplyId} duration_s={DurationSeconds}",
+                assistant.Id, messageSeconds);
 
         return Results.Json(new AgentReplyResponse(new AgentReplyDto(assistant.Id, now)),
             SharpClawJson.Options, statusCode: 201);
@@ -123,9 +142,10 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Fail(
         Guid id, FailMessageRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IThreadEventBus bus, CancellationToken ct)
+        IThreadEventBus bus, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
+        var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
         var reason = body?.Reason;
         if (string.IsNullOrWhiteSpace(reason))
             return ApiResults.ValidationFailed("reason is required.");
@@ -141,6 +161,13 @@ public static class AgentEndpoints
         msg.FailReason = reason;
         msg.CompletedAt = now;
         await db.SaveChangesAsync(ct);
+
+        using (logger.BeginScope(new Dictionary<string, object>
+        {
+            ["thread_id"] = msg.ThreadId.ToString(),
+            ["correlation_id"] = msg.Id.ToString(),
+        }))
+            logger.LogWarning("message failed: reason={Reason}", reason);
 
         Publish(bus, msg.ThreadId, SseEventNames.Error, new ErrorEvent(msg.Id, reason, reason));
         return Results.StatusCode(204);

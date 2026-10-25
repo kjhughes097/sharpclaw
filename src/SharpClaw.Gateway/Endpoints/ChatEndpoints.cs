@@ -35,6 +35,12 @@ public static class ChatEndpoints
 
         var ct = http.RequestAborted;
 
+        using var scope = logger.BeginScope(new Dictionary<string, object>
+        {
+            ["thread_id"] = threadId.ToString(),
+            ["correlation_id"] = correlationId.ToString(),
+        });
+
         // Ownership: thread and claimed message must belong to this agent.
         var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == threadId, ct);
         if (thread is null || thread.AgentId != agent.Id)
@@ -67,6 +73,8 @@ public static class ChatEndpoints
             if (spent >= agent.DailyBudgetUsd)
             {
                 await RecordRejected(db, agent, threadId, correlationId, now, ct);
+                logger.LogWarning("llm call rejected: budget_exceeded spent_usd={SpentUsd} budget_usd={BudgetUsd}",
+                    spent, agent.DailyBudgetUsd);
                 metrics.RecordBudgetExceeded(agent.Name);
                 metrics.RecordCall(agent.Name, agent.Model, LlmCallStatus.Rejected);
                 var reset = NextUtcMidnight(now);
@@ -103,7 +111,7 @@ public static class ChatEndpoints
         catch (ProviderException pex)
         {
             await enumerator.DisposeAsync();
-            await FinalizeCall(db, metrics, agent, threadId, correlationId, startedAt,
+            await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
                 LlmCallStatus.Error, 0, 0, 0, usageKnown: false, (int)sw.ElapsedMilliseconds, null,
                 ErrorCodeFor(pex), pex.Message, ct);
             return pex.Kind == ProviderErrorKind.Timeout
@@ -113,7 +121,7 @@ public static class ChatEndpoints
         catch (OperationCanceledException)
         {
             await enumerator.DisposeAsync();
-            await FinalizeCall(db, metrics, agent, threadId, correlationId, startedAt,
+            await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
                 LlmCallStatus.Cancelled, 0, 0, 0, usageKnown: false, (int)sw.ElapsedMilliseconds, null,
                 null, null, CancellationToken.None);
             return Results.Empty;
@@ -166,7 +174,7 @@ public static class ChatEndpoints
             await WriteAsync(response, ChatChunkWriter.ErrorChunk(ErrorCodes.ProviderError, "Upstream failure."), ct);
             await WriteAsync(response, ChatChunkWriter.DoneLine, ct);
             await enumerator.DisposeAsync();
-            await FinalizeCall(db, metrics, agent, threadId, correlationId, startedAt,
+            await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
                 LlmCallStatus.Error, promptTokens, completionTokens, usageKnown ? costUsd : 0, usageKnown,
                 (int)sw.ElapsedMilliseconds, ttftMs, ErrorCodeFor(pex), pex.Message, ct);
             return Results.Empty;
@@ -174,7 +182,7 @@ public static class ChatEndpoints
         catch (OperationCanceledException)
         {
             await enumerator.DisposeAsync();
-            await FinalizeCall(db, metrics, agent, threadId, correlationId, startedAt,
+            await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
                 LlmCallStatus.Cancelled, 0, 0, 0, usageKnown: false, (int)sw.ElapsedMilliseconds, ttftMs,
                 null, null, CancellationToken.None);
             return Results.Empty;
@@ -189,7 +197,7 @@ public static class ChatEndpoints
             logger.LogWarning("Provider reported no usage for correlation {CorrelationId}", correlationId);
         await WriteAsync(response, ChatChunkWriter.DoneLine, ct);
 
-        await FinalizeCall(db, metrics, agent, threadId, correlationId, startedAt,
+        await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
             LlmCallStatus.Ok, promptTokens, completionTokens, usageKnown ? costUsd : 0, usageKnown,
             (int)sw.ElapsedMilliseconds, ttftMs, null, null, ct);
 
@@ -216,7 +224,7 @@ public static class ChatEndpoints
     }
 
     private static async Task FinalizeCall(
-        SharpClawDbContext db, GatewayMetrics metrics, AuthenticatedAgent agent,
+        SharpClawDbContext db, GatewayMetrics metrics, ILogger logger, AuthenticatedAgent agent,
         Guid threadId, Guid correlationId, DateTime startedAt, string status,
         int promptTokens, int completionTokens, double costUsd, bool usageKnown,
         int latencyMs, int? ttftMs, string? errorCode, string? errorDetail, CancellationToken ct)
@@ -240,6 +248,10 @@ public static class ChatEndpoints
             CreatedAt = startedAt,
         });
         await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "llm call finished: status={Status} model={Model} prompt_tokens={PromptTokens} completion_tokens={CompletionTokens} cost_usd={CostUsd} usage_known={UsageKnown} latency_ms={LatencyMs} ttft_ms={TtftMs} error_code={ErrorCode}",
+            status, agent.Model, promptTokens, completionTokens, costUsd, usageKnown, latencyMs, ttftMs, errorCode);
 
         metrics.RecordCall(agent.Name, agent.Model, status);
         metrics.RecordTokens(agent.Name, agent.Model, promptTokens, completionTokens);
