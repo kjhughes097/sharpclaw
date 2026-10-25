@@ -36,11 +36,15 @@ services:
 
   agent-assistant:
     build: { context: .., dockerfile: docker/Dockerfile.agent }
+    # Run as the host user that owns ./agents/assistant/workspace so workspace tools can write
+    # there (the image's default 'app' user has a different uid). Still non-root.
+    user: "${AGENT_UID:-1000}:${AGENT_GID:-1000}"
     depends_on:
       gateway: { condition: service_healthy }
     environment:
       GATEWAY_URL: http://gateway:8081
       AGENT_TOKEN: ${AGENT_ASSISTANT_TOKEN}
+      AGENT_CONFIG_PATH: /config/agent.json   # tool policy, read-only mount (3.2)
     networks: [internal]            # internal only
     volumes:
       - ./agents/assistant/config:/config:ro
