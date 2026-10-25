@@ -1,8 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="SharpClaw/SharpClaw.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="SharpClaw.Tests/SharpClaw.Tests.csproj" />
-  </Folder>
-</Solution>

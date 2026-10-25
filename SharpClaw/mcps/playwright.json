@@ -1,6 +1,0 @@
-{
-    "transport": "stdio",
-    "command": "npx",
-    "args": ["-y", "@playwright/mcp@latest"],
-    "lazy": true
-}
