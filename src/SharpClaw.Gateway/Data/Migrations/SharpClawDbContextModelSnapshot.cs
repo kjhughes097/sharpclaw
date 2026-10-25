@@ -101,6 +101,80 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.ToTable("agent_tokens", (string)null);
                 });
 
+            modelBuilder.Entity("SharpClaw.Gateway.Data.Approval", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("agent_id");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("decided_at");
+
+                    b.Property<string>("DecidedBy")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("decided_by");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("reason");
+
+                    b.Property<string>("Risk")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("risk");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("summary");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("thread_id");
+
+                    b.Property<string>("ToolCallId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool_call_id");
+
+                    b.Property<string>("ToolName")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool_name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId");
+
+                    b.HasIndex("CorrelationId");
+
+                    b.ToTable("approvals", (string)null);
+                });
+
             modelBuilder.Entity("SharpClaw.Gateway.Data.ConversationThread", b =>
                 {
                     b.Property<Guid>("Id")
@@ -174,6 +248,13 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.Property<int>("PromptTokens")
                         .HasColumnType("INTEGER")
                         .HasColumnName("prompt_tokens");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("chat")
+                        .HasColumnName("purpose");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -264,6 +345,91 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.ToTable("messages", (string)null);
                 });
 
+            modelBuilder.Entity("SharpClaw.Gateway.Data.ToolCallRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("agent_id");
+
+                    b.Property<Guid?>("ApprovalId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("approval_id");
+
+                    b.Property<string>("Arguments")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("arguments");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Decision")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("decision");
+
+                    b.Property<int?>("DurationMs")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("duration_ms");
+
+                    b.Property<string>("ErrorCode")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("error_code");
+
+                    b.Property<Guid>("LlmCallId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("llm_call_id");
+
+                    b.Property<DateTime?>("ReportedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("reported_at");
+
+                    b.Property<string>("Risk")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("risk");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("status");
+
+                    b.Property<bool>("Tainted")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("tainted");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("thread_id");
+
+                    b.Property<string>("ToolCallId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool_call_id");
+
+                    b.Property<string>("ToolName")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool_name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId", "CreatedAt");
+
+                    b.HasIndex("CorrelationId", "ToolCallId")
+                        .IsUnique();
+
+                    b.ToTable("tool_calls", (string)null);
+                });
+
             modelBuilder.Entity("SharpClaw.Gateway.Data.AgentToken", b =>
                 {
                     b.HasOne("SharpClaw.Gateway.Data.Agent", "Agent")
@@ -275,6 +441,15 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.Navigation("Agent");
                 });
 
+            modelBuilder.Entity("SharpClaw.Gateway.Data.Approval", b =>
+                {
+                    b.HasOne("SharpClaw.Gateway.Data.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("SharpClaw.Gateway.Data.ConversationThread", b =>
                 {
                     b.HasOne("SharpClaw.Gateway.Data.Agent", "Agent")
@@ -284,6 +459,15 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Agent");
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.ToolCallRecord", b =>
+                {
+                    b.HasOne("SharpClaw.Gateway.Data.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.Agent", b =>

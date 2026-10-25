@@ -238,21 +238,22 @@ for i in 1..maxToolIterations+1:
 **`POST /agent/approvals`** — `{ correlationId, threadId, toolCallId, toolName, summary, risk, reason }`
 - The correlation message must be this agent's `claimed` message in that thread, else 404.
 - If the thread has **no SSE subscriber**, the approval is created already `denied` with
-  `decided_by = system` and `reason = no_approver` (nobody can answer; Hermes' unattended → deny).
+  `decided_by = system` (nobody can answer; Hermes' unattended → deny). The agent reports this to
+  the model as `no_approver`.
 - Otherwise it is created `pending` with `expires_at = now + Approvals:TimeoutSeconds` (default
   300), and `approval.requested` is published.
-- Returns `201 { "approval": { "id", "status", "expiresAt" } }`.
+- Returns `201 { "approval": { "id", "status", "decidedBy", "expiresAt" } }`.
 
 **`GET /agent/approvals/{id}?wait=30`** — long poll (same clamp as the inbox) until the status is
 not `pending` or `wait` elapses. A `pending` approval past `expires_at` becomes `expired` when read.
-Returns `200 { "approval": { "id", "status", "expiresAt" } }`. Foreign ids → 404.
+Returns `200 { "approval": { "id", "status", "decidedBy", "expiresAt" } }`. Foreign ids → 404.
 
 ### 8.3 Approvals (client listener)
 
 **`POST /api/approvals/{id}`** — `{ "decision": "approved" | "denied" }`
 - 404 if unknown; 409 `conflict` if not `pending` (including expired).
 - Sets `status`, `decided_at`, `decided_by = user` and wakes the agent's long poll.
-- Returns `200 { "approval": { "id", "status" } }`.
+- Returns `200 { "approval": { "id", "status", "decidedBy", "expiresAt" } }`.
 
 ### 8.4 Smart-mode classification
 

@@ -1,9 +1,13 @@
 using Microsoft.Extensions.Logging;
+using SharpClaw.Agent.Tools;
 using SharpClaw.Contracts;
 
 namespace SharpClaw.Agent;
 
 public enum LoopOutcome { Processed, Empty, Disabled, Transient, Exit }
+
+/// <summary>The agent's tools: what to offer the model, how to run calls, and the round limit.</summary>
+public sealed record AgentTools(ToolRegistry Registry, ToolDispatcher Dispatcher, int MaxToolIterations);
 
 public sealed class AgentLoop
 {
@@ -12,14 +16,17 @@ public sealed class AgentLoop
     private readonly AgentConfig _config;
     private readonly ILogger<AgentLoop> _logger;
     private readonly TimeProvider _time;
+    private readonly AgentTools? _tools;
 
     private static readonly TimeSpan DisabledSleep = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
 
+    /// <param name="tools">The agent's tools; null runs chat-only, as in 3.1.</param>
     public AgentLoop(IGatewayClient client, ISoulProvider soul, AgentConfig config,
-        ILogger<AgentLoop> logger, TimeProvider time)
+        ILogger<AgentLoop> logger, TimeProvider time, AgentTools? tools = null)
     {
+        _tools = tools;
         _client = client;
         _soul = soul;
         _config = config;
@@ -97,22 +104,21 @@ public sealed class AgentLoop
         try
         {
             var history = await _client.GetThreadHistoryAsync(msg.ThreadId, ct);
-            var system = _soul.Read();
-            var messages = new List<ChatMessage> { new(Roles.System, system) };
+            var messages = new List<ChatMessage> { new(Roles.System, _soul.Read()) };
             messages.AddRange(history);
 
-            var chat = await _client.StreamChatAsync(messages, msg.Id, msg.ThreadId, ct);
-            if (chat.Success)
+            var (reply, failCode) = await RunTurnAsync(messages, new TurnContext(msg.Id, msg.ThreadId), ct);
+            if (reply is not null)
             {
-                await _client.PostReplyAsync(msg.ThreadId, chat.Content!, msg.Id, ct);
+                await _client.PostReplyAsync(msg.ThreadId, reply, msg.Id, ct);
                 _logger.LogInformation("message handled: outcome=ok duration_ms={DurationMs}",
                     (int)_time.GetElapsedTime(start).TotalMilliseconds);
             }
             else
             {
-                await _client.FailAsync(msg.Id, chat.FailCode!, ct);
+                await _client.FailAsync(msg.Id, failCode!, ct);
                 _logger.LogWarning("message failed: outcome={Outcome} duration_ms={DurationMs}",
-                    chat.FailCode, (int)_time.GetElapsedTime(start).TotalMilliseconds);
+                    failCode, (int)_time.GetElapsedTime(start).TotalMilliseconds);
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -126,6 +132,41 @@ public sealed class AgentLoop
         }
 
         return LoopOutcome.Processed;
+    }
+
+    /// <summary>
+    /// One turn: call the model; while it asks for tools, run them through the dispatcher and call
+    /// it again with the results. Returns the final reply, or a fail code. Only the final reply is
+    /// stored in the thread; the tool exchanges live in the audit (3.2 spec section 7).
+    /// </summary>
+    private async Task<(string? Reply, string? FailCode)> RunTurnAsync(
+        List<ChatMessage> messages, TurnContext turn, CancellationToken ct)
+    {
+        var tools = _tools?.Registry.Tools ?? (IReadOnlyCollection<IAgentTool>)Array.Empty<IAgentTool>();
+        var maxRounds = _tools?.MaxToolIterations ?? 0;
+
+        for (var round = 0; ; round++)
+        {
+            var chat = await _client.StreamChatAsync(messages, tools, turn.CorrelationId, turn.ThreadId, ct);
+            if (!chat.Success)
+                return (null, chat.FailCode);
+            if (chat.ToolCalls.Count == 0)
+                return (chat.Content ?? "", null);
+
+            // A model that asks for tools it wasn't offered, or keeps calling tools forever, stops here.
+            if (_tools is null || round >= maxRounds)
+            {
+                _logger.LogWarning("tool loop limit reached after {Rounds} rounds", round);
+                return (null, "tool_loop_limit");
+            }
+
+            messages.Add(new ChatMessage(Roles.Assistant, string.IsNullOrEmpty(chat.Content) ? null : chat.Content, chat.ToolCalls));
+            foreach (var call in chat.ToolCalls)
+            {
+                var result = await _tools.Dispatcher.DispatchAsync(new ToolCallRequest(call.Id, call.Name, call.Arguments), turn, ct);
+                messages.Add(new ChatMessage(Roles.Tool, result, ToolCallId: call.Id));
+            }
+        }
     }
 
     private async Task SafeFail(Guid messageId, string reason)

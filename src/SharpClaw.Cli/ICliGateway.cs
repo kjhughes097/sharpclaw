@@ -31,4 +31,9 @@ public interface ICliGateway
     Task<Guid> PostMessageAsync(Guid threadId, string content);
 
     Task<AuditResponse> AuditAsync(string? agent, int? limit);
+
+    Task<ToolCallAuditResponse> AuditToolCallsAsync(string? agent, int? limit);
+
+    /// <summary>Answers an approval prompt. Throws <see cref="CliException"/> if it was already decided or expired.</summary>
+    Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision);
 }

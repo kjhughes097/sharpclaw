@@ -41,6 +41,8 @@ unit suffix is added. Histograms only gain `_bucket`, `_sum` and `_count`.
 | `sharpclaw.agent.last_seen` | `sharpclaw.agent.last_seen` |
 | `sharpclaw.inbox.depth` | `sharpclaw.inbox.depth` (only present while messages are pending) |
 | `sharpclaw.auth.failures` | `sharpclaw.auth.failures` (only present after a failure) |
+| `sharpclaw.tool.calls` (3.2) | `sharpclaw.tool.calls` (labels agent, tool, status) |
+| `sharpclaw.approvals` (3.2) | `sharpclaw.approvals` (labels agent, status) |
 
 Because the names contain dots, PromQL/MetricsQL must select them as
 `{__name__="sharpclaw.llm.calls", agent="assistant"}`.

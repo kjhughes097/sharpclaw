@@ -25,6 +25,8 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Counter<long> _budgetExceeded;
     private readonly Histogram<double> _messageDuration;
     private readonly Counter<long> _authFailures;
+    private readonly Counter<long> _toolCalls;
+    private readonly Counter<long> _approvals;
 
     private readonly ConcurrentDictionary<string, double> _lastSeenUnix = new();
 
@@ -51,6 +53,8 @@ public sealed class GatewayMetrics : IDisposable
         _budgetExceeded = _meter.CreateCounter<long>("sharpclaw.budget.exceeded", "{rejection}");
         _messageDuration = _meter.CreateHistogram("sharpclaw.message.duration", "s", null, null, messageBuckets);
         _authFailures = _meter.CreateCounter<long>("sharpclaw.auth.failures", "{failure}");
+        _toolCalls = _meter.CreateCounter<long>("sharpclaw.tool.calls", "{call}");
+        _approvals = _meter.CreateCounter<long>("sharpclaw.approvals", "{approval}");
 
         _meter.CreateObservableGauge("sharpclaw.budget.remaining_usd", ObserveBudgetRemaining, "USD");
         _meter.CreateObservableGauge("sharpclaw.inbox.depth", ObserveInboxDepth, "{message}");
@@ -85,6 +89,14 @@ public sealed class GatewayMetrics : IDisposable
 
     public void RecordMessageDuration(string agent, double seconds) =>
         _messageDuration.Record(seconds, Tag("agent", agent));
+
+    /// <summary>Tool names come from a fixed set, so they are acceptable labels.</summary>
+    public void RecordToolCall(string agent, string tool, string status) =>
+        _toolCalls.Add(1, Tag("agent", agent), Tag("tool", tool), Tag("status", status));
+
+    /// <summary>Counted when an approval is decided or expires.</summary>
+    public void RecordApproval(string agent, string status) =>
+        _approvals.Add(1, Tag("agent", agent), Tag("status", status));
 
     public void RecordAuthFailure(string listener) =>
         _authFailures.Add(1, Tag("listener", listener));

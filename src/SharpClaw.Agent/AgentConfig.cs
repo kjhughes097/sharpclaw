@@ -6,6 +6,9 @@ public sealed class AgentConfig
     public required string AgentToken { get; init; }
     public string SoulPath { get; init; } = "/config/soul.md";
     public string WorkspacePath { get; init; } = "/workspace";
+
+    /// <summary>Read-only tool policy (3.2). Missing file = chat only.</summary>
+    public string ToolConfigPath { get; init; } = "/config/agent.json";
     public int LongPollSeconds { get; init; } = 30;
     public string LogLevel { get; init; } = "Information";
 
@@ -19,6 +22,7 @@ public sealed class AgentConfig
             AgentToken = token,
             SoulPath = Environment.GetEnvironmentVariable("SOUL_PATH") ?? "/config/soul.md",
             WorkspacePath = Environment.GetEnvironmentVariable("WORKSPACE_PATH") ?? "/workspace",
+            ToolConfigPath = Environment.GetEnvironmentVariable("AGENT_CONFIG_PATH") ?? "/config/agent.json",
             LongPollSeconds = int.TryParse(Environment.GetEnvironmentVariable("LONG_POLL_SECONDS"), out var p) ? p : 30,
             LogLevel = Environment.GetEnvironmentVariable("LOG_LEVEL") ?? "Information",
         };

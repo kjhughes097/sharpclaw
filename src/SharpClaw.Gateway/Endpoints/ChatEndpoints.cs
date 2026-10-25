@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Auth;
+using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Infrastructure;
 using SharpClaw.Gateway.Providers;
@@ -12,6 +14,10 @@ using SharpClaw.Gateway.Telemetry;
 
 namespace SharpClaw.Gateway.Endpoints;
 
+/// <summary>
+/// <c>POST /v1/chat/completions</c>: validate, check the budget, stream from the provider as
+/// OpenAI-style SSE chunks built by the gateway, tee deltas to the thread, and record the call.
+/// </summary>
 public static class ChatEndpoints
 {
     public static void Map(RouteGroupBuilder v1)
@@ -22,18 +28,21 @@ public static class ChatEndpoints
     private static async Task<IResult> Completions(
         HttpContext http, SharpClawDbContext db, TimeProvider time,
         IChatProvider provider, IThreadEventBus bus, GatewayMetrics metrics,
-        ILoggerFactory loggerFactory)
+        IOptions<ChatOptions> chatOptions, ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Chat");
         var agent = AuthContext.Agent(http);
+        var ct = http.RequestAborted;
 
-        // Required headers.
         if (!TryHeaderGuid(http, "X-Correlation-Id", out var correlationId))
             return ApiResults.ValidationFailed("X-Correlation-Id header is required and must be a GUID.");
         if (!TryHeaderGuid(http, "X-Thread-Id", out var threadId))
             return ApiResults.ValidationFailed("X-Thread-Id header is required and must be a GUID.");
 
-        var ct = http.RequestAborted;
+        var purposeHeader = http.Request.Headers["X-SharpClaw-Purpose"].ToString();
+        var purpose = string.IsNullOrEmpty(purposeHeader) ? LlmCallPurpose.Chat : purposeHeader;
+        if (purpose is not (LlmCallPurpose.Chat or LlmCallPurpose.RiskAssessment))
+            return ApiResults.ValidationFailed("X-SharpClaw-Purpose must be 'chat' or 'risk_assessment'.");
 
         using var scope = logger.BeginScope(new Dictionary<string, object>
         {
@@ -41,16 +50,10 @@ public static class ChatEndpoints
             ["correlation_id"] = correlationId.ToString(),
         });
 
-        // Ownership: thread and claimed message must belong to this agent.
-        var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == threadId, ct);
-        if (thread is null || thread.AgentId != agent.Id)
-            return ApiResults.NotFound("Thread not found.");
-        var userMsg = await db.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == correlationId, ct);
-        if (userMsg is null || userMsg.AgentId != agent.Id || userMsg.ThreadId != threadId ||
-            userMsg.Role != Roles.User || userMsg.Status != MessageStatus.Claimed)
-            return ApiResults.NotFound("Correlation message not found.");
+        var ownershipError = await CheckOwnershipAsync(db, agent, threadId, correlationId, ct);
+        if (ownershipError is not null)
+            return ownershipError;
 
-        // Parse and validate body.
         JsonDocument bodyDoc;
         try
         {
@@ -60,272 +63,69 @@ public static class ChatEndpoints
         {
             return ApiResults.ValidationFailed("Request body must be valid JSON.");
         }
+
         using (bodyDoc)
         {
-            var parseError = ParseRequest(bodyDoc.RootElement, out var parsed);
+            var (parsed, parseError) = ChatRequestParser.Parse(bodyDoc.RootElement);
             if (parseError is not null)
                 return parseError;
 
             var now = time.GetUtcNow().UtcDateTime;
+            // Claim heartbeat: a multi-round tool turn must not be requeued as if the agent had died.
+            await InboxRepository.TouchClaimAsync(db, agent.Id, correlationId, now, ct);
+            var recorder = new LlmCallRecorder(db, metrics, logger, agent, threadId, correlationId, now, purpose);
 
-            // Budget check.
+            var callsSoFar = await db.LlmCalls.CountAsync(c => c.CorrelationId == correlationId, ct);
+            if (callsSoFar >= chatOptions.Value.MaxLlmCallsPerMessage)
+            {
+                await recorder.RecordAsync(LlmCallOutcome.Rejected(ErrorCodes.LoopLimitExceeded), ct);
+                logger.LogWarning("llm call rejected: loop_limit_exceeded calls={Calls} max={Max}",
+                    callsSoFar, chatOptions.Value.MaxLlmCallsPerMessage);
+                return ApiResults.Error(429, ErrorCodes.LoopLimitExceeded,
+                    $"This message has reached the limit of {chatOptions.Value.MaxLlmCallsPerMessage} LLM calls.");
+            }
+
             var spent = await AgentQueries.TodaySpendAsync(db, time, agent.Id, ct);
             if (spent >= agent.DailyBudgetUsd)
             {
-                await RecordRejected(db, agent, threadId, correlationId, now, ct);
+                await recorder.RecordAsync(LlmCallOutcome.Rejected(ErrorCodes.BudgetExceeded), ct);
                 logger.LogWarning("llm call rejected: budget_exceeded spent_usd={SpentUsd} budget_usd={BudgetUsd}",
                     spent, agent.DailyBudgetUsd);
                 metrics.RecordBudgetExceeded(agent.Name);
-                metrics.RecordCall(agent.Name, agent.Model, LlmCallStatus.Rejected);
-                var reset = NextUtcMidnight(now);
-                var retryAfter = (int)Math.Ceiling((reset - now).TotalSeconds);
-                return ApiResults.Error(429, ErrorCodes.BudgetExceeded,
-                    $"Daily budget exhausted. Resets at {reset:yyyy-MM-ddTHH:mm:ssZ}.",
-                    headers => headers["Retry-After"] = retryAfter.ToString());
+                return BudgetExceeded(now);
             }
 
-            var providerRequest = new ProviderChatRequest(
-                agent.Model, parsed!.Messages, parsed.Temperature, parsed.MaxTokens, parsed.TopP, parsed.Stop);
-
-            return await StreamAsync(
-                http, db, time, provider, bus, metrics, logger,
-                agent, threadId, correlationId, providerRequest, now, ct);
+            // Risk-assessment calls are internal to the agent: never show their output to the user.
+            var teeToThread = purpose == LlmCallPurpose.Chat;
+            var stream = new ChatStream(http.Response, bus, recorder, logger, agent.Model, threadId, correlationId, teeToThread);
+            return await stream.RunAsync(provider, parsed!.ToProviderRequest(agent.Model), ct);
         }
     }
 
-    private static async Task<IResult> StreamAsync(
-        HttpContext http, SharpClawDbContext db, TimeProvider time, IChatProvider provider,
-        IThreadEventBus bus, GatewayMetrics metrics, ILogger logger,
-        AuthenticatedAgent agent, Guid threadId, Guid correlationId,
-        ProviderChatRequest request, DateTime startedAt, CancellationToken ct)
+    /// <summary>The thread and the claimed user message must both belong to this agent (else 404).</summary>
+    private static async Task<IResult?> CheckOwnershipAsync(
+        SharpClawDbContext db, AuthenticatedAgent agent, Guid threadId, Guid correlationId, CancellationToken ct)
     {
-        var sw = Stopwatch.StartNew();
-        var writer = new ChatChunkWriter(agent.Model);
+        var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == threadId, ct);
+        if (thread is null || thread.AgentId != agent.Id)
+            return ApiResults.NotFound("Thread not found.");
 
-        var enumerator = provider.StreamAsync(request, ct).GetAsyncEnumerator(ct);
-        bool hasEvent;
-        try
-        {
-            hasEvent = await enumerator.MoveNextAsync();
-        }
-        catch (ProviderException pex)
-        {
-            await enumerator.DisposeAsync();
-            await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
-                LlmCallStatus.Error, 0, 0, 0, usageKnown: false, (int)sw.ElapsedMilliseconds, null,
-                ErrorCodeFor(pex), pex.Message, ct);
-            return pex.Kind == ProviderErrorKind.Timeout
-                ? ApiResults.Error(504, ErrorCodes.ProviderTimeout, "Upstream timed out.")
-                : ApiResults.Error(502, ErrorCodes.ProviderError, "Upstream failure.");
-        }
-        catch (OperationCanceledException)
-        {
-            await enumerator.DisposeAsync();
-            await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
-                LlmCallStatus.Cancelled, 0, 0, 0, usageKnown: false, (int)sw.ElapsedMilliseconds, null,
-                null, null, CancellationToken.None);
-            return Results.Empty;
-        }
+        var userMsg = await db.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == correlationId, ct);
+        if (userMsg is null || userMsg.AgentId != agent.Id || userMsg.ThreadId != threadId ||
+            userMsg.Role != Roles.User || userMsg.Status != MessageStatus.Claimed)
+            return ApiResults.NotFound("Correlation message not found.");
 
-        // Begin the SSE response.
-        var response = http.Response;
-        response.StatusCode = 200;
-        response.Headers.ContentType = "text/event-stream";
-        response.Headers.CacheControl = "no-cache";
-
-        int promptTokens = 0, completionTokens = 0;
-        double costUsd = 0;
-        bool usageKnown = false;
-        int? ttftMs = null;
-        var finishReason = "stop";
-
-        await WriteAsync(response, writer.RoleChunk(), ct);
-
-        try
-        {
-            while (hasEvent)
-            {
-                var ev = enumerator.Current;
-                switch (ev)
-                {
-                    case ChatStreamEvent.Delta d:
-                        ttftMs ??= (int)sw.ElapsedMilliseconds;
-                        await WriteAsync(response, writer.ContentChunk(d.Text), ct);
-                        bus.Publish(threadId, new ThreadSseEvent(
-                            SseEventNames.Delta,
-                            JsonSerializer.Serialize(new DeltaEvent(correlationId, d.Text), SharpClawJson.Options)));
-                        break;
-                    case ChatStreamEvent.Usage u:
-                        promptTokens = u.PromptTokens;
-                        completionTokens = u.CompletionTokens;
-                        costUsd = u.CostUsd ?? 0;
-                        usageKnown = true;
-                        break;
-                    case ChatStreamEvent.Done done:
-                        finishReason = done.FinishReason;
-                        break;
-                }
-
-                hasEvent = await enumerator.MoveNextAsync();
-            }
-        }
-        catch (ProviderException pex)
-        {
-            await WriteAsync(response, ChatChunkWriter.ErrorChunk(ErrorCodes.ProviderError, "Upstream failure."), ct);
-            await WriteAsync(response, ChatChunkWriter.DoneLine, ct);
-            await enumerator.DisposeAsync();
-            await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
-                LlmCallStatus.Error, promptTokens, completionTokens, usageKnown ? costUsd : 0, usageKnown,
-                (int)sw.ElapsedMilliseconds, ttftMs, ErrorCodeFor(pex), pex.Message, ct);
-            return Results.Empty;
-        }
-        catch (OperationCanceledException)
-        {
-            await enumerator.DisposeAsync();
-            await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
-                LlmCallStatus.Cancelled, 0, 0, 0, usageKnown: false, (int)sw.ElapsedMilliseconds, ttftMs,
-                null, null, CancellationToken.None);
-            return Results.Empty;
-        }
-
-        await enumerator.DisposeAsync();
-
-        await WriteAsync(response, writer.FinishChunk(finishReason), ct);
-        if (usageKnown)
-            await WriteAsync(response, writer.UsageChunk(promptTokens, completionTokens), ct);
-        else
-            logger.LogWarning("Provider reported no usage for correlation {CorrelationId}", correlationId);
-        await WriteAsync(response, ChatChunkWriter.DoneLine, ct);
-
-        await FinalizeCall(db, metrics, logger, agent, threadId, correlationId, startedAt,
-            LlmCallStatus.Ok, promptTokens, completionTokens, usageKnown ? costUsd : 0, usageKnown,
-            (int)sw.ElapsedMilliseconds, ttftMs, null, null, ct);
-
-        return Results.Empty;
-    }
-
-    private static async Task RecordRejected(
-        SharpClawDbContext db, AuthenticatedAgent agent, Guid threadId, Guid correlationId,
-        DateTime now, CancellationToken ct)
-    {
-        db.LlmCalls.Add(new LlmCall
-        {
-            Id = Guid.CreateVersion7(),
-            AgentId = agent.Id,
-            ThreadId = threadId,
-            CorrelationId = correlationId,
-            Model = agent.Model,
-            Status = LlmCallStatus.Rejected,
-            UsageKnown = false,
-            ErrorCode = ErrorCodes.BudgetExceeded,
-            CreatedAt = now,
-        });
-        await db.SaveChangesAsync(ct);
-    }
-
-    private static async Task FinalizeCall(
-        SharpClawDbContext db, GatewayMetrics metrics, ILogger logger, AuthenticatedAgent agent,
-        Guid threadId, Guid correlationId, DateTime startedAt, string status,
-        int promptTokens, int completionTokens, double costUsd, bool usageKnown,
-        int latencyMs, int? ttftMs, string? errorCode, string? errorDetail, CancellationToken ct)
-    {
-        db.LlmCalls.Add(new LlmCall
-        {
-            Id = Guid.CreateVersion7(),
-            AgentId = agent.Id,
-            ThreadId = threadId,
-            CorrelationId = correlationId,
-            Model = agent.Model,
-            Status = status,
-            PromptTokens = promptTokens,
-            CompletionTokens = completionTokens,
-            CostUsd = costUsd,
-            UsageKnown = usageKnown,
-            LatencyMs = latencyMs,
-            TtftMs = ttftMs,
-            ErrorCode = errorCode,
-            ErrorDetail = Truncate(errorDetail, 200),
-            CreatedAt = startedAt,
-        });
-        await db.SaveChangesAsync(ct);
-
-        logger.LogInformation(
-            "llm call finished: status={Status} model={Model} prompt_tokens={PromptTokens} completion_tokens={CompletionTokens} cost_usd={CostUsd} usage_known={UsageKnown} latency_ms={LatencyMs} ttft_ms={TtftMs} error_code={ErrorCode}",
-            status, agent.Model, promptTokens, completionTokens, costUsd, usageKnown, latencyMs, ttftMs, errorCode);
-
-        metrics.RecordCall(agent.Name, agent.Model, status);
-        metrics.RecordTokens(agent.Name, agent.Model, promptTokens, completionTokens);
-        metrics.RecordCost(agent.Name, agent.Model, costUsd);
-        metrics.RecordDuration(agent.Name, agent.Model, latencyMs / 1000.0);
-        if (ttftMs is { } t)
-            metrics.RecordTtft(agent.Name, agent.Model, t / 1000.0);
-    }
-
-    private static IResult? ParseRequest(JsonElement root, out ParsedChatRequest? parsed)
-    {
-        parsed = null;
-
-        if (root.ValueKind != JsonValueKind.Object)
-            return ApiResults.ValidationFailed("Body must be a JSON object.");
-
-        if (root.TryGetProperty("tools", out _) || root.TryGetProperty("tool_choice", out _))
-            return ApiResults.Unsupported("tools are not supported in this phase.");
-
-        if (!root.TryGetProperty("stream", out var stream) ||
-            stream.ValueKind != JsonValueKind.True)
-            return ApiResults.Unsupported("Only stream:true is supported.");
-
-        if (!root.TryGetProperty("messages", out var messagesEl) ||
-            messagesEl.ValueKind != JsonValueKind.Array)
-            return ApiResults.ValidationFailed("messages is required.");
-
-        var messages = new List<ProviderChatMessage>();
-        foreach (var m in messagesEl.EnumerateArray())
-        {
-            if (m.ValueKind != JsonValueKind.Object ||
-                !m.TryGetProperty("role", out var roleEl) || roleEl.ValueKind != JsonValueKind.String)
-                return ApiResults.ValidationFailed("each message needs a role.");
-            var role = roleEl.GetString()!;
-            if (role is not (Roles.System or Roles.User or Roles.Assistant))
-                return ApiResults.ValidationFailed($"unsupported role '{role}'.");
-
-            if (!m.TryGetProperty("content", out var contentEl))
-                return ApiResults.ValidationFailed("each message needs content.");
-            if (contentEl.ValueKind != JsonValueKind.String)
-                return ApiResults.Unsupported("only string message content is supported.");
-
-            messages.Add(new ProviderChatMessage(role, contentEl.GetString() ?? ""));
-        }
-        if (messages.Count == 0)
-            return ApiResults.ValidationFailed("messages must be non-empty.");
-
-        double? temperature = TryNumber(root, "temperature");
-        int? maxTokens = TryInt(root, "max_tokens");
-        double? topP = TryNumber(root, "top_p");
-
-        List<string>? stop = null;
-        if (root.TryGetProperty("stop", out var stopEl))
-        {
-            if (stopEl.ValueKind == JsonValueKind.String)
-                stop = new List<string> { stopEl.GetString()! };
-            else if (stopEl.ValueKind == JsonValueKind.Array)
-                stop = stopEl.EnumerateArray()
-                    .Where(e => e.ValueKind == JsonValueKind.String)
-                    .Select(e => e.GetString()!).ToList();
-        }
-
-        parsed = new ParsedChatRequest(messages, temperature, maxTokens, topP, stop);
         return null;
     }
 
-    private sealed record ParsedChatRequest(
-        List<ProviderChatMessage> Messages, double? Temperature, int? MaxTokens, double? TopP, List<string>? Stop);
-
-    private static double? TryNumber(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.Number ? el.GetDouble() : null;
-
-    private static int? TryInt(JsonElement root, string name) =>
-        root.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var v) ? v : null;
+    private static IResult BudgetExceeded(DateTime now)
+    {
+        var reset = new DateTime(now.Year, now.Month, now.Day, 0, 0, 0, DateTimeKind.Utc).AddDays(1);
+        var retryAfter = (int)Math.Ceiling((reset - now).TotalSeconds);
+        return ApiResults.Error(429, ErrorCodes.BudgetExceeded,
+            $"Daily budget exhausted. Resets at {reset:yyyy-MM-ddTHH:mm:ssZ}.",
+            headers => headers["Retry-After"] = retryAfter.ToString());
+    }
 
     private static bool TryHeaderGuid(HttpContext http, string name, out Guid value)
     {
@@ -334,22 +134,166 @@ public static class ChatEndpoints
         return !string.IsNullOrEmpty(raw) && Guid.TryParse(raw, out value);
     }
 
-    private static string ErrorCodeFor(ProviderException pex) => pex.Kind switch
+    /// <summary>
+    /// One streamed completion. Holds the per-call state (tokens, timings) so the streaming steps
+    /// don't need to pass it around, and decides how each failure mode is recorded.
+    /// </summary>
+    private sealed class ChatStream
     {
-        ProviderErrorKind.Timeout => ErrorCodes.ProviderTimeout,
-        _ => ErrorCodes.ProviderError,
-    };
+        private readonly HttpResponse _response;
+        private readonly IThreadEventBus _bus;
+        private readonly LlmCallRecorder _recorder;
+        private readonly ILogger _logger;
+        private readonly Guid _threadId;
+        private readonly Guid _correlationId;
+        private readonly ChatChunkWriter _writer;
+        private readonly bool _teeToThread;
+        private readonly Stopwatch _sw = Stopwatch.StartNew();
+        private readonly List<ChatStreamEvent.ToolCall> _toolCalls = new();
 
-    private static DateTime NextUtcMidnight(DateTime now) =>
-        new DateTime(now.Year, now.Month, now.Day, 0, 0, 0, DateTimeKind.Utc).AddDays(1);
+        private int _promptTokens;
+        private int _completionTokens;
+        private double _costUsd;
+        private bool _usageKnown;
+        private int? _ttftMs;
+        private string _finishReason = "stop";
 
-    private static string? Truncate(string? s, int max) =>
-        s is null ? null : s.Length <= max ? s : s[..max];
+        public ChatStream(HttpResponse response, IThreadEventBus bus, LlmCallRecorder recorder, ILogger logger,
+            string model, Guid threadId, Guid correlationId, bool teeToThread)
+        {
+            _teeToThread = teeToThread;
+            _response = response;
+            _bus = bus;
+            _recorder = recorder;
+            _logger = logger;
+            _threadId = threadId;
+            _correlationId = correlationId;
+            _writer = new ChatChunkWriter(model);
+        }
 
-    private static async Task WriteAsync(HttpResponse response, string text, CancellationToken ct)
-    {
-        var bytes = Encoding.UTF8.GetBytes(text);
-        await response.Body.WriteAsync(bytes, ct);
-        await response.Body.FlushAsync(ct);
+        private int ElapsedMs => (int)_sw.ElapsedMilliseconds;
+
+        public async Task<IResult> RunAsync(IChatProvider provider, ProviderChatRequest request, CancellationToken ct)
+        {
+            await using var events = provider.StreamAsync(request, ct).GetAsyncEnumerator(ct);
+
+            // Before the first event we can still answer with a proper HTTP error status.
+            bool hasEvent;
+            try
+            {
+                hasEvent = await events.MoveNextAsync();
+            }
+            catch (ProviderException pex)
+            {
+                await _recorder.RecordAsync(Failed(pex), ct);
+                return pex.Kind == ProviderErrorKind.Timeout
+                    ? ApiResults.Error(504, ErrorCodes.ProviderTimeout, "Upstream timed out.")
+                    : ApiResults.Error(502, ErrorCodes.ProviderError, "Upstream failure.");
+            }
+            catch (OperationCanceledException)
+            {
+                await _recorder.RecordAsync(LlmCallOutcome.Cancelled(ElapsedMs), CancellationToken.None);
+                return Results.Empty;
+            }
+
+            _response.StatusCode = 200;
+            _response.Headers.ContentType = "text/event-stream";
+            _response.Headers.CacheControl = "no-cache";
+            await WriteAsync(_writer.RoleChunk(), ct);
+
+            // After streaming starts the status code is fixed; failures become an error chunk.
+            try
+            {
+                while (hasEvent)
+                {
+                    await HandleAsync(events.Current, ct);
+                    hasEvent = await events.MoveNextAsync();
+                }
+            }
+            catch (ProviderException pex)
+            {
+                await WriteAsync(ChatChunkWriter.ErrorChunk(ErrorCodes.ProviderError, "Upstream failure."), ct);
+                await WriteAsync(ChatChunkWriter.DoneLine, ct);
+                await _recorder.RecordAsync(Failed(pex), ct);
+                return Results.Empty;
+            }
+            catch (OperationCanceledException)
+            {
+                // The upstream request is cancelled with the request token; usage is unknown.
+                await _recorder.RecordAsync(LlmCallOutcome.Cancelled(ElapsedMs, _ttftMs), CancellationToken.None);
+                return Results.Empty;
+            }
+
+            await WriteAsync(_writer.FinishChunk(_finishReason), ct);
+            if (_usageKnown)
+                await WriteAsync(_writer.UsageChunk(_promptTokens, _completionTokens), ct);
+            else
+                _logger.LogWarning("Provider reported no usage for correlation {CorrelationId}", _correlationId);
+
+            // Record before [DONE]: clients read until [DONE], so the llm_calls and tool_calls rows
+            // exist by the time an agent reports a tool call's outcome.
+            await _recorder.RecordAsync(Succeeded(), ct, _toolCalls);
+            await WriteAsync(ChatChunkWriter.DoneLine, ct);
+            return Results.Empty;
+        }
+
+        private async Task HandleAsync(ChatStreamEvent ev, CancellationToken ct)
+        {
+            switch (ev)
+            {
+                case ChatStreamEvent.Delta d:
+                    _ttftMs ??= ElapsedMs;
+                    await WriteAsync(_writer.ContentChunk(d.Text), ct);
+                    Publish(SseEventNames.Delta, new DeltaEvent(_correlationId, d.Text));
+                    break;
+                case ChatStreamEvent.ToolCall call:
+                    _ttftMs ??= ElapsedMs;
+                    await WriteAsync(_writer.ToolCallChunk(_toolCalls.Count, call.Id, call.Name, call.ArgumentsJson), ct);
+                    _toolCalls.Add(call);
+                    // Only the tool name is published: arguments may contain content.
+                    Publish(SseEventNames.ToolRequested, new ToolRequestedEvent(_correlationId, call.Id, call.Name));
+                    break;
+                case ChatStreamEvent.Usage u:
+                    _promptTokens = u.PromptTokens;
+                    _completionTokens = u.CompletionTokens;
+                    _costUsd = u.CostUsd ?? 0;
+                    _usageKnown = true;
+                    break;
+                case ChatStreamEvent.Done done:
+                    _finishReason = done.FinishReason;
+                    break;
+            }
+        }
+
+        private void Publish<T>(string eventName, T payload)
+        {
+            if (_teeToThread)
+                _bus.Publish(_threadId, new ThreadSseEvent(eventName, JsonSerializer.Serialize(payload, SharpClawJson.Options)));
+        }
+
+        private LlmCallOutcome Succeeded() => new()
+        {
+            Status = LlmCallStatus.Ok,
+            PromptTokens = _promptTokens,
+            CompletionTokens = _completionTokens,
+            CostUsd = _costUsd,
+            UsageKnown = _usageKnown,
+            LatencyMs = ElapsedMs,
+            TtftMs = _ttftMs,
+        };
+
+        private LlmCallOutcome Failed(ProviderException pex) => Succeeded() with
+        {
+            Status = LlmCallStatus.Error,
+            ErrorCode = pex.Kind == ProviderErrorKind.Timeout ? ErrorCodes.ProviderTimeout : ErrorCodes.ProviderError,
+            ErrorDetail = pex.Message,
+        };
+
+        private async Task WriteAsync(string text, CancellationToken ct)
+        {
+            var bytes = Encoding.UTF8.GetBytes(text);
+            await _response.Body.WriteAsync(bytes, ct);
+            await _response.Body.FlushAsync(ct);
+        }
     }
 }
