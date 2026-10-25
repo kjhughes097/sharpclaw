@@ -278,6 +278,42 @@
       ]
     },
     {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Tool calls by tool and status (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 45
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool, status) (rate({__name__=\"sharpclaw.tool.calls\", agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "{{tool}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Approvals by status (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 45
+      },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate({__name__=\"sharpclaw.approvals\", agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
       "id": 11,
       "type": "logs",
       "title": "Gateway logs",
@@ -286,7 +322,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 35
+        "y": 53
       },
       "options": {
         "showTime": true,
