@@ -1,0 +1,209 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "title": "SharpClaw Gateway",
+  "uid": "sharpclaw-gateway",
+  "tags": ["sharpclaw"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "metrics",
+        "label": "Metrics (VictoriaMetrics)",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "logs",
+        "label": "Logs (Loki)",
+        "type": "datasource",
+        "query": "loki",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "agent",
+        "label": "Agent",
+        "type": "query",
+        "datasource": "${metrics}",
+        "query": "label_values(sharpclaw_llm_calls_total, agent)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      },
+      {
+        "name": "correlation_id",
+        "label": "correlation_id",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "About metric names",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Metric names follow the conventional OpenTelemetry -> Prometheus mapping (dots become underscores; counters get a `_total` suffix; histogram units add `_seconds`). Reconcile these against the **actual landed names** recorded in `docs/telemetry-notes.md` after running `scripts/telemetry-smoke-test`, and adjust the panel queries if VictoriaMetrics named them differently."
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "LLM calls by status (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 3 },
+      "targets": [
+        {
+          "expr": "sum by (status) (rate(sharpclaw_llm_calls_total{agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "{{status}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Cost today per agent (USD)",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 3 },
+      "targets": [
+        {
+          "expr": "sum by (agent) (increase(sharpclaw_llm_cost_usd_total{agent=~\"$agent\"}[24h]))",
+          "legendFormat": "{{agent}} spent"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Budget remaining per agent (USD)",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 11 },
+      "targets": [
+        {
+          "expr": "sharpclaw_budget_remaining_usd{agent=~\"$agent\"}",
+          "legendFormat": "{{agent}} remaining"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Call duration p50/p95 (s)",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 11 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(sharpclaw_llm_duration_seconds_bucket{agent=~\"$agent\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sharpclaw_llm_duration_seconds_bucket{agent=~\"$agent\"}[5m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Time to first token p50/p95 (s)",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(sharpclaw_llm_time_to_first_token_seconds_bucket{agent=~\"$agent\"}[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(sharpclaw_llm_time_to_first_token_seconds_bucket{agent=~\"$agent\"}[5m])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Tokens by type (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "targets": [
+        {
+          "expr": "sum by (type) (rate(sharpclaw_llm_tokens_total{agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Inbox depth",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 27 },
+      "targets": [
+        {
+          "expr": "sharpclaw_inbox_depth{agent=~\"$agent\"}",
+          "legendFormat": "{{agent}}"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Agent last-seen age (s)",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 27 },
+      "targets": [
+        {
+          "expr": "time() - sharpclaw_agent_last_seen{agent=~\"$agent\"}",
+          "legendFormat": "{{agent}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Budget rejections & auth failures (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 27 },
+      "targets": [
+        {
+          "expr": "sum by (agent) (rate(sharpclaw_budget_exceeded_total{agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "budget rejected {{agent}}"
+        },
+        {
+          "expr": "sum by (listener) (rate(sharpclaw_auth_failures_total[5m])) * 60",
+          "legendFormat": "auth fail {{listener}}"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "logs",
+      "title": "Gateway logs",
+      "datasource": "${logs}",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 35 },
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true },
+      "targets": [
+        {
+          "expr": "{service_name=\"sharpclaw-gateway\"} | correlation_id=`$correlation_id`",
+          "queryType": "range"
+        }
+      ]
+    }
+  ]
+}
