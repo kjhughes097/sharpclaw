@@ -61,6 +61,9 @@ public static class GatewayBuilder
         if (string.IsNullOrWhiteSpace(auth.AdminKey))
             throw new InvalidOperationException("Auth:AdminKey is required (set Auth__AdminKey).");
 
+        foreach (var validator in app.Services.GetServices<IStartupValidator>())
+            validator.Validate();
+
         app.UseMiddleware<ExceptionMiddleware>();
 
         // Health check: unauthenticated, available on both listeners.
