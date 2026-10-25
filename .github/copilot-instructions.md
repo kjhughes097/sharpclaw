@@ -3,10 +3,11 @@
 Personal multi-agent system. The **gateway is the single trust boundary**; agents are untrusted,
 network-isolated workloads that hold no provider keys and reach the world only via the gateway.
 
-- Source of truth for behaviour: [docs/sharpclaw-3.1-implementation-spec.md](../docs/sharpclaw-3.1-implementation-spec.md).
-  Build only what it describes; anything in its "Out of scope" list (tools/MCP, web UI,
-  agent-to-agent, retries, tracing, non-streaming completions, Postgres, Docker socket access…)
-  must not be added. If the spec is ambiguous, ask rather than guess.
+- Source of truth for behaviour: the phase specs, [docs/sharpclaw-3.1-implementation-spec.md](../docs/sharpclaw-3.1-implementation-spec.md)
+  and [docs/sharpclaw-3.2-implementation-spec.md](../docs/sharpclaw-3.2-implementation-spec.md) (3.2 wins where they differ).
+  Build only what they describe; anything in an "Out of scope" list (web UI, agent-to-agent,
+  retries, tracing, non-streaming completions, Postgres, Docker socket access, network or
+  code-execution tools…) must not be added. If the spec is ambiguous, ask rather than guess.
 - Setup, configuration and CLI usage: [README.md](../README.md). Telemetry backends and landed
   metric names: [docs/telemetry-notes.md](../docs/telemetry-notes.md).
 
@@ -67,6 +68,9 @@ Run a focused suite with `dotnet test tests/SharpClaw.Gateway.Tests --filter "Fu
 - **Database:** tables and columns are snake_case (set in `SharpClawDbContext`). Raw SQL must use
   snake_case names. Schema changes need a new EF migration (`dotnet ef migrations add <Name>
   --project src/SharpClaw.Gateway --output-dir Data/Migrations`); `llm_calls` is append-only.
+- **Agent tools:** every tool call goes through the agent's `ToolDispatcher` (risk → approval →
+  execute → report). **Never add a tool that executes code or shell commands**, and never read
+  agent policy from the writable workspace. See the 3.2 spec.
 - **Errors:** always return the single shape via `ApiResults.*` (`{ "error": { code, message } }`).
   Foreign/unowned ids return `404`, not `403`.
 - **JSON:** use `SharpClawJson.Options` (camelCase, string enums).

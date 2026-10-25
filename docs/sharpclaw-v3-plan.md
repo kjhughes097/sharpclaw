@@ -2,7 +2,7 @@
 
 Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in detail; later phases are deliberately rough and will be refined when reached.
 
-**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`.
+**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`.
 
 ## 1. Architecture
 
@@ -25,7 +25,7 @@ Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in d
 - **Gateway and API:** same codebase and process, with two Kestrel listeners (agent-facing, internal network only; client-facing, host/reverse proxy), separate route groups and separate auth schemes.
 - **Client ↔ API:** REST + JSON, SSE for streaming, OpenAPI spec.
 - **Agent ↔ gateway (LLM):** OpenAI-compatible `/v1/chat/completions` with SSE streaming. Gateway translates to OpenRouter (or Anthropic) behind it.
-- **Agent ↔ gateway (tools):** MCP over streamable HTTP, gateway as the MCP server/proxy.
+- **Tools:** the agent owns tool execution, policy, risk scoring and approval decisions (as Hermes Agent and GitHub Copilot do); the agent container is the sandbox. The gateway brokers approvals, audits every model-requested tool call and will perform network fetches for future network tools under fixed rules. (Revised in 3.2; MCP is no longer planned for agent tools.)
 - **Agent ↔ agent:** routed through the gateway as a durable DB-backed mailbox with at-least-once delivery. No external broker initially; keep it behind an `IMessageBus` interface (NATS JetStream is the likely upgrade path).
 - **Persistence:** SQLite via EF Core to start (Postgres possible later). Audit trail is append-only.
 - **Agent keys:** issued by the gateway, shown once, only a hash stored, revocable. Injected via the agent's env in Compose.
@@ -81,21 +81,29 @@ Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in d
 
 ---
 
-## Phase 3.2 — Tools through the gateway
+## Phase 3.2 — Agent tools with policy and approval
 
-**Goal:** agents can use tools, and the gateway controls which ones.
+> **Source of truth:** `sharpclaw-3.2-implementation-spec.md`. This section is a summary only.
+
+**Goal:** agents can use tools safely, with the decision made in the agent and every call audited.
 
 **Scope**
-- Gateway as MCP server/proxy (streamable HTTP)
-- Per-agent tool allow-lists (stored as agent config)
-- Policy engine v1 behind an interface: rule-based allow/deny per agent, tool and arguments
-- Audit log of every tool call (agent, tool, arguments, result, decision)
-- First tools: a small file/workspace tool and one simple external tool
-- Loop and depth limits for the agent loop
+- Tool calling through the gateway's OpenAI-compatible `/v1/chat/completions`
+- Agent-owned policy: tools and an allowed risk level from read-only config; each call scored from
+  its arguments (`low`/`medium`/`high`/`critical`); hardline blocklist; taint tracking; optional
+  smart mode (auxiliary LLM scores uncertain calls)
+- Human approval when the risk is above the allowed level, brokered by the gateway to the CLI
+  (pulled forward from 3.4); deny when nobody can answer or after a timeout
+- Workspace tools only (list, read, write, delete); no code or shell execution
+- Audit of every tool call (gateway records what the model requested; the agent reports outcomes)
+- Loop limits (agent iteration cap; gateway backstop)
+
+**Deferred:** network tools (`download_to_workspace`, `http_fetch`) — designed in the 3.2 spec,
+built in a later phase, with the gateway performing fetches under fixed rules.
 
 **Exit criteria**
 - An agent completes a multi-step task using tools.
-- A tool outside the allow-list is denied and the denial is recorded.
+- A call above the allowed risk prompts the user and runs only if approved; denials are recorded.
 
 ---
 
@@ -118,10 +126,10 @@ Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in d
 
 ## Phase 3.4 — Controls *(outline)*
 
-- Human approval: gateway pauses a risky tool call until approved in the UI
+- Human approval in the UI (the CLI flow lands in 3.2)
 - Per-thread budgets, rate limits, global kill switch
 - Richer policy rules
-- Egress-style tools mediated by the gateway (e.g. web fetch with allow-lists)
+- Network tools mediated by the gateway (design agreed in the 3.2 spec)
 
 ## Phase 3.5 — Agent-to-agent messaging *(outline)*
 
