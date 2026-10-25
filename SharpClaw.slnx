@@ -7,6 +7,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SharpClaw.Agent.Tests/SharpClaw.Agent.Tests.csproj" />
+    <Project Path="tests/SharpClaw.Cli.Tests/SharpClaw.Cli.Tests.csproj" />
     <Project Path="tests/SharpClaw.Gateway.Tests/SharpClaw.Gateway.Tests.csproj" />
   </Folder>
 </Solution>
