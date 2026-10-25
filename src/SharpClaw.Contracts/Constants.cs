@@ -21,6 +21,7 @@ public static class Roles
     public const string System = "system";
     public const string User = "user";
     public const string Assistant = "assistant";
+    public const string Tool = "tool";
 }
 
 /// <summary>Message statuses.</summary>
@@ -39,4 +40,11 @@ public static class LlmCallStatus
     public const string Error = "error";
     public const string Cancelled = "cancelled";
     public const string Rejected = "rejected";
+}
+
+/// <summary>Why an LLM call was made (header <c>X-SharpClaw-Purpose</c>).</summary>
+public static class LlmCallPurpose
+{
+    public const string Chat = "chat";
+    public const string RiskAssessment = "risk_assessment";
 }

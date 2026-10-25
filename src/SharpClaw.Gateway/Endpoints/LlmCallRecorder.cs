@@ -38,11 +38,14 @@ public sealed class LlmCallRecorder
     private readonly Guid _threadId;
     private readonly Guid _correlationId;
     private readonly DateTime _startedAt;
+    private readonly string _purpose;
 
     public LlmCallRecorder(
         SharpClawDbContext db, GatewayMetrics metrics, ILogger logger,
-        AuthenticatedAgent agent, Guid threadId, Guid correlationId, DateTime startedAt)
+        AuthenticatedAgent agent, Guid threadId, Guid correlationId, DateTime startedAt,
+        string purpose = LlmCallPurpose.Chat)
     {
+        _purpose = purpose;
         _db = db;
         _metrics = metrics;
         _logger = logger;
@@ -74,6 +77,7 @@ public sealed class LlmCallRecorder
             TtftMs = outcome.TtftMs,
             ErrorCode = outcome.ErrorCode,
             ErrorDetail = Truncate(outcome.ErrorDetail, 200),
+            Purpose = _purpose,
             CreatedAt = _startedAt,
         };
         _db.LlmCalls.Add(row);
@@ -87,8 +91,8 @@ public sealed class LlmCallRecorder
         }
 
         _logger.LogInformation(
-            "llm call finished: status={Status} model={Model} prompt_tokens={PromptTokens} completion_tokens={CompletionTokens} cost_usd={CostUsd} usage_known={UsageKnown} latency_ms={LatencyMs} ttft_ms={TtftMs} error_code={ErrorCode}",
-            outcome.Status, _agent.Model, outcome.PromptTokens, outcome.CompletionTokens, cost,
+            "llm call finished: status={Status} purpose={Purpose} model={Model} prompt_tokens={PromptTokens} completion_tokens={CompletionTokens} cost_usd={CostUsd} usage_known={UsageKnown} latency_ms={LatencyMs} ttft_ms={TtftMs} error_code={ErrorCode}",
+            outcome.Status, _purpose, _agent.Model, outcome.PromptTokens, outcome.CompletionTokens, cost,
             outcome.UsageKnown, outcome.LatencyMs, outcome.TtftMs, outcome.ErrorCode);
 
         _metrics.RecordCall(_agent.Name, _agent.Model, outcome.Status);

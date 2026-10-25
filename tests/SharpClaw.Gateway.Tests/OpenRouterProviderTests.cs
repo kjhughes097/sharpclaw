@@ -176,6 +176,56 @@ public class OpenRouterProviderTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Collect(Provider(handler), cts.Token));
     }
 
+    [Fact]
+    public async Task Tool_call_fragments_are_accumulated_into_complete_calls()
+    {
+        var handler = FakeHandler.Ok(Sse(
+            """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"workspace_read","arguments":""}}]},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"pa"}}]},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_b","function":{"name":"workspace_list","arguments":"{}"}}]},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"th\":\"a.md\"}"}}]},"finish_reason":null}]}""",
+            """{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}""",
+            "[DONE]"));
+
+        var events = await Collect(Provider(handler));
+
+        var calls = events.OfType<ChatStreamEvent.ToolCall>().ToList();
+        Assert.Equal(2, calls.Count);
+        Assert.Equal(new ChatStreamEvent.ToolCall("call_a", "workspace_read", """{"path":"a.md"}"""), calls[0]);
+        Assert.Equal(new ChatStreamEvent.ToolCall("call_b", "workspace_list", "{}"), calls[1]);
+        Assert.Equal("tool_calls", Assert.IsType<ChatStreamEvent.Done>(events[^1]).FinishReason);
+    }
+
+    [Fact]
+    public async Task Tools_and_tool_messages_are_sent_upstream()
+    {
+        var handler = FakeHandler.Ok(Sse("[DONE]"));
+        var request = new ProviderChatRequest("m", new[]
+            {
+                new ProviderChatMessage("user", "go"),
+                new ProviderChatMessage("assistant", null, new[] { new ProviderToolCall("call_1", "workspace_read", "{\"path\":\"a\"}") }),
+                new ProviderChatMessage("tool", "{\"ok\":true}", ToolCallId: "call_1"),
+            },
+            Tools: new[] { new ProviderTool("workspace_read", "Read a file", """{"type":"object"}""") },
+            ToolChoice: "auto");
+
+        await foreach (var _ in Provider(handler).StreamAsync(request, CancellationToken.None)) { }
+
+        using var body = JsonDocument.Parse(handler.LastRequest!.Body);
+        var root = body.RootElement;
+        var tool = root.GetProperty("tools")[0];
+        Assert.Equal("function", tool.GetProperty("type").GetString());
+        Assert.Equal("workspace_read", tool.GetProperty("function").GetProperty("name").GetString());
+        Assert.Equal("object", tool.GetProperty("function").GetProperty("parameters").GetProperty("type").GetString());
+        Assert.Equal("auto", root.GetProperty("tool_choice").GetString());
+
+        var messages = root.GetProperty("messages");
+        Assert.Equal(JsonValueKind.Null, messages[1].GetProperty("content").ValueKind);
+        Assert.Equal("call_1", messages[1].GetProperty("tool_calls")[0].GetProperty("id").GetString());
+        Assert.Equal("{\"path\":\"a\"}", messages[1].GetProperty("tool_calls")[0].GetProperty("function").GetProperty("arguments").GetString());
+        Assert.Equal("call_1", messages[2].GetProperty("tool_call_id").GetString());
+    }
+
     // ---- fakes ----
 
     private sealed record CapturedRequest(Uri Uri, string? Authorization, string? Title, string Body);

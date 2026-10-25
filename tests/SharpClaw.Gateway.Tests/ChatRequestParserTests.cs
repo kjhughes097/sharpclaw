@@ -49,4 +49,44 @@ public class ChatRequestParserTests
         Assert.Null(req);
         Assert.NotNull(error);
     }
+
+    [Fact]
+    public void Tools_tool_choice_and_tool_messages_are_parsed()
+    {
+        var (req, error) = Parse("""
+        { "stream": true, "tool_choice": "auto",
+          "tools": [ { "type": "function", "function": { "name": "workspace_read", "description": "Read",
+                       "parameters": { "type": "object" } } } ],
+          "messages": [
+            { "role": "user", "content": "read it" },
+            { "role": "assistant", "content": null,
+              "tool_calls": [ { "id": "call_1", "type": "function", "function": { "name": "workspace_read", "arguments": "{}" } } ] },
+            { "role": "tool", "tool_call_id": "call_1", "content": "{\"ok\":true}" } ] }
+        """);
+
+        Assert.Null(error);
+        var tool = Assert.Single(req!.Tools!);
+        Assert.Equal("workspace_read", tool.Name);
+        Assert.Equal("Read", tool.Description);
+        Assert.Contains("object", tool.ParametersJson);
+        Assert.Equal("auto", req.ToolChoice);
+        Assert.Null(req.Messages[1].Content);
+        Assert.Equal("call_1", Assert.Single(req.Messages[1].ToolCalls!).Id);
+        Assert.Equal("call_1", req.Messages[2].ToolCallId);
+    }
+
+    [Theory]
+    [InlineData("""{ "stream": true, "tool_choice": "required", "messages": [ { "role": "user", "content": "x" } ] }""")]
+    [InlineData("""{ "stream": true, "tools": {}, "messages": [ { "role": "user", "content": "x" } ] }""")]
+    [InlineData("""{ "stream": true, "tools": [ { "type": "function", "function": { "name": "has space" } } ], "messages": [ { "role": "user", "content": "x" } ] }""")]
+    [InlineData("""{ "stream": true, "tools": [ { "type": "function", "function": { "name": "ok", "parameters": "x" } } ], "messages": [ { "role": "user", "content": "x" } ] }""")]
+    [InlineData("""{ "stream": true, "messages": [ { "role": "tool", "content": "x" } ] }""")]
+    [InlineData("""{ "stream": true, "messages": [ { "role": "assistant", "content": null } ] }""")]
+    [InlineData("""{ "stream": true, "messages": [ { "role": "assistant", "content": null, "tool_calls": [ { "id": "c" } ] } ] }""")]
+    public void Invalid_tool_requests_return_an_error(string json)
+    {
+        var (req, error) = Parse(json);
+        Assert.Null(req);
+        Assert.NotNull(error);
+    }
 }

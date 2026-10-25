@@ -65,5 +65,9 @@ public class LlmCall
     public int? TtftMs { get; set; }
     public string? ErrorCode { get; set; }
     public string? ErrorDetail { get; set; }
+
+    /// <summary><c>chat</c> or <c>risk_assessment</c> (smart-mode classification).</summary>
+    public string Purpose { get; set; } = "chat";
+
     public DateTime CreatedAt { get; set; }
 }

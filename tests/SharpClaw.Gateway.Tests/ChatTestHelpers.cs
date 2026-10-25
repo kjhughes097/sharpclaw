@@ -8,8 +8,7 @@ public static class ChatTestHelpers
 {
     public static async Task<HttpResponseMessage> ChatAsync(
         this GatewayFixture fx, string token, Guid correlationId, Guid threadId,
-        string userText = "hello", bool stream = true, bool includeTools = false,
-        string? model = "ignored")
+        string userText = "hello", bool stream = true, string? model = "ignored")
     {
         var c = fx.AgentClient(token);
         var payload = new Dictionary<string, object?>
@@ -18,9 +17,6 @@ public static class ChatTestHelpers
             ["stream"] = stream,
             ["messages"] = new[] { new { role = "user", content = userText } },
         };
-        if (includeTools)
-            payload["tools"] = Array.Empty<object>();
-
         var req = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions")
         {
             Content = JsonContent.Create(payload),
@@ -31,6 +27,52 @@ public static class ChatTestHelpers
         var resp = await c.SendAsync(req);
         c.Dispose();
         return resp;
+    }
+
+    /// <summary>Sends an arbitrary chat payload (e.g. with tools) and buffers the whole response.</summary>
+    public static async Task<HttpResponseMessage> ChatRawAsync(
+        this GatewayFixture fx, string token, Guid correlationId, Guid threadId, object payload,
+        string? purpose = null)
+    {
+        using var c = fx.AgentClient(token);
+        var req = new HttpRequestMessage(HttpMethod.Post, "/v1/chat/completions") { Content = JsonContent.Create(payload) };
+        req.Headers.TryAddWithoutValidation("X-Correlation-Id", correlationId.ToString());
+        req.Headers.TryAddWithoutValidation("X-Thread-Id", threadId.ToString());
+        if (purpose is not null)
+            req.Headers.TryAddWithoutValidation("X-SharpClaw-Purpose", purpose);
+        return await c.SendAsync(req);
+    }
+
+    /// <summary>A complete tool call found in chat SSE output.</summary>
+    public sealed record StreamedToolCall(int Index, string Id, string Name, string Arguments);
+
+    /// <summary>Extracts tool calls and the finish reason from chat SSE output.</summary>
+    public static (List<StreamedToolCall> ToolCalls, string? FinishReason) ParseToolCalls(string body)
+    {
+        var calls = new List<StreamedToolCall>();
+        string? finish = null;
+        foreach (var raw in body.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (!line.StartsWith("data:")) continue;
+            var data = line[5..].Trim();
+            if (data == "[DONE]") continue;
+            using var doc = JsonDocument.Parse(data);
+            if (!doc.RootElement.TryGetProperty("choices", out var choices)) continue;
+            foreach (var ch in choices.EnumerateArray())
+            {
+                if (ch.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
+                    finish = fr.GetString();
+                if (ch.TryGetProperty("delta", out var delta) && delta.TryGetProperty("tool_calls", out var tcs))
+                    foreach (var tc in tcs.EnumerateArray())
+                    {
+                        var fn = tc.GetProperty("function");
+                        calls.Add(new StreamedToolCall(tc.GetProperty("index").GetInt32(), tc.GetProperty("id").GetString()!,
+                            fn.GetProperty("name").GetString()!, fn.GetProperty("arguments").GetString()!));
+                    }
+            }
+        }
+        return (calls, finish);
     }
 
     /// <summary>Parses chat SSE output: reconstructed content, whether a usage chunk was present, model.</summary>

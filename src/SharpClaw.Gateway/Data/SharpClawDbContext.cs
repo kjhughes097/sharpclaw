@@ -77,6 +77,7 @@ public class SharpClawDbContext : DbContext
         {
             e.ToTable("llm_calls");
             e.HasKey(x => x.Id);
+            e.Property(x => x.Purpose).HasDefaultValue("chat");
             e.HasIndex(x => new { x.AgentId, x.CreatedAt });
             e.HasIndex(x => x.CorrelationId);
         });

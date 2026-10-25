@@ -37,6 +37,11 @@ public static class ChatEndpoints
         if (!TryHeaderGuid(http, "X-Thread-Id", out var threadId))
             return ApiResults.ValidationFailed("X-Thread-Id header is required and must be a GUID.");
 
+        var purposeHeader = http.Request.Headers["X-SharpClaw-Purpose"].ToString();
+        var purpose = string.IsNullOrEmpty(purposeHeader) ? LlmCallPurpose.Chat : purposeHeader;
+        if (purpose is not (LlmCallPurpose.Chat or LlmCallPurpose.RiskAssessment))
+            return ApiResults.ValidationFailed("X-SharpClaw-Purpose must be 'chat' or 'risk_assessment'.");
+
         using var scope = logger.BeginScope(new Dictionary<string, object>
         {
             ["thread_id"] = threadId.ToString(),
@@ -64,7 +69,7 @@ public static class ChatEndpoints
                 return parseError;
 
             var now = time.GetUtcNow().UtcDateTime;
-            var recorder = new LlmCallRecorder(db, metrics, logger, agent, threadId, correlationId, now);
+            var recorder = new LlmCallRecorder(db, metrics, logger, agent, threadId, correlationId, now, purpose);
 
             var spent = await AgentQueries.TodaySpendAsync(db, time, agent.Id, ct);
             if (spent >= agent.DailyBudgetUsd)
@@ -76,7 +81,9 @@ public static class ChatEndpoints
                 return BudgetExceeded(now);
             }
 
-            var stream = new ChatStream(http.Response, bus, recorder, logger, agent.Model, threadId, correlationId);
+            // Risk-assessment calls are internal to the agent: never show their output to the user.
+            var teeToThread = purpose == LlmCallPurpose.Chat;
+            var stream = new ChatStream(http.Response, bus, recorder, logger, agent.Model, threadId, correlationId, teeToThread);
             return await stream.RunAsync(provider, parsed!.ToProviderRequest(agent.Model), ct);
         }
     }
@@ -126,7 +133,9 @@ public static class ChatEndpoints
         private readonly Guid _threadId;
         private readonly Guid _correlationId;
         private readonly ChatChunkWriter _writer;
+        private readonly bool _teeToThread;
         private readonly Stopwatch _sw = Stopwatch.StartNew();
+        private readonly List<ChatStreamEvent.ToolCall> _toolCalls = new();
 
         private int _promptTokens;
         private int _completionTokens;
@@ -136,8 +145,9 @@ public static class ChatEndpoints
         private string _finishReason = "stop";
 
         public ChatStream(HttpResponse response, IThreadEventBus bus, LlmCallRecorder recorder, ILogger logger,
-            string model, Guid threadId, Guid correlationId)
+            string model, Guid threadId, Guid correlationId, bool teeToThread)
         {
+            _teeToThread = teeToThread;
             _response = response;
             _bus = bus;
             _recorder = recorder;
@@ -218,9 +228,14 @@ public static class ChatEndpoints
                 case ChatStreamEvent.Delta d:
                     _ttftMs ??= ElapsedMs;
                     await WriteAsync(_writer.ContentChunk(d.Text), ct);
-                    _bus.Publish(_threadId, new ThreadSseEvent(
-                        SseEventNames.Delta,
-                        JsonSerializer.Serialize(new DeltaEvent(_correlationId, d.Text), SharpClawJson.Options)));
+                    Publish(SseEventNames.Delta, new DeltaEvent(_correlationId, d.Text));
+                    break;
+                case ChatStreamEvent.ToolCall call:
+                    _ttftMs ??= ElapsedMs;
+                    await WriteAsync(_writer.ToolCallChunk(_toolCalls.Count, call.Id, call.Name, call.ArgumentsJson), ct);
+                    _toolCalls.Add(call);
+                    // Only the tool name is published: arguments may contain content.
+                    Publish(SseEventNames.ToolRequested, new ToolRequestedEvent(_correlationId, call.Id, call.Name));
                     break;
                 case ChatStreamEvent.Usage u:
                     _promptTokens = u.PromptTokens;
@@ -232,6 +247,12 @@ public static class ChatEndpoints
                     _finishReason = done.FinishReason;
                     break;
             }
+        }
+
+        private void Publish<T>(string eventName, T payload)
+        {
+            if (_teeToThread)
+                _bus.Publish(_threadId, new ThreadSseEvent(eventName, JsonSerializer.Serialize(payload, SharpClawJson.Options)));
         }
 
         private LlmCallOutcome Succeeded() => new()

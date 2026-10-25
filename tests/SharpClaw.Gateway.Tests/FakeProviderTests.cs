@@ -111,4 +111,42 @@ public class FakeProviderTests
         });
         Assert.Equal("part", string.Concat(collected));
     }
+
+    [Fact]
+    public async Task Script_rule_can_return_tool_calls()
+    {
+        var script = FakeScript.Parse("""
+        { "rules": [ { "match": "^do it$", "toolCalls": [ { "name": "workspace_read", "arguments": { "path": "a.md" } } ] } ] }
+        """);
+        var events = await Collect(new FakeProvider(script, 0.000001), Req("do it"));
+
+        Assert.Empty(events.OfType<ChatStreamEvent.Delta>());
+        var call = Assert.Single(events.OfType<ChatStreamEvent.ToolCall>());
+        Assert.Equal("workspace_read", call.Name);
+        Assert.Equal("""{"path":"a.md"}""", call.ArgumentsJson);
+        Assert.StartsWith("call_", call.Id);
+        Assert.Equal("tool_calls", Assert.IsType<ChatStreamEvent.Done>(events[^1]).FinishReason);
+    }
+
+    [Fact]
+    public async Task Rules_match_the_last_message_and_can_filter_by_role()
+    {
+        var script = FakeScript.Parse("""
+        { "rules": [ { "match": "ok", "role": "tool", "response": "after tool" } ] }
+        """);
+        var provider = new FakeProvider(script, 0.000001);
+
+        // Last message is a user message containing "ok": the tool-only rule must not match.
+        var userOnly = await Collect(provider, Req("ok"));
+        Assert.Equal("Fake reply to: ok", string.Concat(userOnly.OfType<ChatStreamEvent.Delta>().Select(d => d.Text)));
+
+        var withTool = new ProviderChatRequest("m", new[]
+        {
+            new ProviderChatMessage("user", "go"),
+            new ProviderChatMessage("assistant", null, new[] { new ProviderToolCall("c1", "t", "{}") }),
+            new ProviderChatMessage("tool", "{\"ok\":true}", ToolCallId: "c1"),
+        });
+        var afterTool = await Collect(provider, withTool);
+        Assert.Equal("after tool", string.Concat(afterTool.OfType<ChatStreamEvent.Delta>().Select(d => d.Text)));
+    }
 }

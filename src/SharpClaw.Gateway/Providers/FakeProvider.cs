@@ -6,8 +6,10 @@ namespace SharpClaw.Gateway.Providers;
 
 /// <summary>
 /// A deterministic, offline provider for tests: echoes the last user message, supports a JSON
-/// script of rules (responses, chunking, delays, usage and simulated errors). Throws
-/// <see cref="ProviderException"/> exactly as the real provider would.
+/// script of rules (responses, tool calls, chunking, delays, usage and simulated errors). Rules
+/// match the request's last message, so a script can drive a multi-step tool flow: one rule matches
+/// the user's text and returns a tool call, the next matches the tool result (<c>"role": "tool"</c>).
+/// Throws <see cref="ProviderException"/> exactly as the real provider would.
 /// </summary>
 public sealed class FakeProvider : IChatProvider
 {
@@ -34,10 +36,15 @@ public sealed class FakeProvider : IChatProvider
         ProviderChatRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         var lastUser = request.Messages.LastOrDefault(m => m.Role == "user")?.Content ?? "";
-        var totalPromptChars = request.Messages.Sum(m => m.Content.Length);
-        var rule = _script.Rules.FirstOrDefault(r => r.Match.IsMatch(lastUser));
+        var last = request.Messages.LastOrDefault();
+        var totalPromptChars = request.Messages.Sum(PromptChars);
+        var rule = _script.Rules.FirstOrDefault(r =>
+            last is not null &&
+            (r.Role is null || r.Role == last.Role) &&
+            r.Match.IsMatch(last.Content ?? ""));
 
-        var response = rule?.Response ?? $"Fake reply to: {lastUser}";
+        // A rule that only returns tool calls streams no text.
+        var response = rule?.Response ?? (rule is { ToolCalls.Count: > 0 } ? "" : $"Fake reply to: {lastUser}");
         var chunkSize = Math.Max(1, rule?.ChunkSize ?? 8);
         var delayMs = rule?.DelayMs ?? 0;
 
@@ -76,19 +83,24 @@ public sealed class FakeProvider : IChatProvider
                 throw new ProviderException(ProviderErrorKind.Upstream, null, "fake midstream error");
         }
 
+        var toolCalls = rule?.ToolCalls ?? Array.Empty<FakeToolCall>();
+        for (var n = 0; n < toolCalls.Count; n++)
+            yield return new ChatStreamEvent.ToolCall($"call_{Guid.NewGuid():N}", toolCalls[n].Name, toolCalls[n].ArgumentsJson);
+        var completionChars = response.Length + toolCalls.Sum(t => t.Name.Length + t.ArgumentsJson.Length);
+
         // Usage.
         if (rule is null)
         {
             // Default usage.
             var prompt = CeilDiv(totalPromptChars, 4);
-            var completion = CeilDiv(response.Length, 4);
+            var completion = CeilDiv(completionChars, 4);
             var cost = (prompt + completion) * _costPerToken;
             yield return new ChatStreamEvent.Usage(prompt, completion, cost);
         }
         else if (!rule.UsageProvided)
         {
             var prompt = CeilDiv(totalPromptChars, 4);
-            var completion = CeilDiv(response.Length, 4);
+            var completion = CeilDiv(completionChars, 4);
             var cost = (prompt + completion) * _costPerToken;
             yield return new ChatStreamEvent.Usage(prompt, completion, cost);
         }
@@ -99,8 +111,11 @@ public sealed class FakeProvider : IChatProvider
         }
         // else: usage explicitly null -> emit no Usage event (usage_known = false).
 
-        yield return new ChatStreamEvent.Done("stop");
+        yield return new ChatStreamEvent.Done(toolCalls.Count > 0 ? "tool_calls" : "stop");
     }
+
+    private static int PromptChars(ProviderChatMessage m) =>
+        (m.Content?.Length ?? 0) + (m.ToolCalls?.Sum(t => t.Name.Length + t.ArgumentsJson.Length) ?? 0);
 
     private static int CeilDiv(int a, int b) => (a + b - 1) / b;
 }

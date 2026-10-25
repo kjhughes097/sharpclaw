@@ -175,6 +175,13 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("prompt_tokens");
 
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("chat")
+                        .HasColumnName("purpose");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("TEXT")

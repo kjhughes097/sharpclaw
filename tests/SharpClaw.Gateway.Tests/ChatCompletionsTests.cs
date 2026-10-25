@@ -56,16 +56,13 @@ public class ChatCompletionsTests
     }
 
     [Fact]
-    public async Task Stream_false_and_tools_rejected()
+    public async Task Stream_false_rejected()
     {
         var (fx, agent, token, thread, corr) = await SetupAsync();
         await using var _ = fx;
 
         var noStream = await fx.ChatAsync(token, corr, thread, stream: false);
         Assert.Equal(HttpStatusCode.BadRequest, noStream.StatusCode);
-
-        var withTools = await fx.ChatAsync(token, corr, thread, includeTools: true);
-        Assert.Equal(HttpStatusCode.BadRequest, withTools.StatusCode);
     }
 
     [Fact]
