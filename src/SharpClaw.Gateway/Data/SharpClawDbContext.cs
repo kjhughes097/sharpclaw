@@ -31,6 +31,8 @@ public class SharpClawDbContext : DbContext
                     prop.SetValueConverter(utc);
                 else if (prop.ClrType == typeof(DateTime?))
                     prop.SetValueConverter(utcNullable);
+
+                prop.SetColumnName(ToSnakeCase(prop.GetColumnName()));
             }
         }
 
@@ -78,5 +80,25 @@ public class SharpClawDbContext : DbContext
             e.HasIndex(x => new { x.AgentId, x.CreatedAt });
             e.HasIndex(x => x.CorrelationId);
         });
+    }
+
+    private static string ToSnakeCase(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return name;
+        var sb = new System.Text.StringBuilder(name.Length + 8);
+        for (var i = 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (char.IsUpper(c))
+            {
+                if (i > 0) sb.Append('_');
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
     }
 }

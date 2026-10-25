@@ -34,11 +34,11 @@ public static class GatewayBuilder
 
         builder.Services.AddSingleton<SqlitePragmaInterceptor>();
 
-        GatewayServices.Register(builder);
-
-        // Test overrides (config sources and service replacements) apply here, before we
-        // read listener ports / database path and configure Kestrel and the DbContext.
+        // Test overrides (config sources and service replacements) apply here, before we read
+        // provider/listener/database settings and register providers, Kestrel and the DbContext.
         configure?.Invoke(builder);
+
+        GatewayServices.Register(builder);
 
         var listeners = builder.Configuration.GetSection(ListenerOptions.Section).Get<ListenerOptions>() ?? new ListenerOptions();
         var dbOptions = builder.Configuration.GetSection(DatabaseOptions.Section).Get<DatabaseOptions>() ?? new DatabaseOptions();

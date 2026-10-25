@@ -11,6 +11,7 @@ obj/
 
 # Secrets and local env
 .env
+**/appsettings.Development.json
 
 # SQLite database files
 *.db

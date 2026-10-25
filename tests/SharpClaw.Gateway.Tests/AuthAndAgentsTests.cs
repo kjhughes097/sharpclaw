@@ -132,7 +132,7 @@ public class AuthAndAgentsTests
         var (agent, _) = await fx.CreateAgentAsync();
         using var admin = fx.Admin();
 
-        var expired = DateTime.UtcNow.AddMinutes(-1);
+        var expired = fx.Time.GetUtcNow().UtcDateTime.AddMinutes(-1);
         var resp = await admin.PostAsJsonAsync($"/api/agents/{agent.Name}/tokens",
             new CreateTokenRequest(expired), SharpClawJson.Options);
         var created = await resp.Content.ReadFromJsonAsync<CreatedTokenResponse>(SharpClawJson.Options);
