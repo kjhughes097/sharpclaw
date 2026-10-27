@@ -45,4 +45,9 @@ public interface ICliGateway
     Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision);
 
     Task<ApprovalListResponse> ListApprovalsAsync(string? status, string? agent);
+
+    Task<UserAdminDto> CreateUserAsync(string name, string password);
+    Task<UserListResponse> ListUsersAsync();
+    Task SetUserPasswordAsync(string name, string password);
+    Task<UserAdminDto> SetUserDisabledAsync(string name, bool disabled);
 }

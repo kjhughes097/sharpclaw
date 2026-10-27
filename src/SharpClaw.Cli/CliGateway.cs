@@ -133,6 +133,32 @@ public sealed class CliGateway : ICliGateway, IDisposable
         return await ReadAsync<ApprovalListResponse>(resp);
     }
 
+    public async Task<UserAdminDto> CreateUserAsync(string name, string password)
+    {
+        using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/users", new CreateUserRequest(name, password), SharpClawJson.Options);
+        return (await ReadAsync<CreatedUserResponse>(resp)).User;
+    }
+
+    public async Task<UserListResponse> ListUsersAsync()
+    {
+        using var resp = await _http.GetAsync($"{_baseUrl}/api/users");
+        return await ReadAsync<UserListResponse>(resp);
+    }
+
+    public async Task SetUserPasswordAsync(string name, string password)
+    {
+        using var resp = await _http.PutAsJsonAsync($"{_baseUrl}/api/users/{Uri.EscapeDataString(name)}/password",
+            new SetPasswordRequest(password), SharpClawJson.Options);
+        await EnsureAsync(resp);
+    }
+
+    public async Task<UserAdminDto> SetUserDisabledAsync(string name, bool disabled)
+    {
+        using var resp = await _http.PatchAsJsonAsync($"{_baseUrl}/api/users/{Uri.EscapeDataString(name)}",
+            new UpdateUserRequest(disabled), SharpClawJson.Options);
+        return await ReadAsync<UserAdminDto>(resp);
+    }
+
     private static async Task<T> ReadAsync<T>(HttpResponseMessage resp)
     {
         await EnsureAsync(resp);

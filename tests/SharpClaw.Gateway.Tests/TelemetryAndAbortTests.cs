@@ -135,7 +135,7 @@ public class TelemetryAndAbortTests
         Assert.False(call.UsageKnown);
     }
 
-    private sealed class CapturingLoggerProvider : ILoggerProvider
+    internal sealed class CapturingLoggerProvider : ILoggerProvider
     {
         private readonly ConcurrentQueue<string> _logs;
         public CapturingLoggerProvider(ConcurrentQueue<string> logs) => _logs = logs;

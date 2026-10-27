@@ -45,9 +45,18 @@ secrets or network required.
 - **Two listeners, one process.** The client API (default port 8080) and the agent API (default
   port 8081) are separated by the **local port the connection arrived on**, never the `Host`
   header. A request to the wrong listener returns `404`.
-- **Auth.** The client API uses an admin key (`Authorization: Bearer <admin key>`, constant-time
-  compared). The agent API uses per-agent tokens (`sc_…`); only a SHA-256 hash and an 8-char
-  prefix are stored, and the full value is shown exactly once at creation.
+- **Auth.** The client API accepts the admin key (`Authorization: Bearer <admin key>`,
+  constant-time compared; used by the CLI and scripts) or a browser session cookie. The agent API
+  uses per-agent tokens (`sc_…`); only a SHA-256 hash and an 8-char prefix are stored, and the full
+  value is shown exactly once at creation.
+- **Browser login.** `POST /api/auth/login` with a username and password (PBKDF2-SHA256, 600,000
+  iterations; at least 12 characters) sets an `HttpOnly`, `SameSite=Strict` session cookie and
+  returns a CSRF token. Cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` need a same-origin
+  `Origin` (or `Referer`) and `X-CSRF-Token`; otherwise `403 csrf_failed`. Failed logins are
+  rate limited per username and per IP (`429 rate_limited`). Sessions slide (7 days idle, 30 days
+  absolute). `/api/users*` accepts only the admin key. TLS is terminated by a reverse proxy; set
+  `Auth:ForwardedHeaders:*` so the gateway trusts its forwarded headers, and `Auth:AllowedOrigins`
+  if the browser's origin differs from what the gateway sees. No CORS.
 - **Chat completions.** `POST /v1/chat/completions` is OpenAI-compatible and streaming only. The
   gateway always uses the agent's configured model, enforces the daily budget before streaming,
   records every call in `llm_calls`, and tees content deltas to the client's SSE stream.
@@ -86,6 +95,13 @@ ASP.NET `__` syntax).
 | `Listeners:AgentPort` | `8081` | Agent API; never published to the host |
 | `Database:Path` | `/data/sharpclaw.db` | SQLite file (WAL, `busy_timeout=5000`) |
 | `Auth:AdminKey` | (required) | `Auth__AdminKey`; the gateway refuses to start if empty |
+| `Auth:Session:CookieName` | `sharpclaw_session` | |
+| `Auth:Session:CookieSecure` | `Auto` | `Auto` (Secure when the request is HTTPS), `Always`, `Never` |
+| `Auth:Session:IdleTimeoutHours` / `AbsoluteTimeoutDays` | `168` / `30` | Session lifetime |
+| `Auth:Password:Pbkdf2Iterations` | `600000` | Never lower; hashes are upgraded on login |
+| `Auth:Login:MaxFailures` / `WindowMinutes` | `5` / `15` | Login rate limit (per username and per IP) |
+| `Auth:AllowedOrigins` | empty | Extra browser origins accepted (reverse proxy); not CORS |
+| `Auth:ForwardedHeaders:Enabled` / `KnownProxies` | `false` / empty | Trust `X-Forwarded-*` from these proxies only |
 | `Provider:Type` | `OpenRouter` | `OpenRouter` or `Fake` |
 | `OpenRouter:BaseUrl` | `https://openrouter.ai/api/v1` | |
 | `OpenRouter:ApiKey` | (required for OpenRouter) | `OpenRouter__ApiKey` |
@@ -196,6 +212,10 @@ Re-run the `dotnet publish` line after pulling CLI changes. Without installing, 
 | `sharpclaw ask <agent> "<text>" [--unattended]` | One-shot chat; `--unattended` denies any approval at once |
 | `sharpclaw approvals list [--status pending] [--agent <name>]` | The approval queue |
 | `sharpclaw approvals approve <id>` / `approvals deny <id>` | Answer a pending approval from any terminal |
+| `sharpclaw users create <name> [--password-stdin]` | Create a browser user (prompts twice without echo) |
+| `sharpclaw users list` | Users and whether they are disabled |
+| `sharpclaw users set-password <name> [--password-stdin]` | Reset a password; signs out their sessions |
+| `sharpclaw users disable <name>` / `users enable <name>` | Disabling signs out their sessions |
 | `sharpclaw audit [--agent <name>] [--limit N]` | Recent LLM calls |
 | `sharpclaw audit tools [--agent <name>] [--limit N]` | Recent tool calls: status, decision, risk, taint |
 

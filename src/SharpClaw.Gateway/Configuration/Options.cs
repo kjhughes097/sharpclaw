@@ -18,7 +18,52 @@ public sealed class DatabaseOptions
 public sealed class AuthOptions
 {
     public const string Section = "Auth";
+    public const int MinPbkdf2Iterations = 600_000;
+
     public string AdminKey { get; set; } = "";
+    public SessionCookieOptions Session { get; set; } = new();
+    public PasswordOptions Password { get; set; } = new();
+    public LoginOptions Login { get; set; } = new();
+
+    /// <summary>
+    /// Extra origins accepted for cookie-authenticated requests (a reverse proxy whose public origin
+    /// differs from what the gateway sees). Not a CORS allow-list.
+    /// </summary>
+    public string[] AllowedOrigins { get; set; } = [];
+
+    public ForwardedHeadersSettings ForwardedHeaders { get; set; } = new();
+}
+
+public enum CookieSecureMode { Auto, Always, Never }
+
+public sealed class SessionCookieOptions
+{
+    public string CookieName { get; set; } = "sharpclaw_session";
+
+    /// <summary><c>Auto</c>: Secure when the request is HTTPS (after forwarded-header processing).</summary>
+    public CookieSecureMode CookieSecure { get; set; } = CookieSecureMode.Auto;
+
+    public int IdleTimeoutHours { get; set; } = 168;
+    public int AbsoluteTimeoutDays { get; set; } = 30;
+}
+
+public sealed class PasswordOptions
+{
+    public int Pbkdf2Iterations { get; set; } = AuthOptions.MinPbkdf2Iterations;
+}
+
+public sealed class LoginOptions
+{
+    public int MaxFailures { get; set; } = 5;
+    public int WindowMinutes { get; set; } = 15;
+}
+
+public sealed class ForwardedHeadersSettings
+{
+    public bool Enabled { get; set; }
+
+    /// <summary>Only these proxy addresses may set X-Forwarded-For/Proto/Host.</summary>
+    public string[] KnownProxies { get; set; } = [];
 }
 
 public sealed class ProviderOptions

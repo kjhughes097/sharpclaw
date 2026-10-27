@@ -14,6 +14,8 @@ public static class ErrorCodes
     public const string ProviderError = "provider_error";
     public const string ProviderTimeout = "provider_timeout";
     public const string ContextTooLarge = "context_too_large";
+    public const string CsrfFailed = "csrf_failed";
+    public const string RateLimited = "rate_limited";
     public const string InternalError = "internal_error";
 }
 

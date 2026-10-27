@@ -250,6 +250,51 @@ public class CliTests
         Assert.Equal(128000, gw.LastContextWindow);
     }
 
+    // ---- users (pre-3.3 §4.7) ----
+
+    [Fact]
+    public async Task Users_create_prompts_twice_without_echo()
+    {
+        var gw = new FakeGateway();
+        var prompts = new List<string>();
+        var output = new StringWriter();
+
+        await Commands.RunAsync(new[] { "users", "create", "kevin" }, gw, output, TextReader.Null, CancellationToken.None,
+            p => { prompts.Add(p); return "correct horse battery"; });
+
+        Assert.Equal(new[] { "Password: ", "Confirm password: " }, prompts);
+        Assert.Equal(("kevin", "correct horse battery"), Assert.Single(gw.CreatedUsers));
+        Assert.DoesNotContain("correct horse battery", output.ToString());
+    }
+
+    [Fact]
+    public async Task Users_create_rejects_mismatched_confirmation()
+    {
+        var gw = new FakeGateway();
+        var answers = new Queue<string>(new[] { "one password here", "another password" });
+
+        await Assert.ThrowsAsync<CliException>(() => Commands.RunAsync(new[] { "users", "create", "kevin" }, gw,
+            new StringWriter(), TextReader.Null, CancellationToken.None, _ => answers.Dequeue()));
+        Assert.Empty(gw.CreatedUsers);
+    }
+
+    [Fact]
+    public async Task Users_set_password_reads_stdin_and_enable_disable_and_list_work()
+    {
+        var gw = new FakeGateway();
+        var output = new StringWriter();
+
+        await Commands.RunAsync(new[] { "users", "set-password", "kevin", "--password-stdin" }, gw, output,
+            new StringReader("from stdin 123\n"), CancellationToken.None);
+        await Commands.RunAsync(new[] { "users", "disable", "kevin" }, gw, output, TextReader.Null, CancellationToken.None);
+        await Commands.RunAsync(new[] { "users", "enable", "kevin" }, gw, output, TextReader.Null, CancellationToken.None);
+        await Commands.RunAsync(new[] { "users", "list" }, gw, output, TextReader.Null, CancellationToken.None);
+
+        Assert.Equal(("kevin", "from stdin 123"), Assert.Single(gw.PasswordsSet));
+        Assert.Equal(new[] { ("kevin", true), ("kevin", false) }, gw.DisabledChanges);
+        Assert.Contains("kevin", output.ToString());
+    }
+
     // ---- approvals queue (pre-3.3 §9.6) ----
 
     [Fact]
@@ -406,6 +451,33 @@ public class CliTests
         {
             LastApprovalQuery = (status, agent);
             return Task.FromResult(new ApprovalListResponse(Approvals));
+        }
+
+        public List<(string Name, string Password)> CreatedUsers { get; } = new();
+        public List<(string Name, string Password)> PasswordsSet { get; } = new();
+        public List<(string Name, bool Disabled)> DisabledChanges { get; } = new();
+
+        public Task<UserAdminDto> CreateUserAsync(string name, string password)
+        {
+            CreatedUsers.Add((name, password));
+            return Task.FromResult(new UserAdminDto(Guid.NewGuid(), name, false, DateTime.UtcNow));
+        }
+
+        public Task<UserListResponse> ListUsersAsync() => Task.FromResult(new UserListResponse(new[]
+        {
+            new UserAdminDto(Guid.NewGuid(), "kevin", false, DateTime.UtcNow),
+        }));
+
+        public Task SetUserPasswordAsync(string name, string password)
+        {
+            PasswordsSet.Add((name, password));
+            return Task.CompletedTask;
+        }
+
+        public Task<UserAdminDto> SetUserDisabledAsync(string name, bool disabled)
+        {
+            DisabledChanges.Add((name, disabled));
+            return Task.FromResult(new UserAdminDto(Guid.NewGuid(), name, disabled, DateTime.UtcNow));
         }
 
         public Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision)

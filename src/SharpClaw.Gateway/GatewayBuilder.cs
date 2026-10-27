@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
@@ -65,9 +66,25 @@ public static class GatewayBuilder
         var auth = app.Services.GetRequiredService<IOptions<AuthOptions>>().Value;
         if (string.IsNullOrWhiteSpace(auth.AdminKey))
             throw new InvalidOperationException("Auth:AdminKey is required (set Auth__AdminKey).");
+        if (auth.Password.Pbkdf2Iterations < AuthOptions.MinPbkdf2Iterations)
+            throw new InvalidOperationException($"Auth:Password:Pbkdf2Iterations must be at least {AuthOptions.MinPbkdf2Iterations}.");
 
         foreach (var validator in app.Services.GetServices<IStartupValidator>())
             validator.Validate();
+
+        // Forwarded headers only from configured proxies, and only when enabled; never trusted otherwise.
+        if (auth.ForwardedHeaders.Enabled)
+        {
+            var forwarded = new ForwardedHeadersOptions
+            {
+                ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost,
+            };
+            forwarded.KnownIPNetworks.Clear();
+            forwarded.KnownProxies.Clear();
+            foreach (var proxy in auth.ForwardedHeaders.KnownProxies)
+                forwarded.KnownProxies.Add(System.Net.IPAddress.Parse(proxy));
+            app.UseForwardedHeaders(forwarded);
+        }
 
         app.UseMiddleware<ExceptionMiddleware>();
 

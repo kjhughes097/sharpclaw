@@ -4,16 +4,26 @@ namespace SharpClaw.Cli;
 
 public static class Commands
 {
+    /// <param name="readSecret">Reads a password without echo (prompt in, value out); defaults to a line from <paramref name="input"/>.</param>
     public static async Task RunAsync(
-        string[] args, ICliGateway gateway, TextWriter output, TextReader input, CancellationToken ct)
+        string[] args, ICliGateway gateway, TextWriter output, TextReader input, CancellationToken ct,
+        Func<string, string?>? readSecret = null)
     {
         var parsed = ParsedArgs.Parse(args);
         if (parsed.Positionals.Count == 0)
             throw new CliException(Usage);
+        readSecret ??= prompt =>
+        {
+            output.Write(prompt);
+            return input.ReadLine();
+        };
 
         var group = parsed.Positionals[0];
         switch (group)
         {
+            case "users":
+                await Users(parsed, gateway, output, input, readSecret);
+                break;
             case "agents":
                 await Agents(parsed, gateway, output);
                 break;
@@ -35,6 +45,50 @@ public static class Commands
             default:
                 throw new CliException(Usage);
         }
+    }
+
+    private static async Task Users(ParsedArgs a, ICliGateway gw, TextWriter o, TextReader input, Func<string, string?> readSecret)
+    {
+        var verb = a.Positionals.ElementAtOrDefault(1) ?? throw new CliException(Usage);
+        if (verb == "list")
+        {
+            var list = await gw.ListUsersAsync();
+            await o.WriteLineAsync($"{"NAME",-32} {"DISABLED",-9} {"CREATED",-20}");
+            foreach (var u in list.Users)
+                await o.WriteLineAsync($"{u.Name,-32} {(u.Disabled ? "yes" : "no"),-9} {u.CreatedAt:u}");
+            return;
+        }
+
+        var name = a.Positionals.ElementAtOrDefault(2) ?? throw new CliException("user name is required.");
+        switch (verb)
+        {
+            case "create":
+                await gw.CreateUserAsync(name, ReadNewPassword(a, input, readSecret));
+                await o.WriteLineAsync($"User {name} created.");
+                break;
+            case "set-password":
+                await gw.SetUserPasswordAsync(name, ReadNewPassword(a, input, readSecret));
+                await o.WriteLineAsync($"Password set for {name}; their sessions were signed out.");
+                break;
+            case "disable" or "enable":
+                var user = await gw.SetUserDisabledAsync(name, verb == "disable");
+                await o.WriteLineAsync($"User {user.Name} {(user.Disabled ? "disabled; their sessions were signed out" : "enabled")}.");
+                break;
+            default:
+                throw new CliException(Usage);
+        }
+    }
+
+    /// <summary><c>--password-stdin</c> reads one line (scripts); otherwise prompt twice without echo.</summary>
+    private static string ReadNewPassword(ParsedArgs a, TextReader input, Func<string, string?> readSecret)
+    {
+        if (a.Has("password-stdin"))
+            return input.ReadLine() ?? throw new CliException("no password on stdin.");
+        var first = readSecret("Password: ") ?? "";
+        var second = readSecret("Confirm password: ") ?? "";
+        if (first != second)
+            throw new CliException("Passwords do not match.");
+        return first;
     }
 
     private static async Task Agents(ParsedArgs a, ICliGateway gw, TextWriter o)
@@ -239,6 +293,11 @@ public static class Commands
           sharpclaw approvals list [--status pending] [--agent <name>]
           sharpclaw approvals approve <id>
           sharpclaw approvals deny <id>
+          sharpclaw users create <name> [--password-stdin]
+          sharpclaw users list
+          sharpclaw users set-password <name> [--password-stdin]
+          sharpclaw users disable <name>
+          sharpclaw users enable <name>
           sharpclaw audit [--agent <name>] [--limit N]
           sharpclaw audit tools [--agent <name>] [--limit N]
         """;

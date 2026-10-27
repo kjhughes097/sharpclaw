@@ -16,6 +16,8 @@ public class SharpClawDbContext : DbContext
     public DbSet<Approval> Approvals => Set<Approval>();
     public DbSet<ThreadEvent> ThreadEvents => Set<ThreadEvent>();
     public DbSet<EventLogState> EventLogState => Set<EventLogState>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Session> Sessions => Set<Session>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -119,6 +121,22 @@ public class SharpClawDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.HasData(new EventLogState { Id = 1, PrunedThrough = 0 });
+        });
+
+        b.Entity<User>(e =>
+        {
+            e.ToTable("users");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Name).IsUnique();
+        });
+
+        b.Entity<Session>(e =>
+        {
+            e.ToTable("sessions");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.UserId);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
         });
     }
 

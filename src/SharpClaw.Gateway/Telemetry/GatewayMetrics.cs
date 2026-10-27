@@ -28,6 +28,7 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Counter<long> _budgetExceeded;
     private readonly Histogram<double> _messageDuration;
     private readonly Counter<long> _authFailures;
+    private readonly Counter<long> _logins;
     private readonly Counter<long> _toolCalls;
     private readonly Counter<long> _approvals;
     private readonly Histogram<double> _approvalDecisionTime;
@@ -61,6 +62,7 @@ public sealed class GatewayMetrics : IDisposable
         _budgetExceeded = _meter.CreateCounter<long>("sharpclaw.budget.exceeded", "{rejection}");
         _messageDuration = _meter.CreateHistogram("sharpclaw.message.duration", "s", null, null, messageBuckets);
         _authFailures = _meter.CreateCounter<long>("sharpclaw.auth.failures", "{failure}");
+        _logins = _meter.CreateCounter<long>("sharpclaw.auth.logins", "{login}");
         _toolCalls = _meter.CreateCounter<long>("sharpclaw.tool.calls", "{call}");
         _approvals = _meter.CreateCounter<long>("sharpclaw.approvals", "{approval}");
         _approvalDecisionTime = _meter.CreateHistogram("sharpclaw.approval.decision_time", "s", null, null,
@@ -127,8 +129,11 @@ public sealed class GatewayMetrics : IDisposable
     public void RecordContextEstimate(string agent, int tokens) =>
         _contextEstimatedTokens.Record(tokens, Tag("agent", agent));
 
-    public void RecordAuthFailure(string listener) =>
-        _authFailures.Add(1, Tag("listener", listener));
+    public void RecordAuthFailure(string listener, string method) =>
+        _authFailures.Add(1, Tag("listener", listener), Tag("method", method));
+
+    /// <summary><c>result</c>: success, failure or rate_limited.</summary>
+    public void RecordLogin(string result) => _logins.Add(1, Tag("result", result));
 
     public void MarkSeen(string agent) =>
         _lastSeenUnix[agent] = _time.GetUtcNow().ToUnixTimeSeconds();

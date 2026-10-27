@@ -20,7 +20,7 @@ public sealed class AgentAuthFilter : IEndpointFilter
         var presented = BearerToken.Read(http.Request);
         if (presented is null)
         {
-            metrics.RecordAuthFailure("agent");
+            metrics.RecordAuthFailure("agent", "agent_token");
             return ApiResults.Unauthorized();
         }
 
@@ -31,7 +31,7 @@ public sealed class AgentAuthFilter : IEndpointFilter
         if (token is null || token.RevokedAt is not null ||
             (token.ExpiresAt is not null && token.ExpiresAt <= now) || token.Agent is null)
         {
-            metrics.RecordAuthFailure("agent");
+            metrics.RecordAuthFailure("agent", "agent_token");
             return ApiResults.Unauthorized();
         }
 

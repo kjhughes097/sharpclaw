@@ -124,6 +124,30 @@ public class ToolCallRecord
     public DateTime? ReportedAt { get; set; }
 }
 
+/// <summary>A browser user (pre-3.3 spec section 4). The password is stored only as a PBKDF2 hash.</summary>
+public class User
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string PasswordHash { get; set; } = "";
+    public bool Disabled { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>A browser session. The cookie value is stored only as its SHA-256 hex.</summary>
+public class Session
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public User? User { get; set; }
+    public string TokenHash { get; set; } = "";
+    public string CsrfToken { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime LastSeenAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+}
+
 /// <summary>A durable SSE event (pre-3.3 §8). <c>Id</c> is the SSE event id: global and monotonic.</summary>
 public class ThreadEvent
 {
