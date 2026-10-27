@@ -190,13 +190,13 @@ public sealed class AgentLoop
     }
 
     /// <summary>
-    /// The gateway fits history into the window minus this: the soul and the tool schemas sent
-    /// with every call, estimated with the shared characters-per-token heuristic.
+    /// The gateway fits history into the window minus this: the soul message and the tool schemas
+    /// sent with every call, estimated exactly as the gateway estimates the chat request.
     /// </summary>
     private int ReserveTokens(string soul)
     {
-        var schemaChars = _tools?.Registry.Tools.Sum(t => t.Name.Length + t.Description.Length + t.ParametersJson.Length) ?? 0;
-        return ContextDefaults.Tokens(soul.Length + schemaChars);
+        var schemaChars = _tools is null ? 0 : ToolSchemas.JsonLength(_tools.Registry.Tools);
+        return ContextDefaults.Tokens(soul.Length) + ContextDefaults.MessageOverheadTokens + ContextDefaults.Tokens(schemaChars);
     }
 
     private async Task SafeFail(Guid messageId, string reason)

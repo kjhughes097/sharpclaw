@@ -25,6 +25,9 @@ public static class ContextDefaults
     /// <summary>Token estimate heuristic: characters per token.</summary>
     public const int CharsPerToken = 4;
 
+    /// <summary>Added to every message's estimate (role, separators).</summary>
+    public const int MessageOverheadTokens = 4;
+
     public const int DefaultWindowTokens = 32000;
     public const int MinWindowTokens = 1000;
     public const int MaxWindowTokens = 2_000_000;

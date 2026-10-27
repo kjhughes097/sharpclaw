@@ -184,7 +184,8 @@ public class AgentLoopTests
 
         await NewLoop(client, new FixedSoul(new string('s', 4001))).ProcessOnceAsync(CancellationToken.None);
 
-        Assert.Equal(1001, client.LastReserveTokens);
+        // ceil(4001 / 4) for the soul, plus the per-message overhead; no tools.
+        Assert.Equal(1005, client.LastReserveTokens);
     }
 
     [Fact]

@@ -23,7 +23,8 @@ public sealed class ActiveTurnBuffers(TimeProvider time, ILogger<ActiveTurnBuffe
 
     private readonly ConcurrentDictionary<Guid, Buffer> _buffers = new();
 
-    public void Append(Guid threadId, Guid correlationId, string text)
+    /// <summary>Appends a delta; returns the buffered length after it, or null if the buffer is full.</summary>
+    public int? Append(Guid threadId, Guid correlationId, string text)
     {
         var now = time.GetUtcNow().UtcDateTime;
         var buffer = _buffers.GetOrAdd(correlationId, _ => new Buffer(threadId, now));
@@ -37,10 +38,11 @@ public sealed class ActiveTurnBuffers(TimeProvider time, ILogger<ActiveTurnBuffe
                     buffer.CapLogged = true;
                     logger.LogWarning("active turn buffer full: max_bytes={MaxBytes}", MaxBytes);
                 }
-                return;
+                return null;
             }
             buffer.Text.Append(text);
             buffer.Bytes += bytes;
+            return buffer.Text.Length;
         }
     }
 

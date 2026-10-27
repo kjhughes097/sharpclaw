@@ -54,11 +54,15 @@ public sealed class EventStreamResult(Guid? threadId, long? lastEventId) : IResu
             Append(sb, SseEventNames.Ready, Json(new ReadyEvent(threadId)), baseline);
 
             // 5. The text streamed so far for turns still in flight.
+            var snapshotLengths = new Dictionary<Guid, int>();
             foreach (var (corr, content) in buffers.Snapshots(threadId))
+            {
+                snapshotLengths[corr] = content.Length;
                 Append(sb, SseEventNames.Snapshot, Json(new SnapshotEvent(corr, content)));
+            }
             await WriteAsync(response, sb.ToString(), ct);
 
-            // 6. Live, dropping durable events already covered by the replay.
+            // 6. Live, dropping durable events already covered by the replay and deltas already in a snapshot.
             var highestSent = baseline;
             while (!ct.IsCancellationRequested)
             {
@@ -73,6 +77,9 @@ public sealed class EventStreamResult(Guid? threadId, long? lastEventId) : IResu
                             continue;
                         highestSent = id;
                     }
+                    if (evt is { CorrelationId: { } c, EndOffset: { } end } &&
+                        snapshotLengths.TryGetValue(c, out var covered) && end <= covered)
+                        continue;
                     var line = new StringBuilder();
                     Append(line, evt.Event, evt.DataJson, evt.Id);
                     await WriteAsync(response, line.ToString(), ct);

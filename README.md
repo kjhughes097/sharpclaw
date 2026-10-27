@@ -61,7 +61,8 @@ secrets or network required.
   rate limited per username and per IP (`429 rate_limited`). Sessions slide (7 days idle, 30 days
   absolute). `/api/users*` accepts only the admin key. TLS is terminated by a reverse proxy; set
   `Auth:ForwardedHeaders:*` so the gateway trusts its forwarded headers, and `Auth:AllowedOrigins`
-  if the browser's origin differs from what the gateway sees. No CORS.
+  if the browser's origin differs from what the gateway sees. No CORS. Create users with
+  `sharpclaw users create <name>`.
 - **Chat completions.** `POST /v1/chat/completions` is OpenAI-compatible and streaming only. The
   gateway always uses the agent's configured model, enforces the daily budget before streaming,
   records every call in `llm_calls`, and tees content deltas to the client's SSE stream.
@@ -318,57 +319,10 @@ wrong port, and that the agent container's root filesystem and `/config` are rea
 
 ## Verification results
 
-Verified in this environment with the **fake provider** (no secrets or external network):
-
-- All automated tests pass: `dotnet test` → gateway 37, agent 10, CLI 3.
-- End-to-end locally: `sharpclaw ask assistant "…"` streamed `Fake reply to: …`, and the call
-  appeared in `sharpclaw audit` with model, tokens, cost, latency and status `ok`.
-- End-to-end in Docker Compose: gateway healthy via `--healthcheck`, agent container running,
-  `sharpclaw ask` streamed a reply through the containerised agent.
-- `scripts/verify-isolation.sh` passed all checks against the running stack.
-
-Verified against the live environment (2026-10-25):
-
-- **Telemetry:** the smoke test and gateway metrics land in VictoriaMetrics, and logs land in Loki
-  with `correlation_id` as structured metadata. One message was traced end to end in Loki by
-  `correlation_id`. Landed metric names and findings are in
-  [docs/telemetry-notes.md](docs/telemetry-notes.md); the dashboard uses those names.
-- **Real OpenRouter** (`openai/gpt-4o-mini`, Docker Compose stack): `sharpclaw ask` streamed real
-  replies through the isolated agent. Each call was audited with tokens, cost (e.g. 68/28 tokens,
-  $0.000027, 1235 ms) and status `ok`.
-- **Budget, live:** lowering the cap below today's spend gave `429` → `fail(budget_exceeded)` →
-  `Error: budget_exceeded` in the CLI, plus a `rejected` audit row.
-- `scripts/verify-isolation.sh` passed all checks on the OpenRouter-backed stack.
-- No prompt or reply text found in the gateway logs in Loki.
-
-Not yet done: importing `docker/grafana/sharpclaw-dashboard.json` into Grafana (its API needs
-credentials). Import it via *Dashboards → New → Import*; the queries were checked directly against
-VictoriaMetrics.
-
-### Phase 3.2 acceptance (2026-10-25)
-
-**Fake provider (automated):** `AgentToolEndToEndTests` runs the real agent (HTTP client, loop,
-dispatcher, workspace tools) against the real gateway with a scripted FakeProvider: multi-step
-write → read → reply; high-risk delete approved and denied by a watching user; unattended delete
-denied immediately; `../../etc/passwd` blocked by the hardline rules. All automated tests pass
-(gateway 101, agent 72, CLI 11).
-
-**Real OpenRouter** (`openai/gpt-4o-mini`, Docker Compose stack, `allowedRiskLevel: low`,
-smart mode on):
-
-| Scenario | Result |
-|---|---|
-| Multi-step: create `notes/shopping.md`, read it back, report | `[tool] workspace_write`, `[tool] workspace_read`, correct reply; file on the host |
-| Delete `notes/old.md`, user answers `n` | Prompt shown (`high risk: delete notes/old.md`); denied; file kept; model explained |
-| Same, user answers `y` | Approved; file deleted |
-| Delete with nobody watching the thread | Denied immediately by the gateway; file kept; model said no approver was available |
-| Write `scripts/hello.sh` (uncertain) | Smart mode classified it `low` via one `risk_assessment` LLM call; allowed |
-| Read a file, then write a new file in the same turn | Taint raised the write from low to **medium**; approval prompt; approved |
-| Audit | `sharpclaw audit tools` showed every call with status, decision, risk and taint |
-| Telemetry | `sharpclaw.tool.calls` and `sharpclaw.approvals` landed in VictoriaMetrics |
-| Isolation | `scripts/verify-isolation.sh` passed all checks; agent writes `/workspace`, `/config` read-only |
+Dated manual and live verification (Phase 3.1, Phase 3.2, pre-3.3 foundations) is recorded in
+[docs/verification-log.md](docs/verification-log.md).
 
 ## Known gaps and tech debt
 
-Accepted Phase 3.1 limitations and known code-level debt are tracked in
-[docs/tech-debt.md](docs/tech-debt.md).
+Accepted design limits (Phase 3.1, 3.2 and the pre-3.3 foundations) and known code-level debt are
+tracked in [docs/tech-debt.md](docs/tech-debt.md).

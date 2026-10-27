@@ -11,7 +11,9 @@ namespace SharpClaw.Gateway.Services;
 public interface IEventPublisher
 {
     Task PublishDurableAsync<T>(Guid threadId, string type, T payload, CancellationToken ct = default);
-    void PublishEphemeral<T>(Guid threadId, string type, T payload);
+
+    /// <summary>A streamed content delta; <paramref name="endOffset"/> is the turn buffer's length after it.</summary>
+    void PublishDelta(Guid threadId, Guid correlationId, string text, int? endOffset);
 }
 
 public sealed class EventPublisher(IThreadEventBus bus, IServiceScopeFactory scopes, TimeProvider time) : IEventPublisher
@@ -46,6 +48,7 @@ public sealed class EventPublisher(IThreadEventBus bus, IServiceScopeFactory sco
         }
     }
 
-    public void PublishEphemeral<T>(Guid threadId, string type, T payload) =>
-        bus.Publish(threadId, new ThreadSseEvent(type, JsonSerializer.Serialize(payload, SharpClawJson.Options)));
+    public void PublishDelta(Guid threadId, Guid correlationId, string text, int? endOffset) =>
+        bus.Publish(threadId, new ThreadSseEvent(SseEventNames.Delta,
+            JsonSerializer.Serialize(new DeltaEvent(correlationId, text), SharpClawJson.Options), null, correlationId, endOffset));
 }

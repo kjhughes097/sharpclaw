@@ -80,16 +80,7 @@ public sealed class GatewayHttpClient : IGatewayClient
         };
         if (tools.Count > 0)
         {
-            payload["tools"] = tools.Select(t => new Dictionary<string, object?>
-            {
-                ["type"] = "function",
-                ["function"] = new Dictionary<string, object?>
-                {
-                    ["name"] = t.Name,
-                    ["description"] = t.Description,
-                    ["parameters"] = JsonDocument.Parse(t.ParametersJson).RootElement.Clone(),
-                },
-            }).ToList();
+            payload["tools"] = ToolSchemas.ToWire(tools);
             payload["tool_choice"] = "auto";
         }
         return payload;

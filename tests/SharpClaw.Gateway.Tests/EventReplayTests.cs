@@ -128,7 +128,7 @@ public class EventReplayTests
         await Task.Delay(30);
         var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream", lastEventId: 0);
         using var __ = client;
-        var events = await TestHelpers.ReadSseAsync(stream, messages + 1, TimeSpan.FromSeconds(10), skipReady: true);
+        var events = await TestHelpers.ReadSseAsync(stream, messages, TimeSpan.FromSeconds(10), skipReady: true);
         await posting;
 
         var ids = events.Select(e => e.Id!.Value).ToList();
@@ -164,6 +164,30 @@ public class EventReplayTests
         var rest = string.Concat(events.Skip(1).Where(e => e.Event == SseEventNames.Delta)
             .Select(e => Data<DeltaEvent>(e).Content));
         Assert.Equal("abcdefghijkl", snapshot.Content + rest);
+    }
+
+    [Fact]
+    public async Task Deltas_already_in_the_snapshot_are_not_sent_again()
+    {
+        var s = await SetupAsync();
+        await using var _ = s.Fx;
+        var corr = Guid.NewGuid();
+        var buffers = s.Fx.App.Services.GetRequiredService<ActiveTurnBuffers>();
+        var publisher = s.Fx.App.Services.GetRequiredService<IEventPublisher>();
+        buffers.Append(s.Thread, corr, "abc");
+
+        var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream");
+        using var __ = client;
+        var read = TestHelpers.ReadSseAsync(stream, 2, Wait, skipReady: true);
+        await Task.Delay(200);
+        // Buffered before the snapshot but published after it (the race), then a genuinely new delta.
+        publisher.PublishDelta(s.Thread, corr, "c", 3);
+        publisher.PublishDelta(s.Thread, corr, "d", buffers.Append(s.Thread, corr, "d"));
+        var events = await read;
+
+        Assert.Equal(new[] { SseEventNames.Snapshot, SseEventNames.Delta }, events.Select(e => e.Event));
+        Assert.Equal("abc", Data<SnapshotEvent>(events[0]).Content);
+        Assert.Equal("d", Data<DeltaEvent>(events[1]).Content);
     }
 
     [Fact]

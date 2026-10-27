@@ -279,8 +279,9 @@ public static class ChatEndpoints
                     await WriteAsync(_writer.ContentChunk(d.Text), ct);
                     if (_teeToThread)
                     {
-                        _buffers.Append(_threadId, _correlationId, d.Text);
-                        _events.PublishEphemeral(_threadId, SseEventNames.Delta, new DeltaEvent(_correlationId, d.Text));
+                        // Buffer first, then publish: a stream's snapshot then covers exactly the deltas up to its length.
+                        var endOffset = _buffers.Append(_threadId, _correlationId, d.Text);
+                        _events.PublishDelta(_threadId, _correlationId, d.Text, endOffset);
                     }
                     break;
                 case ChatStreamEvent.ToolCall call:

@@ -122,7 +122,11 @@ public class ApprovalTests
     [Fact]
     public async Task Sweeper_expires_on_schedule_wakes_the_agent_and_emits_decided()
     {
-        var s = await SetupAsync(new Dictionary<string, string?> { ["Approvals:TimeoutSeconds"] = "60" });
+        var s = await SetupAsync(new Dictionary<string, string?>
+        {
+            ["Approvals:TimeoutSeconds"] = "60",
+            ["Approvals:SweepIntervalSeconds"] = "10",
+        });
         await using var _ = s.Fx;
         var (_, approval) = await CreateAsync(s, Request(s));
         var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream");

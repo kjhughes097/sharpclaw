@@ -143,7 +143,7 @@ public sealed class ContextOptions
     public int ReplyReserveTokens { get; set; } = 2000;
 
     public int CharsPerToken { get; set; } = ContextDefaults.CharsPerToken;
-    public int MessageOverheadTokens { get; set; } = 4;
+    public int MessageOverheadTokens { get; set; } = ContextDefaults.MessageOverheadTokens;
 
     public int WindowFor(int? agentWindow) => agentWindow ?? DefaultWindowTokens;
 }

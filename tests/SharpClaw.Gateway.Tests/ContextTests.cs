@@ -81,6 +81,18 @@ public class ContextTests
     }
 
     [Fact]
+    public async Task The_note_is_budgeted_so_the_result_never_exceeds_the_budget()
+    {
+        // Budget 1000 − 100 − 675 = 225: two turns (218) fit, but not with the note (+15), so one more goes.
+        var (rows, ids) = Thread(400, 400, 400, 400);
+        var result = await BuildAsync(rows, ids[^1], reserve: 675);
+
+        Assert.Equal(3, result.DroppedTurns);
+        Assert.True(result.EstimatedTokens <= 225, $"estimated {result.EstimatedTokens}");
+        Assert.Equal(new TokenEstimator(Options).Estimate(result.Messages), result.EstimatedTokens);
+    }
+
+    [Fact]
     public async Task Reserve_shifts_the_budget()
     {
         var (rows, ids) = Thread(400, 400, 400, 400);

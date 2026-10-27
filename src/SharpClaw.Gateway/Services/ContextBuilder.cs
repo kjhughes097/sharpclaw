@@ -69,19 +69,30 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
             firstIncluded = i;
         }
 
+        // The note about dropped turns must fit too, or the full prompt would overshoot the window.
+        while (firstIncluded > 0 && firstIncluded < currentIndex &&
+               total + estimator.Estimate(Note(firstIncluded, null)) > budget)
+        {
+            total -= turns[firstIncluded].Tokens;
+            firstIncluded++;
+        }
+        if (firstIncluded > 0 && total + estimator.Estimate(Note(firstIncluded, null)) > budget)
+            return new Result(Array.Empty<ContextMessage>(), 0, total, true);
+
         var messages = turns.Skip(firstIncluded).Take(currentIndex - firstIncluded + 1).SelectMany(t => t.Messages).ToList();
         if (firstIncluded > 0)
         {
             var dropped = turns.Take(firstIncluded).SelectMany(t => t.Messages).ToList();
-            var summary = await summariser.SummariseAsync(threadId, dropped, ct);
-            var note = new ContextMessage(Roles.System,
-                string.IsNullOrWhiteSpace(summary) ? $"Earlier conversation ({firstIncluded} turns) is not shown." : summary);
+            var note = Note(firstIncluded, await summariser.SummariseAsync(threadId, dropped, ct));
             messages.Insert(0, note);
             total += estimator.Estimate(note);
         }
 
         return new Result(messages, firstIncluded, total, false);
     }
+
+    private static ContextMessage Note(int droppedTurns, string? summary) => new(Roles.System,
+        string.IsNullOrWhiteSpace(summary) ? $"Earlier conversation ({droppedTurns} turns) is not shown." : summary);
 
     private sealed record Turn(Guid CorrelationId, List<ContextMessage> Messages, int Tokens);
 
