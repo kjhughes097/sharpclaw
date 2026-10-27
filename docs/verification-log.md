@@ -81,29 +81,38 @@ read-only; starting the new gateway on the copy applied the five new migrations.
 threads kept their `(created_at, id)` order, `seq` runs 1..n per thread with no duplicates, every
 row is `kind = message`, and the API listed all threads with their `context`.
 
-**Not done here (needs the human):**
+**Real OpenRouter** (`openai/gpt-4o-mini`, Docker Compose stack rebuilt from this branch, which
+migrated the live database; a backup was taken first; `allowedRiskLevel: low`, smart mode on).
+The CLI was driven by hand in an interactive `sharpclaw chat`:
 
-- The real OpenRouter run covering tool history, the approval queue and reconnect (needs the
-  OpenRouter key and the Docker stack).
-- Killing and restoring an *interactive CLI* stream mid-reply: covered by the CLI reconnect tests
-  (`ChatRunner` resumes with the last id and prints each character once) and by the curl replay
-  check above, but not by hand.
-- `scripts/verify-isolation.sh` (needs the Docker stack running) and importing the dashboard into
-  Grafana (tech-debt #8). The dashboard JSON parses and its panel ids are unique.
-- Live confirmation of the new metric names in VictoriaMetrics ([telemetry-notes.md](telemetry-notes.md)).
+| Scenario | Result |
+|---|---|
+| Create `notes/shopping.md`, read it back | `[tool] workspace_write`, `[tool] workspace_read`, correct reply |
+| Next turn, no tools: "which tools did you call, what did write return?" | The model listed write then read, said the write succeeded, and that the read content was not available (the untrusted result was stubbed) |
+| Delete the file, answer `n` at `Allow? [y/N]` | Denied; the model explained |
+| Ask again, then close the CLI at the prompt | `sharpclaw approvals list --status pending` showed the approval; `approvals approve <id>` from another terminal let the agent finish; file deleted; reply stored |
+| `ask … "Delete old.md" --unattended` | Denied by the gateway at once (3.8 s total); file kept |
+| Stream cut mid-reply: the CLI talked through a TCP proxy that was killed after 640 bytes of a 400-word story and restored 3 s later | The CLI reconnected and finished; printed text (2,375 chars) identical to the stored reply |
+| Context: window 2,900 tokens on the 16-row thread | Reply worked; thread reported `droppedTurns: 1`. A 4,800-character message with a 3,000 window failed with `Error: context_too_large`. Window restored to 32,000 (set explicitly) |
+| Browser auth against the stack | Login 200 with `path=/; samesite=strict; httponly`; cookie GET 200; cookie POST with CSRF 201, without 403, foreign `Origin` 403; `/api/users` 401 with cookie, 200 with admin key; cookie SSE on `/api/events` framed; logout 204 then 401; no password or hash in the gateway log |
+| `includeTools=true` on the chat thread | 16 rows in `seq` order, the `workspace_read` result flagged `untrusted` |
+| Isolation | `scripts/verify-isolation.sh`: all checks passed |
+| VictoriaMetrics | All new names landed as documented in [telemetry-notes.md](telemetry-notes.md): `sharpclaw.auth.logins`, `sharpclaw.auth.failures` (with `method`), `sharpclaw.context.truncations`, `sharpclaw.context.rejections`, `sharpclaw.context.estimated_tokens_*`, `sharpclaw.sse.subscribers`, `sharpclaw.approvals.pending`, `sharpclaw.approval.decision_time_*`, `sharpclaw.tool.unreported`; every new dashboard panel query returns data |
+
+**Not done here:** importing the dashboard into Grafana (tech-debt #8; needs Grafana credentials).
 
 ### Acceptance checklist (pre-3.3 spec section 16)
 
 - [x] Browser-style login, CSRF header, same-origin `Origin`, cookie SSE, logout; 403 without the token or with a foreign `Origin`.
 - [x] Admin-key bearer still works for the CLI; user management rejects cookies.
 - [x] Wrong-password logins are rate limited; no log line contains a submitted username or password.
-- [x] A later turn sees the earlier turn's trusted tool results (fake provider; real model pending).
+- [x] A later turn sees the earlier turn's trusted tool results (fake provider and real model).
 - [x] An earlier `workspace_read` result is not replayed (stub sent); taint starts fresh each turn.
 - [x] `includeTools=true` shows the full exchange, truncated as configured; the default listing shows only user and final messages.
 - [x] A thread beyond its window keeps working, drops the oldest turns and reports `droppedTurns`; an oversize turn fails with `context_too_large`.
-- [x] A cut stream resumes with no loss or duplicates (curl and CLI tests); a stale last id yields `reset` (automated).
+- [x] A cut stream resumes with no loss or duplicates (curl, CLI tests, and the real CLI through a killed proxy); a stale last id yields `reset` (automated).
 - [x] With nobody watching, an approval stays pending, is listed and can be approved from another terminal; an unanswered one expires and the model is told.
 - [x] An `--unattended` message has its approvals denied immediately.
 - [x] No prompt, reply, tool argument or result, password, cookie, CSRF token or key in logs or metric labels (tests).
-- [ ] All automated tests pass ✔, the docs are updated ✔; the isolation script and dashboard import still need the Docker stack and Grafana credentials.
+- [ ] All automated tests pass ✔, the isolation script passes ✔, the docs are updated ✔; the dashboard import still needs Grafana credentials.
 - [x] No out-of-scope features were added.

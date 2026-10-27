@@ -46,7 +46,7 @@ unit suffix is added. Histograms only gain `_bucket`, `_sum` and `_count`.
 
 ### Added by the pre-3.3 foundations
 
-Expected names, following the rules above (not yet observed live; the dashboard panels use them):
+Confirmed live in VictoriaMetrics on 2026-10-27 (the dashboard panels use these names):
 
 | OTel instrument | Landed name(s) | Labels |
 |---|---|---|
