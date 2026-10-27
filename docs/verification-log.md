@@ -26,8 +26,7 @@ Verified against the live environment:
 - `scripts/verify-isolation.sh` passed all checks on the OpenRouter-backed stack.
 - No prompt or reply text found in the gateway logs in Loki.
 
-Not done: importing `docker/grafana/sharpclaw-dashboard.json` into Grafana (its API needs
-credentials; tech-debt #8).
+The dashboard was imported later (see the pre-3.3 section).
 
 ## Phase 3.2 (2026-10-25)
 
@@ -99,7 +98,11 @@ The CLI was driven by hand in an interactive `sharpclaw chat`:
 | Isolation | `scripts/verify-isolation.sh`: all checks passed |
 | VictoriaMetrics | All new names landed as documented in [telemetry-notes.md](telemetry-notes.md): `sharpclaw.auth.logins`, `sharpclaw.auth.failures` (with `method`), `sharpclaw.context.truncations`, `sharpclaw.context.rejections`, `sharpclaw.context.estimated_tokens_*`, `sharpclaw.sse.subscribers`, `sharpclaw.approvals.pending`, `sharpclaw.approval.decision_time_*`, `sharpclaw.tool.unreported`; every new dashboard panel query returns data |
 
-**Not done here:** importing the dashboard into Grafana (tech-debt #8; needs Grafana credentials).
+**Grafana:** `docker/grafana/sharpclaw-dashboard.json` was imported into the home Grafana (13.2.2)
+through its API (uid `sharpclaw-gateway`, 19 panels; the datasource variables resolve to the
+VictoriaMetrics and Loki datasources). Every metrics panel query, run through Grafana's datasource
+proxy over the last 6 hours, returned series; only *Inbox depth* and *budget rejections* were empty,
+as expected with no pending messages or rejections in that window.
 
 ### Acceptance checklist (pre-3.3 spec section 16)
 
@@ -114,5 +117,5 @@ The CLI was driven by hand in an interactive `sharpclaw chat`:
 - [x] With nobody watching, an approval stays pending, is listed and can be approved from another terminal; an unanswered one expires and the model is told.
 - [x] An `--unattended` message has its approvals denied immediately.
 - [x] No prompt, reply, tool argument or result, password, cookie, CSRF token or key in logs or metric labels (tests).
-- [ ] All automated tests pass ✔, the isolation script passes ✔, the docs are updated ✔; the dashboard import still needs Grafana credentials.
+- [x] All automated tests pass, the isolation script passes, the dashboard imports, and the docs are updated.
 - [x] No out-of-scope features were added.

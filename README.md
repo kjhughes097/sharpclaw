@@ -298,7 +298,8 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment=home
   `correlation_id` attribute, to discover the exact metric name VictoriaMetrics lands it under and
   confirm Loki accepts `correlation_id` as structured metadata. See
   [docs/telemetry-notes.md](docs/telemetry-notes.md).
-- **Dashboard:** `docker/grafana/sharpclaw-dashboard.json` is an importable starter dashboard
+- **Dashboard:** `docker/grafana/sharpclaw-dashboard.json` (imported into Grafana as uid
+  `sharpclaw-gateway`; re-import via *Dashboards → New → Import* or the API after changes)
   (LLM calls by status, cost vs budget, duration/TTFT percentiles, tokens, inbox depth, last-seen
   age, budget rejections, tool calls, approvals (rate, pending, decision time), unreported tool
   calls, context truncations/rejections, logins and auth failures by method, and a Loki logs panel
