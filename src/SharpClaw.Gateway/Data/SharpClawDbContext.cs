@@ -70,11 +70,12 @@ public class SharpClawDbContext : DbContext
             e.ToTable("messages");
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.AgentId, x.Role, x.Status, x.CreatedAt });
-            e.HasIndex(x => new { x.ThreadId, x.CreatedAt });
-            // One assistant reply per user message.
+            e.HasIndex(x => new { x.ThreadId, x.Seq }).IsUnique();
+            e.Property(x => x.Kind).HasDefaultValue("message");
+            // One final assistant reply per user message; tool_request rows share the correlation id.
             e.HasIndex(x => x.CorrelationId)
                 .IsUnique()
-                .HasFilter("role = 'assistant'");
+                .HasFilter("role = 'assistant' AND kind = 'message'");
         });
 
         b.Entity<LlmCall>(e =>

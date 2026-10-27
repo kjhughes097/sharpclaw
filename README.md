@@ -93,6 +93,9 @@ ASP.NET `__` syntax).
 | `Approvals:SweepIntervalSeconds` | `10` | How often overdue approvals are expired |
 | `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
 | `Events:RetentionDays` | `14` | Durable SSE events kept for replay |
+| `Tools:MaxStoredResultChars` | `4000` | Stored tool results are cut to this |
+| `Tools:MaxStoredArgumentStringChars` | `500` | Each string in stored tool arguments is cut to this |
+| `Tools:MaxExchangesPerReply` | `50` | Tool rounds accepted with one reply |
 
 Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 
@@ -228,6 +231,11 @@ How a call is decided (all in the agent's `ToolDispatcher`):
    go back to the model as a tool error so it can adapt.
 4. Every call is **audited**: the gateway records what the model requested, the agent reports the
    outcome (`sharpclaw audit tools`). Arguments are truncated in the database and never logged.
+5. **Thread history keeps the tool exchanges.** With its reply the agent posts each round's tool
+   calls and results; they are stored as `tool_request` / `tool_result` rows (arguments and results
+   truncated, see `Tools:*`), shown by `GET …/messages?includeTools=true`, and replayed to the
+   model on later turns, except results of tools that return untrusted content (`workspace_read`),
+   which are replaced by a stub so injected text can't persist in the thread.
 
 No tool executes code or shell commands. The agent container (no network, read-only root
 filesystem, only its own `/workspace`) contains anything a tool does.

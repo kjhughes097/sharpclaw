@@ -37,7 +37,8 @@ public interface IGatewayClient
     Task<ChatOutcome> StreamChatAsync(
         IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,
         Guid correlationId, Guid threadId, CancellationToken ct);
-    Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct);
+    /// <summary>Posts the final reply with the turn's tool exchanges (already truncated).</summary>
+    Task PostReplyAsync(Guid threadId, string content, Guid correlationId, IReadOnlyList<ToolExchangeDto> exchanges, CancellationToken ct);
     Task FailAsync(Guid messageId, string reason, CancellationToken ct);
 
     // ----- Tools (3.2) -----

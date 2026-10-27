@@ -340,10 +340,21 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("fail_reason");
 
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("message")
+                        .HasColumnName("kind");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("role");
+
+                    b.Property<int>("Seq")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("seq");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -354,17 +365,38 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("thread_id");
 
+                    b.Property<string>("ToolCallId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool_call_id");
+
+                    b.Property<string>("ToolCalls")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool_calls");
+
+                    b.Property<bool?>("ToolOk")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("tool_ok");
+
+                    b.Property<bool>("Truncated")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("truncated");
+
                     b.Property<bool>("Unattended")
                         .HasColumnType("INTEGER")
                         .HasColumnName("unattended");
+
+                    b.Property<bool>("Untrusted")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("untrusted");
 
                     b.HasKey("Id");
 
                     b.HasIndex("CorrelationId")
                         .IsUnique()
-                        .HasFilter("role = 'assistant'");
+                        .HasFilter("role = 'assistant' AND kind = 'message'");
 
-                    b.HasIndex("ThreadId", "CreatedAt");
+                    b.HasIndex("ThreadId", "Seq")
+                        .IsUnique();
 
                     b.HasIndex("AgentId", "Role", "Status", "CreatedAt");
 

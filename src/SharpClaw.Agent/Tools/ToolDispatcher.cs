@@ -8,6 +8,12 @@ namespace SharpClaw.Agent.Tools;
 /// <summary>A tool call the model requested, as received from the chat stream.</summary>
 public sealed record ToolCallRequest(string Id, string Name, string ArgumentsJson);
 
+/// <summary>
+/// The tool message for the model, plus what the thread history needs to know: whether the call
+/// succeeded and whether its content is untrusted (never replayed on later turns).
+/// </summary>
+public sealed record ToolDispatchResult(string Content, bool Ok, bool Untrusted);
+
 /// <summary>State for one turn (the processing of one user message).</summary>
 public sealed class TurnContext(Guid correlationId, Guid threadId)
 {
@@ -48,7 +54,7 @@ public sealed class ToolDispatcher
     }
 
     /// <summary>Runs (or refuses) one tool call and returns the tool message content for the model.</summary>
-    public async Task<string> DispatchAsync(ToolCallRequest call, TurnContext turn, CancellationToken ct)
+    public async Task<ToolDispatchResult> DispatchAsync(ToolCallRequest call, TurnContext turn, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var outcome = await DecideAndRunAsync(call, turn, ct);
@@ -58,7 +64,8 @@ public sealed class ToolDispatcher
             call.Name, outcome.Status, outcome.Decision, outcome.Risk?.ToWire(), outcome.Tainted, sw.ElapsedMilliseconds);
 
         await ReportAsync(call, turn, outcome, (int)sw.ElapsedMilliseconds);
-        return outcome.Result.Json;
+        var untrusted = outcome.Result.Ok && _registry.TryGet(call.Name, out var tool) && tool.ReturnsUntrustedContent;
+        return new ToolDispatchResult(outcome.Result.Json, outcome.Result.Ok, untrusted);
     }
 
     /// <summary>Everything we learned about a call, for the model, the logs and the audit.</summary>

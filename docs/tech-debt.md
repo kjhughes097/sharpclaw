@@ -26,7 +26,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Item | Notes |
 |---|---|
 | Agent-reported tool outcomes are self-reported | The gateway independently records every tool call the model requested, so a missing report is visible (`status = requested`), but what a local tool actually did is only what the agent says. Docker isolation limits the damage. |
-| Tool exchanges are not stored in thread history | Only the final reply is stored; the model doesn't see earlier turns' tool results. Visible through the tool-call audit. |
 | No network tools yet | Designed in the 3.2 spec (gateway fetches under fixed rules), built in a later phase. |
 | No "always allow" for approvals | Every call above the allowed level asks again. |
 

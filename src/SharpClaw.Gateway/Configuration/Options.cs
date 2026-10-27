@@ -1,3 +1,5 @@
+using SharpClaw.Contracts;
+
 namespace SharpClaw.Gateway.Configuration;
 
 public sealed class ListenerOptions
@@ -71,6 +73,19 @@ public sealed class EventsOptions
 
     /// <summary>Durable SSE events older than this are pruned (replay before that yields <c>reset</c>).</summary>
     public int RetentionDays { get; set; } = 14;
+}
+
+public sealed class ToolsOptions
+{
+    public const string Section = "Tools";
+
+    /// <summary>Stored tool results are cut to this many characters.</summary>
+    public int MaxStoredResultChars { get; set; } = ToolHistoryLimits.DefaultMaxStoredResultChars;
+
+    /// <summary>Each JSON string value in stored tool arguments is cut to this many characters.</summary>
+    public int MaxStoredArgumentStringChars { get; set; } = ToolHistoryLimits.DefaultMaxStoredArgumentStringChars;
+
+    public int MaxExchangesPerReply { get; set; } = 50;
 }
 
 public sealed class ChatOptions

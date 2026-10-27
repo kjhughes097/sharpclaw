@@ -55,13 +55,25 @@ public sealed record ThreadListResponse(IReadOnlyList<ThreadDto> Threads);
 /// <summary><c>Unattended</c>: nobody will answer approvals for this message (scripts, schedules).</summary>
 public sealed record PostMessageRequest(string Content, bool Unattended = false);
 
+/// <summary>
+/// A thread row. <c>Kind</c> is <c>message</c> (user messages and final replies), <c>tool_request</c>
+/// (role assistant, <c>ToolCalls</c> set) or <c>tool_result</c> (role tool, <c>ToolCallId</c> set).
+/// Rows are ordered by <c>Seq</c>.
+/// </summary>
 public sealed record MessageDto(
     Guid Id,
     string Role,
     string Content,
     string Status,
     Guid? CorrelationId,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string Kind = MessageKinds.Message,
+    int Seq = 0,
+    IReadOnlyList<ChatToolCall>? ToolCalls = null,
+    string? ToolCallId = null,
+    bool? ToolOk = null,
+    bool Untrusted = false,
+    bool Truncated = false);
 
 public sealed record MessageListResponse(IReadOnlyList<MessageDto> Messages);
 
@@ -76,7 +88,18 @@ public sealed record InboxMessageDto(Guid Id, Guid ThreadId, string Content, Dat
 
 public sealed record InboxMessageResponse(InboxMessageDto Message);
 
-public sealed record AgentReplyRequest(string Content, Guid CorrelationId);
+/// <summary>
+/// The agent's final reply, with the tool exchanges of the turn (in order) so the thread keeps
+/// the whole conversation the model took part in.
+/// </summary>
+public sealed record AgentReplyRequest(string Content, Guid CorrelationId, IReadOnlyList<ToolExchangeDto>? Exchanges = null);
+
+/// <summary>One model round that asked for tools: any text it produced, its calls, and their results.</summary>
+public sealed record ToolExchangeDto(
+    string? AssistantContent, IReadOnlyList<ChatToolCall> ToolCalls, IReadOnlyList<ToolResultDto> Results);
+
+/// <summary><c>Untrusted</c>: the content may carry prompt injection and is never replayed on later turns.</summary>
+public sealed record ToolResultDto(string ToolCallId, string Content, bool Ok, bool Untrusted);
 
 public sealed record AgentReplyDto(Guid Id, DateTime CreatedAt);
 

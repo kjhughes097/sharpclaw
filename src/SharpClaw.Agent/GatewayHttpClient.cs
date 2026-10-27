@@ -56,7 +56,7 @@ public sealed class GatewayHttpClient : IGatewayClient
         resp.EnsureSuccessStatusCode();
         var body = await resp.Content.ReadFromJsonAsync<MessageListResponse>(SharpClawJson.Options, ct);
         return (body?.Messages ?? Array.Empty<MessageDto>())
-            .Where(m => m.Role is Roles.User or Roles.Assistant)
+            .Where(m => m.Kind == MessageKinds.Message && m.Role is Roles.User or Roles.Assistant)
             .Select(m => new ChatMessage(m.Role, m.Content))
             .ToList();
     }
@@ -218,10 +218,11 @@ public sealed class GatewayHttpClient : IGatewayClient
         }
     }
 
-    public async Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct)
+    public async Task PostReplyAsync(
+        Guid threadId, string content, Guid correlationId, IReadOnlyList<ToolExchangeDto> exchanges, CancellationToken ct)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/agent/threads/{threadId}/messages",
-            new AgentReplyRequest(content, correlationId), SharpClawJson.Options, ct);
+            new AgentReplyRequest(content, correlationId, exchanges), SharpClawJson.Options, ct);
         resp.EnsureSuccessStatusCode();
     }
 

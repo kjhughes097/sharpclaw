@@ -89,7 +89,7 @@ public class AgentToolEndToEndTests : IDisposable
     {
         using var db = h.Fx.NewDb();
         return await db.Messages.AsNoTracking()
-            .Where(m => m.ThreadId == h.Thread && m.Role == Roles.Assistant)
+            .Where(m => m.ThreadId == h.Thread && m.Role == Roles.Assistant && m.Kind == MessageKinds.Message)
             .Select(m => m.Content).SingleOrDefaultAsync();
     }
 
@@ -122,6 +122,17 @@ public class AgentToolEndToEndTests : IDisposable
         using var db = h.Fx.NewDb();
         Assert.Equal(3, await db.LlmCalls.CountAsync());
         Assert.Equal(MessageStatus.Done, (await db.Messages.AsNoTracking().SingleAsync(m => m.Role == Roles.User)).Status);
+
+        // The exchanges are in the thread: write (trusted), then read (untrusted), then the reply.
+        var rows = await db.Messages.AsNoTracking().Where(m => m.ThreadId == h.Thread).OrderBy(m => m.Seq).ToListAsync();
+        Assert.Equal(new[]
+        {
+            MessageKinds.Message, MessageKinds.ToolRequest, MessageKinds.ToolResult,
+            MessageKinds.ToolRequest, MessageKinds.ToolResult, MessageKinds.Message,
+        }, rows.Select(r => r.Kind));
+        Assert.False(rows[2].Untrusted);
+        Assert.True(rows[4].Untrusted);
+        Assert.Contains("buy milk", rows[4].Content);
     }
 
     [Theory]

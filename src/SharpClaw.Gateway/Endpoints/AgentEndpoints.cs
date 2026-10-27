@@ -80,14 +80,15 @@ public static class AgentEndpoints
         if (thread is null || thread.AgentId != agent.Id)
             return ApiResults.NotFound("Thread not found.");
 
-        var messages = await MessageQueries.ListAsync(db, id, null, ct);
+        var messages = await MessageQueries.ListAsync(db, id, null, includeTools: true, ct);
         return Results.Json(new MessageListResponse(messages), SharpClawJson.Options);
     }
 
     private static async Task<IResult> Reply(
         Guid id, AgentReplyRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
         IEventPublisher events, ActiveTurnBuffers buffers, ApprovalDecisions decisions, GatewayMetrics metrics,
-        IOptions<MessagesOptions> messages, ILoggerFactory loggerFactory, CancellationToken ct)
+        IOptions<MessagesOptions> messages, IOptions<ToolsOptions> toolsOptions, ILoggerFactory loggerFactory,
+        CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
@@ -95,6 +96,9 @@ public static class AgentEndpoints
             return ApiResults.ValidationFailed("content is required.");
         if (body.Content.Length > messages.Value.MaxContentChars)
             return ApiResults.ValidationFailed($"content exceeds {messages.Value.MaxContentChars} characters.");
+        var exchanges = body.Exchanges ?? Array.Empty<ToolExchangeDto>();
+        if (ToolExchangeRows.Validate(exchanges, toolsOptions.Value) is { } invalid)
+            return ApiResults.ValidationFailed(invalid);
 
         var userMsg = await db.Messages.FirstOrDefaultAsync(m => m.Id == body.CorrelationId, ct);
         if (userMsg is null || userMsg.AgentId != agent.Id || userMsg.ThreadId != id || userMsg.Role != Roles.User)
@@ -105,29 +109,39 @@ public static class AgentEndpoints
             return ApiResults.NotFound("Correlation message is not claimed.");
 
         var now = time.GetUtcNow().UtcDateTime;
-        var assistant = new Message
+        Message assistant;
+        // Exchanges, the final reply and the user message's status change commit together or not at all.
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
-            Id = Guid.CreateVersion7(),
-            ThreadId = id,
-            AgentId = agent.Id,
-            Role = Roles.Assistant,
-            Content = body.Content,
-            Status = MessageStatus.Done,
-            CorrelationId = body.CorrelationId,
-            CreatedAt = now,
-            CompletedAt = now,
-        };
-        userMsg.Status = MessageStatus.Done;
-        userMsg.CompletedAt = now;
-        db.Messages.Add(assistant);
+            var seq = await MessageQueries.NextSeqAsync(db, id, ct);
+            db.Messages.AddRange(ToolExchangeRows.Build(exchanges, userMsg, now, toolsOptions.Value, ref seq));
+            assistant = new Message
+            {
+                Id = Guid.CreateVersion7(),
+                ThreadId = id,
+                AgentId = agent.Id,
+                Role = Roles.Assistant,
+                Kind = MessageKinds.Message,
+                Content = body.Content,
+                Status = MessageStatus.Done,
+                CorrelationId = body.CorrelationId,
+                CreatedAt = now,
+                CompletedAt = now,
+                Seq = seq,
+            };
+            userMsg.Status = MessageStatus.Done;
+            userMsg.CompletedAt = now;
+            db.Messages.Add(assistant);
 
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException)
-        {
-            return ApiResults.Conflict("A reply already exists for this message.");
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                return ApiResults.Conflict("A reply already exists for this message.");
+            }
         }
 
         buffers.Remove(body.CorrelationId);

@@ -184,7 +184,8 @@ public class AgentLoopTests
             LastChatMessages = messages;
             return Task.FromResult(NextChat);
         }
-        public Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct)
+        public Task PostReplyAsync(Guid threadId, string content, Guid correlationId,
+            IReadOnlyList<ToolExchangeDto> exchanges, CancellationToken ct)
         {
             Replies.Add((threadId, content, correlationId));
             return Task.CompletedTask;

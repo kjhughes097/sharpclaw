@@ -25,6 +25,15 @@ public static class Roles
     public const string Tool = "tool";
 }
 
+/// <summary>What a thread row is (pre-3.3 spec section 5).</summary>
+public static class MessageKinds
+{
+    /// <summary>A user message or a final assistant reply.</summary>
+    public const string Message = "message";
+    public const string ToolRequest = "tool_request";
+    public const string ToolResult = "tool_result";
+}
+
 /// <summary>Message statuses.</summary>
 public static class MessageStatus
 {

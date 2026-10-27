@@ -63,13 +63,13 @@ public static class ThreadsEndpoints
     }
 
     private static async Task<IResult> GetMessages(
-        Guid id, Guid? after, SharpClawDbContext db, CancellationToken ct)
+        Guid id, Guid? after, bool? includeTools, SharpClawDbContext db, CancellationToken ct)
     {
         var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
         if (thread is null)
             return ApiResults.NotFound("Thread not found.");
 
-        var messages = await MessageQueries.ListAsync(db, id, after, ct);
+        var messages = await MessageQueries.ListAsync(db, id, after, includeTools ?? false, ct);
         return Results.Json(new MessageListResponse(messages), SharpClawJson.Options);
     }
 
@@ -98,8 +98,13 @@ public static class ThreadsEndpoints
             Unattended = body.Unattended,
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
-        db.Messages.Add(message);
-        await db.SaveChangesAsync(ct);
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            message.Seq = await MessageQueries.NextSeqAsync(db, thread.Id, ct);
+            db.Messages.Add(message);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
 
         await events.PublishDurableAsync(thread.Id, SseEventNames.MessageCreated,
             new MessageCreatedEvent(message.Id, thread.Id, message.Id), ct);

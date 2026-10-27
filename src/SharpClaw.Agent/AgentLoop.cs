@@ -107,10 +107,10 @@ public sealed class AgentLoop
             var messages = new List<ChatMessage> { new(Roles.System, _soul.Read()) };
             messages.AddRange(history);
 
-            var (reply, failCode) = await RunTurnAsync(messages, new TurnContext(msg.Id, msg.ThreadId), ct);
+            var (reply, failCode, exchanges) = await RunTurnAsync(messages, new TurnContext(msg.Id, msg.ThreadId), ct);
             if (reply is not null)
             {
-                await _client.PostReplyAsync(msg.ThreadId, reply, msg.Id, ct);
+                await _client.PostReplyAsync(msg.ThreadId, reply, msg.Id, exchanges, ct);
                 _logger.LogInformation("message handled: outcome=ok duration_ms={DurationMs}",
                     (int)_time.GetElapsedTime(start).TotalMilliseconds);
             }
@@ -136,36 +136,49 @@ public sealed class AgentLoop
 
     /// <summary>
     /// One turn: call the model; while it asks for tools, run them through the dispatcher and call
-    /// it again with the results. Returns the final reply, or a fail code. Only the final reply is
-    /// stored in the thread; the tool exchanges live in the audit (3.2 spec section 7).
+    /// it again with the results. Returns the final reply (with the turn's tool exchanges, truncated
+    /// for storage) or a fail code. A failed turn stores no exchanges.
     /// </summary>
-    private async Task<(string? Reply, string? FailCode)> RunTurnAsync(
+    private async Task<(string? Reply, string? FailCode, IReadOnlyList<ToolExchangeDto> Exchanges)> RunTurnAsync(
         List<ChatMessage> messages, TurnContext turn, CancellationToken ct)
     {
         var tools = _tools?.Registry.Tools ?? (IReadOnlyCollection<IAgentTool>)Array.Empty<IAgentTool>();
         var maxRounds = _tools?.MaxToolIterations ?? 0;
+        var exchanges = new List<ToolExchangeDto>();
 
         for (var round = 0; ; round++)
         {
             var chat = await _client.StreamChatAsync(messages, tools, turn.CorrelationId, turn.ThreadId, ct);
             if (!chat.Success)
-                return (null, chat.FailCode);
+                return (null, chat.FailCode, exchanges);
             if (chat.ToolCalls.Count == 0)
-                return (chat.Content ?? "", null);
+                return (chat.Content ?? "", null, exchanges);
 
             // A model that asks for tools it wasn't offered, or keeps calling tools forever, stops here.
             if (_tools is null || round >= maxRounds)
             {
                 _logger.LogWarning("tool loop limit reached after {Rounds} rounds", round);
-                return (null, "tool_loop_limit");
+                return (null, "tool_loop_limit", exchanges);
             }
 
-            messages.Add(new ChatMessage(Roles.Assistant, string.IsNullOrEmpty(chat.Content) ? null : chat.Content, chat.ToolCalls));
+            var assistantContent = string.IsNullOrEmpty(chat.Content) ? null : chat.Content;
+            messages.Add(new ChatMessage(Roles.Assistant, assistantContent, chat.ToolCalls));
+            var results = new List<ToolResultDto>();
             foreach (var call in chat.ToolCalls)
             {
                 var result = await _tools.Dispatcher.DispatchAsync(new ToolCallRequest(call.Id, call.Name, call.Arguments), turn, ct);
-                messages.Add(new ChatMessage(Roles.Tool, result, ToolCallId: call.Id));
+                messages.Add(new ChatMessage(Roles.Tool, result.Content, ToolCallId: call.Id));
+                results.Add(new ToolResultDto(call.Id,
+                    ToolHistoryLimits.TruncateText(result.Content, ToolHistoryLimits.DefaultMaxStoredResultChars, out _),
+                    result.Ok, result.Untrusted));
             }
+            exchanges.Add(new ToolExchangeDto(assistantContent,
+                chat.ToolCalls.Select(c => c with
+                {
+                    Arguments = ToolHistoryLimits.TruncateArguments(
+                        c.Arguments, ToolHistoryLimits.DefaultMaxStoredArgumentStringChars, out _),
+                }).ToList(),
+                results));
         }
     }
 

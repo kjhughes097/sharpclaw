@@ -50,6 +50,20 @@ public class Message
 
     /// <summary>On user messages: nobody will answer approvals, so they are denied at once.</summary>
     public bool Unattended { get; set; }
+
+    /// <summary>Per-thread order, assigned at insert as max+1 inside the write transaction.</summary>
+    public int Seq { get; set; }
+
+    /// <summary><c>message</c>, <c>tool_request</c> or <c>tool_result</c> (see <c>MessageKinds</c>).</summary>
+    public string Kind { get; set; } = "message";
+
+    /// <summary>On <c>tool_request</c> rows: JSON array of <c>{ id, name, arguments }</c>.</summary>
+    public string? ToolCalls { get; set; }
+
+    public string? ToolCallId { get; set; }
+    public bool? ToolOk { get; set; }
+    public bool Untrusted { get; set; }
+    public bool Truncated { get; set; }
 }
 
 public class LlmCall
