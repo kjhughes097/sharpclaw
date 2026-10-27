@@ -1,7 +1,7 @@
 # SharpClaw V3 — Pre-3.3 Foundations Spec
 
 **Audience:** an implementing coding agent (and the human reviewing its work).
-**Status:** ready to implement once the defaults in section 2 are confirmed or overridden by the human.
+**Status:** built (tasks T0–T6; T7 acceptance recorded in [verification-log.md](verification-log.md)). Orientation and the decisions taken on open points: [pre-3.3-orientation.md](pre-3.3-orientation.md).
 **Relationship to other documents:** Phases 3.1 and 3.2 are built. This spec adds five foundations that the Phase 3.3 web UI depends on. Where it conflicts with the 3.1 or 3.2 specs, **this spec wins** (section 3 lists the supersessions). Everything else in those specs still applies.
 
 ## 0. How to use this document

@@ -14,8 +14,13 @@ Phase 3.2 adds **agent tools with policy and approval**: the agent scores each t
 from its arguments and asks the user before running anything above its allowed risk level, and
 every tool call is audited (see [Agent tools](#agent-tools-phase-32)).
 
+The **pre-3.3 foundations** prepare for the web UI: browser login with session cookies, tool
+exchanges kept in thread history, per-agent context windows, replayable SSE events, and an
+approval queue that works with nobody watching.
+
 Specifications: [Phase 3.1](docs/sharpclaw-3.1-implementation-spec.md),
-[Phase 3.2](docs/sharpclaw-3.2-implementation-spec.md). Roadmap: [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md).
+[Phase 3.2](docs/sharpclaw-3.2-implementation-spec.md),
+[pre-3.3 foundations](docs/sharpclaw-3.2-post-implementation-work.md). Roadmap: [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md).
 
 ## Projects
 
@@ -294,7 +299,9 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment=home
   [docs/telemetry-notes.md](docs/telemetry-notes.md).
 - **Dashboard:** `docker/grafana/sharpclaw-dashboard.json` is an importable starter dashboard
   (LLM calls by status, cost vs budget, duration/TTFT percentiles, tokens, inbox depth, last-seen
-  age, budget rejections, auth failures, and a Loki logs panel with a `correlation_id` variable).
+  age, budget rejections, tool calls, approvals (rate, pending, decision time), unreported tool
+  calls, context truncations/rejections, logins and auth failures by method, and a Loki logs panel
+  with a `correlation_id` variable).
   Panel queries use the actual landed names (dotted OTel names via `{__name__="…"}`).
 
 ## Isolation verification

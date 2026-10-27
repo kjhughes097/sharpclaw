@@ -314,6 +314,128 @@
       ]
     },
     {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Pending approvals",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 53
+      },
+      "targets": [
+        {
+          "expr": "max by (agent) ({__name__=\"sharpclaw.approvals.pending\", agent=~\"$agent\"})",
+          "legendFormat": "{{agent}}"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Approval decision time p50/p95 (s)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 53
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, status) (rate({__name__=\"sharpclaw.approval.decision_time_bucket\", agent=~\"$agent\"}[1h])))",
+          "legendFormat": "p50 {{status}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, status) (rate({__name__=\"sharpclaw.approval.decision_time_bucket\", agent=~\"$agent\"}[1h])))",
+          "legendFormat": "p95 {{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Unreported tool calls (older than 5 min)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 53
+      },
+      "targets": [
+        {
+          "expr": "max by (agent) ({__name__=\"sharpclaw.tool.unreported\", agent=~\"$agent\"})",
+          "legendFormat": "{{agent}}"
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Context truncations & rejections (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 61
+      },
+      "targets": [
+        {
+          "expr": "sum by (agent) (rate({__name__=\"sharpclaw.context.truncations\", agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "truncated {{agent}}"
+        },
+        {
+          "expr": "sum by (agent) (rate({__name__=\"sharpclaw.context.rejections\", agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "rejected {{agent}}"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Logins by result (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 61
+      },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate({__name__=\"sharpclaw.auth.logins\"}[5m])) * 60",
+          "legendFormat": "{{result}}"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Auth failures by method (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 61
+      },
+      "targets": [
+        {
+          "expr": "sum by (listener, method) (rate({__name__=\"sharpclaw.auth.failures\"}[5m])) * 60",
+          "legendFormat": "{{listener}} {{method}}"
+        }
+      ]
+    },
+    {
       "id": 11,
       "type": "logs",
       "title": "Gateway logs",
@@ -322,7 +444,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 53
+        "y": 69
       },
       "options": {
         "showTime": true,

@@ -3,6 +3,12 @@
 **Audience:** an implementing coding agent (and the human reviewing its work).
 **Status:** ready to implement. Everything below is decided unless listed under "Inputs needed from the human" (section 19).
 
+> **Superseded in part** by the [pre-3.3 foundations spec](sharpclaw-3.2-post-implementation-work.md)
+> (built): message ordering is by a per-thread `seq` and the unique reply index covers final replies
+> only (§5 there); SSE has durable events and `Last-Event-ID` replay (§8); the client API also
+> accepts a browser session cookie (§4); the full thread is no longer sent on every call (context
+> window, §6). New error codes are listed in the error table below.
+
 ## 0. How to use this document
 
 - Implement in the task order given in section 17. Complete and test each task before starting the next. Commit after each task.
@@ -248,11 +254,15 @@ All errors, including those from `/v1/chat/completions`, use:
 |---|---|---|
 | 400 | `validation_failed` | bad input; `message` says which field |
 | 400 | `unsupported` | a feature outside 3.1 (e.g. `stream: false`, `tools`) |
+| 400 | `context_too_large` | (pre-3.3) the turn or request does not fit the agent's context window |
 | 401 | `unauthorized` | missing, invalid, revoked or expired credentials |
 | 403 | `agent_disabled` | agent token valid but agent disabled |
+| 403 | `csrf_failed` | (pre-3.3) cookie-authenticated unsafe request without a valid origin or CSRF token |
 | 404 | `not_found` | unknown id, or an id owned by another agent, or wrong listener |
 | 409 | `conflict` | e.g. duplicate agent name, reply already exists |
 | 429 | `budget_exceeded` | daily budget used up; includes a `Retry-After` header (seconds until next UTC midnight) |
+| 429 | `loop_limit_exceeded` | (3.2) the per-message LLM call backstop was reached |
+| 429 | `rate_limited` | (pre-3.3) too many failed logins; includes `Retry-After` |
 | 502 | `provider_error` | upstream failure before streaming started |
 | 504 | `provider_timeout` | upstream connect or idle timeout before streaming started |
 | 500 | `internal_error` | anything else; never include stack traces or content in `message` |

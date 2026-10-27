@@ -8,8 +8,9 @@ using SharpClaw.Gateway.Services;
 namespace SharpClaw.Gateway.Telemetry;
 
 /// <summary>
-/// All gateway metrics. Meter name is "SharpClaw.Gateway". Labels are limited to agent name,
-/// model, status, type and listener — never thread, message, correlation id or token.
+/// All gateway metrics. Meter name is "SharpClaw.Gateway". Labels are limited to small fixed sets
+/// (agent name, model, status, type, listener, tool, method, result, scope) — never thread,
+/// message, correlation, session or user ids, or tokens.
 /// </summary>
 public sealed class GatewayMetrics : IDisposable
 {
@@ -77,6 +78,7 @@ public sealed class GatewayMetrics : IDisposable
         _meter.CreateObservableGauge("sharpclaw.agent.last_seen", ObserveLastSeen, "s");
         _meter.CreateObservableGauge("sharpclaw.sse.subscribers", ObserveSubscribers, "{subscriber}");
         _meter.CreateObservableGauge("sharpclaw.approvals.pending", ObservePendingApprovals, "{approval}");
+        _meter.CreateObservableGauge("sharpclaw.tool.unreported", ObserveUnreportedToolCalls, "{call}");
     }
 
     public void RecordCall(string agent, string model, string status) =>
@@ -161,6 +163,24 @@ public sealed class GatewayMetrics : IDisposable
             .Select(g => new { g.Key, Count = g.Count() })
             .ToDictionary(x => x.Key, x => x.Count);
         // Every agent reports, so the gauge drops to 0 rather than going stale.
+        return db.Agents.AsNoTracking().ToList()
+            .Select(a => new Measurement<int>(counts.GetValueOrDefault(a.Id), Tag("agent", a.Name)));
+    }
+
+    /// <summary>
+    /// Tool calls the model requested more than 5 minutes ago that the agent never reported: the
+    /// integrity signal the 3.2 design relies on (the audit can't be silently skipped).
+    /// </summary>
+    private IEnumerable<Measurement<int>> ObserveUnreportedToolCalls()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SharpClawDbContext>();
+        var cutoff = _time.GetUtcNow().UtcDateTime.AddMinutes(-5);
+        var counts = db.ToolCalls.AsNoTracking()
+            .Where(t => t.ReportedAt == null && t.CreatedAt < cutoff)
+            .GroupBy(t => t.AgentId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionary(x => x.Key, x => x.Count);
         return db.Agents.AsNoTracking().ToList()
             .Select(a => new Measurement<int>(counts.GetValueOrDefault(a.Id), Tag("agent", a.Name)));
     }

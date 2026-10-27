@@ -75,6 +75,52 @@ public class TelemetryAndAbortTests
     }
 
     [Fact]
+    public async Task Gauges_report_pending_approvals_unreported_tool_calls_and_subscribers()
+    {
+        var script = ChatTestHelpers.WriteScript("""
+            { "rules": [ { "match": "go", "toolCalls": [ { "name": "workspace_list", "arguments": {} } ] } ] }
+            """);
+        await using var fx = await GatewayFixture.CreateAsync(extraConfig: new Dictionary<string, string?>
+        {
+            ["Fake:ScriptPath"] = script,
+            ["Approvals:TimeoutSeconds"] = "3600",
+        });
+        var (agent, token) = await fx.CreateAgentAsync();
+        var thread = await fx.CreateThreadAsync(agent.Id);
+        await fx.PostUserMessageAsync(thread, "go");
+        var corr = (await fx.ClaimAsync(token))!.Id;
+        await (await fx.ChatAsync(token, corr, thread, "go")).Content.ReadAsStringAsync();
+        using (var c = fx.AgentClient(token))
+            (await c.PostAsJsonAsync("/agent/approvals", new CreateApprovalRequest(corr, thread, "call_x", "workspace_delete",
+                "delete a.md", RiskLevels.High, "deletes"), SharpClawJson.Options)).EnsureSuccessStatusCode();
+        var (streamClient, stream) = await fx.OpenStreamAsync($"/api/threads/{thread}/stream");
+        using var __ = streamClient;
+        await using var ___ = stream;
+        fx.Time.Advance(TimeSpan.FromMinutes(6));
+
+        var observed = new ConcurrentBag<(string Name, int Value, Dictionary<string, string?> Tags)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (inst, l) =>
+        {
+            if (inst.Meter.Name == GatewayMetrics.MeterName)
+                l.EnableMeasurementEvents(inst);
+        };
+        listener.SetMeasurementEventCallback<int>((inst, v, tags, _) =>
+        {
+            var dict = new Dictionary<string, string?>();
+            foreach (var t in tags) dict[t.Key] = t.Value?.ToString();
+            observed.Add((inst.Name, v, dict));
+        });
+        listener.Start();
+        listener.RecordObservableInstruments();
+
+        Assert.Contains(observed, m => m.Name == "sharpclaw.approvals.pending" && m.Value == 1 && m.Tags["agent"] == agent.Name);
+        Assert.Contains(observed, m => m.Name == "sharpclaw.tool.unreported" && m.Value == 1 && m.Tags["agent"] == agent.Name);
+        Assert.Contains(observed, m => m.Name == "sharpclaw.sse.subscribers" && m.Value == 1 && m.Tags["scope"] == "thread");
+        Assert.Contains(observed, m => m.Name == "sharpclaw.sse.subscribers" && m.Value == 0 && m.Tags["scope"] == "global");
+    }
+
+    [Fact]
     public async Task Unreachable_otlp_endpoint_does_not_break_requests()
     {
         const string key = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT";

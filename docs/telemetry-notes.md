@@ -44,6 +44,22 @@ unit suffix is added. Histograms only gain `_bucket`, `_sum` and `_count`.
 | `sharpclaw.tool.calls` (3.2) | `sharpclaw.tool.calls` (labels agent, tool, status) |
 | `sharpclaw.approvals` (3.2) | `sharpclaw.approvals` (labels agent, status) |
 
+### Added by the pre-3.3 foundations
+
+Expected names, following the rules above (not yet observed live; the dashboard panels use them):
+
+| OTel instrument | Landed name(s) | Labels |
+|---|---|---|
+| `sharpclaw.auth.failures` (extended) | `sharpclaw.auth.failures` | listener, method (`admin_key`, `session`, `csrf`, `origin`, `password`, `agent_token`) |
+| `sharpclaw.auth.logins` | `sharpclaw.auth.logins` | result (`success`, `failure`, `rate_limited`) |
+| `sharpclaw.context.truncations` | `sharpclaw.context.truncations` | agent |
+| `sharpclaw.context.rejections` | `sharpclaw.context.rejections` | agent |
+| `sharpclaw.context.estimated_tokens` | `sharpclaw.context.estimated_tokens_bucket` / `_sum` / `_count` | agent |
+| `sharpclaw.sse.subscribers` | `sharpclaw.sse.subscribers` | scope (`thread`, `global`) |
+| `sharpclaw.approvals.pending` | `sharpclaw.approvals.pending` | agent |
+| `sharpclaw.approval.decision_time` | `sharpclaw.approval.decision_time_bucket` / `_sum` / `_count` | agent, status |
+| `sharpclaw.tool.unreported` | `sharpclaw.tool.unreported` | agent (tool calls older than 5 min never reported) |
+
 Because the names contain dots, PromQL/MetricsQL must select them as
 `{__name__="sharpclaw.llm.calls", agent="assistant"}`.
 
