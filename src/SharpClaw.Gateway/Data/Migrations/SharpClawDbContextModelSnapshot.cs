@@ -201,6 +201,28 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.ToTable("threads", (string)null);
                 });
 
+            modelBuilder.Entity("SharpClaw.Gateway.Data.EventLogState", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("id");
+
+                    b.Property<long>("PrunedThrough")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("pruned_through");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("event_log_state", (string)null);
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            PrunedThrough = 0L
+                        });
+                });
+
             modelBuilder.Entity("SharpClaw.Gateway.Data.LlmCall", b =>
                 {
                     b.Property<Guid>("Id")
@@ -343,6 +365,40 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.HasIndex("AgentId", "Role", "Status", "CreatedAt");
 
                     b.ToTable("messages", (string)null);
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.ThreadEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Data")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("data");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("thread_id");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ThreadId", "Id");
+
+                    b.ToTable("thread_events", (string)null);
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.ToolCallRecord", b =>

@@ -24,7 +24,8 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Inbox(
         HttpContext http, int? wait, SharpClawDbContext db, TimeProvider time,
-        IAgentInboxSignal signal, IOptions<InboxOptions> inboxOpt, ILoggerFactory loggerFactory, CancellationToken ct)
+        IAgentInboxSignal signal, ActiveTurnBuffers buffers, IOptions<InboxOptions> inboxOpt,
+        ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Inbox");
         var agent = AuthContext.Agent(http);
@@ -36,7 +37,9 @@ public static class AgentEndpoints
         {
             var now = time.GetUtcNow().UtcDateTime;
             var threshold = now.AddSeconds(-opt.ClaimTimeoutSeconds);
-            await InboxRepository.RequeueStaleAsync(db, agent.Id, threshold, ct);
+            var requeued = await InboxRepository.RequeueStaleAsync(db, agent.Id, threshold, ct);
+            foreach (var stale in requeued)
+                buffers.Remove(stale);
 
             var claimed = await InboxRepository.ClaimNextAsync(db, agent.Id, now, ct);
             if (claimed is not null)
@@ -80,7 +83,7 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Reply(
         Guid id, AgentReplyRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IThreadEventBus bus, GatewayMetrics metrics, IOptions<MessagesOptions> messages,
+        IEventPublisher events, ActiveTurnBuffers buffers, GatewayMetrics metrics, IOptions<MessagesOptions> messages,
         ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
@@ -124,8 +127,9 @@ public static class AgentEndpoints
             return ApiResults.Conflict("A reply already exists for this message.");
         }
 
-        Publish(bus, id, SseEventNames.MessageCompleted,
-            new MessageCompletedEvent(body.CorrelationId, assistant.Id, body.Content));
+        buffers.Remove(body.CorrelationId);
+        await events.PublishDurableAsync(id, SseEventNames.MessageCompleted,
+            new MessageCompletedEvent(body.CorrelationId, assistant.Id, body.Content), ct);
         var messageSeconds = (now - userMsg.CreatedAt).TotalSeconds;
         metrics.RecordMessageDuration(agent.Name, messageSeconds);
         using (logger.BeginScope(new Dictionary<string, object>
@@ -142,7 +146,7 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Fail(
         Guid id, FailMessageRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IThreadEventBus bus, ILoggerFactory loggerFactory, CancellationToken ct)
+        IEventPublisher events, ActiveTurnBuffers buffers, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
@@ -169,13 +173,8 @@ public static class AgentEndpoints
         }))
             logger.LogWarning("message failed: reason={Reason}", reason);
 
-        Publish(bus, msg.ThreadId, SseEventNames.Error, new ErrorEvent(msg.Id, reason, reason));
+        buffers.Remove(msg.Id);
+        await events.PublishDurableAsync(msg.ThreadId, SseEventNames.Error, new ErrorEvent(msg.Id, reason, reason), ct);
         return Results.StatusCode(204);
-    }
-
-    private static void Publish<T>(IThreadEventBus bus, Guid threadId, string eventName, T payload)
-    {
-        var json = JsonSerializer.Serialize(payload, SharpClawJson.Options);
-        bus.Publish(threadId, new ThreadSseEvent(eventName, json));
     }
 }

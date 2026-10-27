@@ -14,6 +14,8 @@ public class SharpClawDbContext : DbContext
     public DbSet<LlmCall> LlmCalls => Set<LlmCall>();
     public DbSet<ToolCallRecord> ToolCalls => Set<ToolCallRecord>();
     public DbSet<Approval> Approvals => Set<Approval>();
+    public DbSet<ThreadEvent> ThreadEvents => Set<ThreadEvent>();
+    public DbSet<EventLogState> EventLogState => Set<EventLogState>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -99,6 +101,23 @@ public class SharpClawDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.CorrelationId);
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
+        });
+
+        b.Entity<ThreadEvent>(e =>
+        {
+            e.ToTable("thread_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.HasIndex(x => new { x.ThreadId, x.Id });
+            e.HasIndex(x => x.CreatedAt);
+        });
+
+        b.Entity<EventLogState>(e =>
+        {
+            e.ToTable("event_log_state");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.HasData(new EventLogState { Id = 1, PrunedThrough = 0 });
         });
     }
 

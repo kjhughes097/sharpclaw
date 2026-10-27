@@ -27,7 +27,7 @@ public static class ChatEndpoints
 
     private static async Task<IResult> Completions(
         HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IChatProvider provider, IThreadEventBus bus, GatewayMetrics metrics,
+        IChatProvider provider, IEventPublisher events, ActiveTurnBuffers buffers, GatewayMetrics metrics,
         IOptions<ChatOptions> chatOptions, ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Chat");
@@ -97,7 +97,7 @@ public static class ChatEndpoints
 
             // Risk-assessment calls are internal to the agent: never show their output to the user.
             var teeToThread = purpose == LlmCallPurpose.Chat;
-            var stream = new ChatStream(http.Response, bus, recorder, logger, agent.Model, threadId, correlationId, teeToThread);
+            var stream = new ChatStream(http.Response, events, buffers, recorder, logger, agent.Model, threadId, correlationId, teeToThread);
             return await stream.RunAsync(provider, parsed!.ToProviderRequest(agent.Model), ct);
         }
     }
@@ -141,7 +141,8 @@ public static class ChatEndpoints
     private sealed class ChatStream
     {
         private readonly HttpResponse _response;
-        private readonly IThreadEventBus _bus;
+        private readonly IEventPublisher _events;
+        private readonly ActiveTurnBuffers _buffers;
         private readonly LlmCallRecorder _recorder;
         private readonly ILogger _logger;
         private readonly Guid _threadId;
@@ -158,12 +159,13 @@ public static class ChatEndpoints
         private int? _ttftMs;
         private string _finishReason = "stop";
 
-        public ChatStream(HttpResponse response, IThreadEventBus bus, LlmCallRecorder recorder, ILogger logger,
-            string model, Guid threadId, Guid correlationId, bool teeToThread)
+        public ChatStream(HttpResponse response, IEventPublisher events, ActiveTurnBuffers buffers, LlmCallRecorder recorder,
+            ILogger logger, string model, Guid threadId, Guid correlationId, bool teeToThread)
         {
             _teeToThread = teeToThread;
             _response = response;
-            _bus = bus;
+            _events = events;
+            _buffers = buffers;
             _recorder = recorder;
             _logger = logger;
             _threadId = threadId;
@@ -244,14 +246,20 @@ public static class ChatEndpoints
                 case ChatStreamEvent.Delta d:
                     _ttftMs ??= ElapsedMs;
                     await WriteAsync(_writer.ContentChunk(d.Text), ct);
-                    Publish(SseEventNames.Delta, new DeltaEvent(_correlationId, d.Text));
+                    if (_teeToThread)
+                    {
+                        _buffers.Append(_threadId, _correlationId, d.Text);
+                        _events.PublishEphemeral(_threadId, SseEventNames.Delta, new DeltaEvent(_correlationId, d.Text));
+                    }
                     break;
                 case ChatStreamEvent.ToolCall call:
                     _ttftMs ??= ElapsedMs;
                     await WriteAsync(_writer.ToolCallChunk(_toolCalls.Count, call.Id, call.Name, call.ArgumentsJson), ct);
                     _toolCalls.Add(call);
                     // Only the tool name is published: arguments may contain content.
-                    Publish(SseEventNames.ToolRequested, new ToolRequestedEvent(_correlationId, call.Id, call.Name));
+                    if (_teeToThread)
+                        await _events.PublishDurableAsync(_threadId, SseEventNames.ToolRequested,
+                            new ToolRequestedEvent(_correlationId, call.Id, call.Name), ct);
                     break;
                 case ChatStreamEvent.Usage u:
                     _promptTokens = u.PromptTokens;
@@ -263,12 +271,6 @@ public static class ChatEndpoints
                     _finishReason = done.FinishReason;
                     break;
             }
-        }
-
-        private void Publish<T>(string eventName, T payload)
-        {
-            if (_teeToThread)
-                _bus.Publish(_threadId, new ThreadSseEvent(eventName, JsonSerializer.Serialize(payload, SharpClawJson.Options)));
         }
 
         private LlmCallOutcome Succeeded() => new()

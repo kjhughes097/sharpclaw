@@ -7,14 +7,28 @@ namespace SharpClaw.Gateway.Services;
 
 public static class InboxRepository
 {
-    /// <summary>Requeues claimed messages whose claim is older than the threshold.</summary>
-    public static async Task RequeueStaleAsync(
+    /// <summary>Requeues claimed messages whose claim is older than the threshold; returns their ids.</summary>
+    public static async Task<List<Guid>> RequeueStaleAsync(
         SharpClawDbContext db, Guid agentId, DateTime thresholdUtc, CancellationToken ct)
     {
-        await db.Database.ExecuteSqlInterpolatedAsync($@"
+        var conn = (SqliteConnection)db.Database.GetDbConnection();
+        if (conn.State != System.Data.ConnectionState.Open)
+            await conn.OpenAsync(ct);
+
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = @"
             UPDATE messages SET status = 'pending', claimed_at = NULL
-            WHERE agent_id = {agentId} AND role = 'user' AND status = 'claimed'
-              AND claimed_at IS NOT NULL AND claimed_at < {thresholdUtc}", ct);
+            WHERE agent_id = $agent AND role = 'user' AND status = 'claimed'
+              AND claimed_at IS NOT NULL AND claimed_at < $threshold
+            RETURNING id;";
+        cmd.Parameters.AddWithValue("$agent", agentId);
+        cmd.Parameters.AddWithValue("$threshold", thresholdUtc);
+
+        var ids = new List<Guid>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+            ids.Add(reader.GetGuid(0));
+        return ids;
     }
 
     /// <summary>

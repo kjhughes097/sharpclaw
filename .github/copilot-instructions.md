@@ -57,8 +57,11 @@ Run a focused suite with `dotnet test tests/SharpClaw.Gateway.Tests --filter "Fu
   Wrong listener → `404`. Endpoint registration lives in `Endpoints/`, wired via
   `Endpoints/EndpointMapping.cs`; service registration is split into `GatewayServices` partials.
 - `src/SharpClaw.Agent` — console loop; HTTP and soul file behind `IGatewayClient` / `ISoulProvider`.
-- `src/SharpClaw.Cli` — assembly `sharpclaw`; gateway access behind `ICliGateway`. Chat must open
-  the SSE stream **before** posting (no replay).
+- `src/SharpClaw.Cli` — assembly `sharpclaw`; gateway access behind `ICliGateway`. Chat opens the
+  SSE stream **before** posting (a fresh connect replays nothing) and resumes with `Last-Event-ID`.
+- **Events:** durable client events go through `IEventPublisher.PublishDurableAsync` (stored in
+  `thread_events`, then published with an id); only `delta` is ephemeral. Never put tool arguments
+  or results in an event.
 
 ## Conventions
 

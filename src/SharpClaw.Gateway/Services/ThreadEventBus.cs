@@ -3,24 +3,35 @@ using System.Threading.Channels;
 
 namespace SharpClaw.Gateway.Services;
 
-/// <summary>A single Server-Sent Event to be written to the client thread stream.</summary>
-public sealed record ThreadSseEvent(string Event, string DataJson);
+/// <summary>
+/// A single Server-Sent Event. <c>Id</c> is set for durable events (stored in
+/// <c>thread_events</c>) and null for ephemeral ones such as <c>delta</c>.
+/// </summary>
+public sealed record ThreadSseEvent(string Event, string DataJson, long? Id = null);
 
-/// <summary>In-memory, per-thread pub/sub. No replay: late subscribers miss earlier events.</summary>
+/// <summary>
+/// In-memory pub/sub for live events. Subscribers either watch one thread or (with a null thread
+/// id) every thread. Replay comes from <c>thread_events</c>, not from the bus.
+/// </summary>
 public interface IThreadEventBus
 {
-    IDisposable Subscribe(Guid threadId, out ChannelReader<ThreadSseEvent> reader);
+    /// <param name="threadId">The thread to watch, or null for all threads.</param>
+    IDisposable Subscribe(Guid? threadId, out ChannelReader<ThreadSseEvent> reader);
     void Publish(Guid threadId, ThreadSseEvent evt);
 
-    /// <summary>How many clients are currently watching the thread (0 = nobody can answer).</summary>
+    /// <summary>Open subscriptions: (per-thread, global).</summary>
+    (int Thread, int Global) SubscriberCounts();
+
+    /// <summary>How many clients are currently watching the thread.</summary>
     int SubscriberCount(Guid threadId);
 }
 
 public sealed class ThreadEventBus : IThreadEventBus
 {
     private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, Channel<ThreadSseEvent>>> _subscribers = new();
+    private readonly ConcurrentDictionary<Guid, Channel<ThreadSseEvent>> _global = new();
 
-    public IDisposable Subscribe(Guid threadId, out ChannelReader<ThreadSseEvent> reader)
+    public IDisposable Subscribe(Guid? threadId, out ChannelReader<ThreadSseEvent> reader)
     {
         var channel = Channel.CreateUnbounded<ThreadSseEvent>(new UnboundedChannelOptions
         {
@@ -28,8 +39,10 @@ public sealed class ThreadEventBus : IThreadEventBus
             SingleWriter = false,
         });
         var id = Guid.NewGuid();
-        var map = _subscribers.GetOrAdd(threadId, _ => new ConcurrentDictionary<Guid, Channel<ThreadSseEvent>>());
-        map[id] = channel;
+        if (threadId is { } t)
+            _subscribers.GetOrAdd(t, _ => new ConcurrentDictionary<Guid, Channel<ThreadSseEvent>>())[id] = channel;
+        else
+            _global[id] = channel;
         reader = channel.Reader;
         return new Subscription(this, threadId, id);
     }
@@ -39,41 +52,42 @@ public sealed class ThreadEventBus : IThreadEventBus
         if (_subscribers.TryGetValue(threadId, out var map))
             foreach (var channel in map.Values)
                 channel.Writer.TryWrite(evt);
+        foreach (var channel in _global.Values)
+            channel.Writer.TryWrite(evt);
     }
+
+    public (int Thread, int Global) SubscriberCounts() =>
+        (_subscribers.Values.Sum(m => m.Count), _global.Count);
 
     public int SubscriberCount(Guid threadId) =>
         _subscribers.TryGetValue(threadId, out var map) ? map.Count : 0;
 
-    private void Unsubscribe(Guid threadId, Guid id)
+    private void Unsubscribe(Guid? threadId, Guid id)
     {
-        if (_subscribers.TryGetValue(threadId, out var map))
+        if (threadId is null)
+        {
+            if (_global.TryRemove(id, out var g))
+                g.Writer.TryComplete();
+            return;
+        }
+        if (_subscribers.TryGetValue(threadId.Value, out var map))
         {
             if (map.TryRemove(id, out var channel))
                 channel.Writer.TryComplete();
             if (map.IsEmpty)
-                _subscribers.TryRemove(threadId, out _);
+                _subscribers.TryRemove(threadId.Value, out _);
         }
     }
 
-    private sealed class Subscription : IDisposable
+    private sealed class Subscription(ThreadEventBus bus, Guid? threadId, Guid id) : IDisposable
     {
-        private readonly ThreadEventBus _bus;
-        private readonly Guid _threadId;
-        private readonly Guid _id;
         private bool _disposed;
-
-        public Subscription(ThreadEventBus bus, Guid threadId, Guid id)
-        {
-            _bus = bus;
-            _threadId = threadId;
-            _id = id;
-        }
 
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
-            _bus.Unsubscribe(_threadId, _id);
+            bus.Unsubscribe(threadId, id);
         }
     }
 }

@@ -97,6 +97,23 @@ public class ToolCallRecord
     public DateTime? ReportedAt { get; set; }
 }
 
+/// <summary>A durable SSE event (pre-3.3 §8). <c>Id</c> is the SSE event id: global and monotonic.</summary>
+public class ThreadEvent
+{
+    public long Id { get; set; }
+    public Guid ThreadId { get; set; }
+    public string Type { get; set; } = "";
+    public string Data { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>Single row: the highest event id removed by retention pruning.</summary>
+public class EventLogState
+{
+    public int Id { get; set; }
+    public long PrunedThrough { get; set; }
+}
+
 /// <summary>A request for the human to allow a tool call (3.2).</summary>
 public class Approval
 {

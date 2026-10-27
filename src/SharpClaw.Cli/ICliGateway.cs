@@ -2,7 +2,8 @@ using SharpClaw.Contracts;
 
 namespace SharpClaw.Cli;
 
-public sealed record CliSseEvent(string Event, string DataJson);
+/// <summary>One SSE event. <c>Id</c> is set for durable (replayable) events.</summary>
+public sealed record CliSseEvent(string Event, string DataJson, long? Id = null);
 
 /// <summary>An open thread SSE stream whose events can be read until disposed.</summary>
 public interface IThreadStream : IAsyncDisposable
@@ -24,11 +25,17 @@ public interface ICliGateway
 
     Task<ThreadDto> CreateThreadAsync(string agentId, string? title);
 
-    /// <summary>Opens the thread stream and returns once response headers have arrived.</summary>
-    Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, CancellationToken ct);
+    /// <summary>
+    /// Opens the thread stream and returns once response headers have arrived. With a last event
+    /// id, the gateway first replays the durable events after it.
+    /// </summary>
+    Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, long? lastEventId, CancellationToken ct);
 
     /// <summary>Posts a user message and returns its id.</summary>
     Task<Guid> PostMessageAsync(Guid threadId, string content);
+
+    /// <summary>The thread's user messages and final replies.</summary>
+    Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid threadId);
 
     Task<AuditResponse> AuditAsync(string? agent, int? limit);
 

@@ -53,7 +53,14 @@ secrets or network required.
   records every call in `llm_calls`, and tees content deltas to the client's SSE stream.
 - **Messaging.** Clients post user messages to a thread; agents claim them via a long-poll inbox
   (atomic single-statement claim), answer via the chat endpoint, and post a reply. Live output
-  reaches clients over `GET /api/threads/{id}/stream` (SSE, no replay).
+  reaches clients over SSE: `GET /api/threads/{id}/stream` for one thread, `GET /api/events` for
+  all threads.
+- **Event replay.** Durable events (`message.created`, `message.completed`, `error`,
+  `tool.requested`, `approval.requested`, `approval.decided`) are stored in `thread_events` and
+  carry an SSE `id:`. Reconnecting with `Last-Event-ID` (or `?lastEventId=`) replays what was
+  missed, then a `ready` event marks the baseline and a `snapshot` carries any reply streamed so
+  far. Deltas are not stored. Events are kept for `Events:RetentionDays`; a last id older than that
+  gets `reset` (reload history).
 - **Tools (3.2).** The agent owns its tool loop, risk scoring and approval decisions; its container
   is the sandbox. The gateway forwards tools to the model, records every tool call the model
   requests, brokers approvals to the CLI, and caps LLM calls per message.
@@ -84,6 +91,7 @@ ASP.NET `__` syntax).
 | `Messages:MaxContentChars` | `32000` | |
 | `Approvals:TimeoutSeconds` | `300` | Pending approvals expire (count as denied) after this |
 | `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
+| `Events:RetentionDays` | `14` | Durable SSE events kept for replay |
 
 Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 
@@ -174,7 +182,9 @@ Re-run the `dotnet publish` line after pulling CLI changes. Without installing, 
 | `sharpclaw audit [--agent <name>] [--limit N]` | Recent LLM calls |
 | `sharpclaw audit tools [--agent <name>] [--limit N]` | Recent tool calls: status, decision, risk, taint |
 
-The chat client opens the SSE stream **before** posting a message (streams have no replay). During
+The chat client opens the SSE stream before posting a message. If the stream drops it reconnects
+(1 s backoff doubling to 10 s, giving up after 60 s) and resumes from the last event it handled,
+printing each character once. During
 `chat` and `ask` it prints a `[tool] <name>` line for each tool call and, when the agent needs
 approval, shows the request and asks `Allow? [y/N]` (anything but `y`/`yes` denies).
 

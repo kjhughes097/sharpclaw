@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Microsoft.EntityFrameworkCore;
 using SharpClaw.Gateway.Data;
+using SharpClaw.Gateway.Services;
 
 namespace SharpClaw.Gateway.Telemetry;
 
@@ -16,6 +17,7 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Meter _meter;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _time;
+    private readonly IThreadEventBus _bus;
 
     private readonly Counter<long> _calls;
     private readonly Counter<long> _tokens;
@@ -30,10 +32,11 @@ public sealed class GatewayMetrics : IDisposable
 
     private readonly ConcurrentDictionary<string, double> _lastSeenUnix = new();
 
-    public GatewayMetrics(IServiceScopeFactory scopeFactory, TimeProvider time)
+    public GatewayMetrics(IServiceScopeFactory scopeFactory, TimeProvider time, IThreadEventBus bus)
     {
         _scopeFactory = scopeFactory;
         _time = time;
+        _bus = bus;
         _meter = new Meter(MeterName);
 
         _calls = _meter.CreateCounter<long>("sharpclaw.llm.calls", "{call}");
@@ -59,6 +62,7 @@ public sealed class GatewayMetrics : IDisposable
         _meter.CreateObservableGauge("sharpclaw.budget.remaining_usd", ObserveBudgetRemaining, "USD");
         _meter.CreateObservableGauge("sharpclaw.inbox.depth", ObserveInboxDepth, "{message}");
         _meter.CreateObservableGauge("sharpclaw.agent.last_seen", ObserveLastSeen, "s");
+        _meter.CreateObservableGauge("sharpclaw.sse.subscribers", ObserveSubscribers, "{subscriber}");
     }
 
     public void RecordCall(string agent, string model, string status) =>
@@ -106,6 +110,16 @@ public sealed class GatewayMetrics : IDisposable
 
     private IEnumerable<Measurement<double>> ObserveLastSeen() =>
         _lastSeenUnix.Select(kv => new Measurement<double>(kv.Value, Tag("agent", kv.Key)));
+
+    private IEnumerable<Measurement<int>> ObserveSubscribers()
+    {
+        var (thread, global) = _bus.SubscriberCounts();
+        return new[]
+        {
+            new Measurement<int>(thread, Tag("scope", "thread")),
+            new Measurement<int>(global, Tag("scope", "global")),
+        };
+    }
 
     private IEnumerable<Measurement<double>> ObserveBudgetRemaining()
     {

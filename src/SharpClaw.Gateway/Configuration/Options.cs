@@ -62,6 +62,14 @@ public sealed class ApprovalsOptions
     public int TimeoutSeconds { get; set; } = 300;
 }
 
+public sealed class EventsOptions
+{
+    public const string Section = "Events";
+
+    /// <summary>Durable SSE events older than this are pruned (replay before that yields <c>reset</c>).</summary>
+    public int RetentionDays { get; set; } = 14;
+}
+
 public sealed class ChatOptions
 {
     public const string Section = "Chat";

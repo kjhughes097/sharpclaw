@@ -17,6 +17,7 @@ public static class ThreadsEndpoints
         client.MapGet("/threads/{id}/messages", GetMessages);
         client.MapPost("/threads/{id}/messages", PostMessage);
         client.MapGet("/threads/{id}/stream", StreamThread);
+        client.MapGet("/events", StreamAll);
     }
 
     private static async Task<IResult> CreateThread(
@@ -74,7 +75,7 @@ public static class ThreadsEndpoints
 
     private static async Task<IResult> PostMessage(
         Guid id, PostMessageRequest? body, SharpClawDbContext db, TimeProvider time,
-        IAgentInboxSignal signal, IOptions<MessagesOptions> messages, ILoggerFactory loggerFactory,
+        IAgentInboxSignal signal, IEventPublisher events, IOptions<MessagesOptions> messages, ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
         var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
@@ -99,6 +100,8 @@ public static class ThreadsEndpoints
         db.Messages.Add(message);
         await db.SaveChangesAsync(ct);
 
+        await events.PublishDurableAsync(thread.Id, SseEventNames.MessageCreated,
+            new MessageCreatedEvent(message.Id, thread.Id, message.Id), ct);
         signal.Signal(thread.AgentId);
 
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
@@ -115,12 +118,15 @@ public static class ThreadsEndpoints
     }
 
     private static async Task<IResult> StreamThread(
-        Guid id, HttpContext http, SharpClawDbContext db, IThreadEventBus bus, CancellationToken ct)
+        Guid id, HttpContext http, SharpClawDbContext db, CancellationToken ct)
     {
         var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
         if (thread is null)
             return ApiResults.NotFound("Thread not found.");
 
-        return new ThreadStreamResult(id, bus);
+        return new EventStreamResult(id, EventStreamResult.ReadLastEventId(http.Request));
     }
+
+    private static IResult StreamAll(HttpContext http) =>
+        new EventStreamResult(null, EventStreamResult.ReadLastEventId(http.Request));
 }

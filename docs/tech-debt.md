@@ -18,7 +18,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Full thread history sent on every LLM call | No truncation/summarisation; very long threads will eventually fail with a provider error. |
 | No provider retries | A transient provider failure fails the message. |
 | Budget overshoot possible | Concurrent or in-flight calls aren't counted; cancelled calls may incur unrecorded upstream cost. |
-| No SSE replay | Clients that connect late must read history via `GET …/messages`. |
 | Single gateway process, single SQLite file | No high availability. |
 | Streaming only; no tools; no traces | Out of scope for 3.1. |
 

@@ -71,13 +71,21 @@ public sealed class CliGateway : ICliGateway, IDisposable
         return body.Thread;
     }
 
-    public async Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, CancellationToken ct)
+    public async Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, long? lastEventId, CancellationToken ct)
     {
-        var resp = await _http.GetAsync($"{_baseUrl}/api/threads/{threadId}/stream",
-            HttpCompletionOption.ResponseHeadersRead, ct);
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/api/threads/{threadId}/stream");
+        if (lastEventId is { } last)
+            request.Headers.TryAddWithoutValidation("Last-Event-ID", last.ToString());
+        var resp = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         await EnsureAsync(resp);
         var stream = await resp.Content.ReadAsStreamAsync(ct);
         return new HttpThreadStream(resp, stream);
+    }
+
+    public async Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid threadId)
+    {
+        using var resp = await _http.GetAsync($"{_baseUrl}/api/threads/{threadId}/messages");
+        return (await ReadAsync<MessageListResponse>(resp)).Messages;
     }
 
     public async Task<Guid> PostMessageAsync(Guid threadId, string content)
@@ -153,6 +161,7 @@ public sealed class CliGateway : ICliGateway, IDisposable
         public async IAsyncEnumerable<CliSseEvent> ReadAsync([EnumeratorCancellation] CancellationToken ct)
         {
             string? currentEvent = null;
+            long? currentId = null;
             var data = new List<string>();
             while (true)
             {
@@ -161,14 +170,16 @@ public sealed class CliGateway : ICliGateway, IDisposable
                 if (line.Length == 0)
                 {
                     if (currentEvent is not null && data.Count > 0)
-                        yield return new CliSseEvent(currentEvent, string.Join("\n", data));
+                        yield return new CliSseEvent(currentEvent, string.Join("\n", data), currentId);
                     currentEvent = null;
+                    currentId = null;
                     data.Clear();
                     continue;
                 }
                 if (line.StartsWith(':')) continue;
                 if (line.StartsWith("event:", StringComparison.Ordinal)) currentEvent = line[6..].Trim();
                 else if (line.StartsWith("data:", StringComparison.Ordinal)) data.Add(line[5..].Trim());
+                else if (line.StartsWith("id:", StringComparison.Ordinal) && long.TryParse(line[3..].Trim(), out var id)) currentId = id;
             }
         }
 

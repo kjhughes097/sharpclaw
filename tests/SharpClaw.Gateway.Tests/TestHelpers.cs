@@ -39,14 +39,28 @@ public static class TestHelpers
         return body!.Message;
     }
 
-    /// <summary>Parses an SSE stream into (event, data) pairs until count reached or timeout/EOF.</summary>
+    /// <summary>
+    /// Parses an SSE stream into (event, data) pairs until count reached or timeout/EOF. The
+    /// <c>ready</c> framing event sent on every connect is skipped.
+    /// </summary>
     public static async Task<List<(string Event, string Data)>> ReadSseEventsAsync(
         Stream stream, int count, TimeSpan timeout)
     {
-        var events = new List<(string, string)>();
+        var events = await ReadSseAsync(stream, count, timeout, skipReady: true);
+        return events.Select(e => (e.Event, e.Data)).ToList();
+    }
+
+    public sealed record SseEvent(string Event, string Data, long? Id);
+
+    /// <summary>Parses an SSE stream including <c>id:</c> lines, until count reached or timeout/EOF.</summary>
+    public static async Task<List<SseEvent>> ReadSseAsync(
+        Stream stream, int count, TimeSpan timeout, bool skipReady = false)
+    {
+        var events = new List<SseEvent>();
         using var reader = new StreamReader(stream);
         using var cts = new CancellationTokenSource(timeout);
         string? currentEvent = null;
+        long? currentId = null;
         var data = new List<string>();
 
         try
@@ -57,19 +71,34 @@ public static class TestHelpers
                 if (line is null) break;
                 if (line.Length == 0)
                 {
-                    if (currentEvent is not null && data.Count > 0)
-                        events.Add((currentEvent, string.Join("\n", data)));
+                    if (currentEvent is not null && data.Count > 0 && !(skipReady && currentEvent == SseEventNames.Ready))
+                        events.Add(new SseEvent(currentEvent, string.Join("\n", data), currentId));
                     currentEvent = null;
+                    currentId = null;
                     data.Clear();
                     continue;
                 }
                 if (line.StartsWith(':')) continue;
                 if (line.StartsWith("event:")) currentEvent = line[6..].Trim();
                 else if (line.StartsWith("data:")) data.Add(line[5..].Trim());
+                else if (line.StartsWith("id:")) currentId = long.Parse(line[3..].Trim());
             }
         }
         catch (OperationCanceledException) { /* timeout */ }
 
         return events;
+    }
+
+    /// <summary>Opens a client SSE stream (thread or global) with an optional <c>Last-Event-ID</c>.</summary>
+    public static async Task<(HttpClient Client, Stream Stream)> OpenStreamAsync(
+        this GatewayFixture fx, string path, long? lastEventId = null)
+    {
+        var client = fx.Admin();
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (lastEventId is { } last)
+            request.Headers.TryAddWithoutValidation("Last-Event-ID", last.ToString());
+        var resp = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        resp.EnsureSuccessStatusCode();
+        return (client, await resp.Content.ReadAsStreamAsync());
     }
 }

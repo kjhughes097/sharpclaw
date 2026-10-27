@@ -138,8 +138,8 @@ public class AgentToolEndToEndTests : IDisposable
             .Content.ReadAsStreamAsync();
         var human = Task.Run(async () =>
         {
-            // tool.requested arrives first, then approval.requested.
-            var events = await TestHelpers.ReadSseEventsAsync(stream, 2, TimeSpan.FromSeconds(10));
+            // message.created, then tool.requested, then approval.requested.
+            var events = await TestHelpers.ReadSseEventsAsync(stream, 3, TimeSpan.FromSeconds(10));
             var evt = events.Single(e => e.Event == SseEventNames.ApprovalRequested);
             var approvalId = JsonDocument.Parse(evt.Data).RootElement.GetProperty("approvalId").GetGuid();
             using var admin = h.Fx.Admin();

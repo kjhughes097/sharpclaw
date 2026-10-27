@@ -136,6 +136,105 @@ public class CliTests
         Assert.Contains("yes", text);
     }
 
+    // ---- reconnect (pre-3.3 §8.6) ----
+
+    private static CliSseEvent Ev<T>(string name, T payload, long? id = null) =>
+        new(name, System.Text.Json.JsonSerializer.Serialize(payload, SharpClawJson.Options), id);
+
+    private static readonly Func<TimeSpan, CancellationToken, Task> NoDelay = (_, _) => Task.CompletedTask;
+
+    [Fact]
+    public async Task Dropped_stream_resumes_with_the_last_event_id_and_prints_each_character_once()
+    {
+        var gw = new FakeGateway();
+        gw.Streams.Enqueue(corr => new[]
+        {
+            Ev(SseEventNames.Ready, new ReadyEvent(null), 10),
+            Ev(SseEventNames.Delta, new DeltaEvent(corr, "Hel")),
+        });
+        gw.Streams.Enqueue(null); // first reconnect attempt fails
+        gw.Streams.Enqueue(corr => new[]
+        {
+            Ev(SseEventNames.Ready, new ReadyEvent(null), 11),
+            Ev(SseEventNames.Snapshot, new SnapshotEvent(corr, "Hello")),
+            Ev(SseEventNames.Delta, new DeltaEvent(corr, " world")),
+            Ev(SseEventNames.MessageCompleted, new MessageCompletedEvent(corr, Guid.NewGuid(), "Hello world"), 12),
+        });
+        var output = new StringWriter();
+
+        await ChatRunner.RunOnceAsync(gw, Guid.NewGuid(), "hi", output, TextReader.Null, CancellationToken.None, NoDelay);
+
+        Assert.Equal("Hello world" + Environment.NewLine, output.ToString());
+        Assert.Equal(new long?[] { null, 10, 10 }, gw.OpenedWithLastIds);
+    }
+
+    [Fact]
+    public async Task Replayed_events_already_handled_are_ignored()
+    {
+        var gw = new FakeGateway();
+        gw.Streams.Enqueue(corr => new[]
+        {
+            Ev(SseEventNames.ToolRequested, new ToolRequestedEvent(corr, "call_1", "workspace_read"), 5),
+        });
+        gw.Streams.Enqueue(corr => new[]
+        {
+            Ev(SseEventNames.ToolRequested, new ToolRequestedEvent(corr, "call_1", "workspace_read"), 5),
+            Ev(SseEventNames.MessageCompleted, new MessageCompletedEvent(corr, Guid.NewGuid(), "done"), 6),
+        });
+        var output = new StringWriter();
+
+        await ChatRunner.RunOnceAsync(gw, Guid.NewGuid(), "hi", output, TextReader.Null, CancellationToken.None, NoDelay);
+
+        Assert.Single(output.ToString().Split("[tool] workspace_read").Skip(1));
+        Assert.Contains("done", output.ToString());
+    }
+
+    [Fact]
+    public async Task Reply_completed_while_disconnected_is_printed_from_the_replay()
+    {
+        var gw = new FakeGateway();
+        gw.Streams.Enqueue(corr => new[] { Ev(SseEventNames.Delta, new DeltaEvent(corr, "Hel")) });
+        gw.Streams.Enqueue(corr => new[]
+        {
+            Ev(SseEventNames.MessageCompleted, new MessageCompletedEvent(corr, Guid.NewGuid(), "Hello"), 3),
+        });
+        var output = new StringWriter();
+
+        await ChatRunner.RunOnceAsync(gw, Guid.NewGuid(), "hi", output, TextReader.Null, CancellationToken.None, NoDelay);
+
+        Assert.Equal("Hello" + Environment.NewLine, output.ToString());
+    }
+
+    [Fact]
+    public async Task Reset_reloads_history_and_finishes_if_the_reply_is_there()
+    {
+        var gw = new FakeGateway();
+        gw.Messages.Add(new MessageDto(Guid.NewGuid(), Roles.Assistant, "Hello", MessageStatus.Done, Guid.Empty, DateTime.UtcNow));
+        gw.Streams.Enqueue(corr => new[] { Ev(SseEventNames.Delta, new DeltaEvent(corr, "He")) });
+        gw.Streams.Enqueue(_ => new[] { Ev(SseEventNames.Reset, new ResetEvent(ResetReasons.HistoryPruned)) });
+        var output = new StringWriter();
+
+        await ChatRunner.RunOnceAsync(gw, Guid.NewGuid(), "hi", output, TextReader.Null, CancellationToken.None, NoDelay);
+
+        Assert.Equal("Hello" + Environment.NewLine, output.ToString());
+    }
+
+    [Fact]
+    public async Task Gives_up_after_a_minute_of_failed_reconnects()
+    {
+        var gw = new FakeGateway();
+        gw.Streams.Enqueue(_ => Array.Empty<CliSseEvent>());
+        for (var i = 0; i < 20; i++)
+            gw.Streams.Enqueue(null);
+        var waited = new List<TimeSpan>();
+
+        var ex = await Assert.ThrowsAsync<CliException>(() => ChatRunner.RunOnceAsync(gw, Guid.NewGuid(), "hi",
+            new StringWriter(), TextReader.Null, CancellationToken.None, (d, _) => { waited.Add(d); return Task.CompletedTask; }));
+
+        Assert.Contains("Lost the connection", ex.Message);
+        Assert.Equal(new[] { 1, 2, 4, 8, 10, 10, 10, 10, 10 }, waited.Select(w => (int)w.TotalSeconds));
+    }
+
     // ---- fake gateway ----
 
     private sealed class FakeGateway : ICliGateway
@@ -172,10 +271,44 @@ public class CliTests
         public Task<ThreadDto> CreateThreadAsync(string agentId, string? title) =>
             Task.FromResult(new ThreadDto(Guid.NewGuid(), Guid.NewGuid(), title, DateTime.UtcNow));
 
-        public Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, CancellationToken ct)
+        public Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, long? lastEventId, CancellationToken ct)
         {
             StreamOpenedAt = Interlocked.Increment(ref _seq);
+            OpenedWithLastIds.Add(lastEventId);
+            if (Streams.Count > 0)
+            {
+                var script = Streams.Dequeue();
+                if (script is null)
+                    throw new HttpRequestException("gateway unreachable");
+                return Task.FromResult<IThreadStream>(new ScriptedStream(this, script));
+            }
             return Task.FromResult<IThreadStream>(new FakeStream(this));
+        }
+
+        /// <summary>
+        /// Scripted streams for successive opens: events for the posted message id, after which the
+        /// connection drops. A null entry means the open itself fails. Empty → the default stream.
+        /// </summary>
+        public Queue<Func<Guid, IEnumerable<CliSseEvent>>?> Streams { get; } = new();
+        public List<long?> OpenedWithLastIds { get; } = new();
+        public List<MessageDto> Messages { get; } = new();
+
+        public Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid threadId) =>
+            Task.FromResult<IReadOnlyList<MessageDto>>(Messages.Select(m => m.CorrelationId == Guid.Empty
+                ? m with { CorrelationId = _postedMessageId } : m).ToList());
+
+        private sealed class ScriptedStream(FakeGateway gw, Func<Guid, IEnumerable<CliSseEvent>> script) : IThreadStream
+        {
+            public async IAsyncEnumerable<CliSseEvent> ReadAsync([EnumeratorCancellation] CancellationToken ct)
+            {
+                while (gw._postedMessageId == Guid.Empty)
+                    await Task.Delay(5, ct);
+                foreach (var ev in script(gw._postedMessageId))
+                    yield return ev;
+                throw new IOException("connection dropped");
+            }
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
 
         public Task<Guid> PostMessageAsync(Guid threadId, string content)

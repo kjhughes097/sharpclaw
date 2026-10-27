@@ -24,6 +24,7 @@ public static class GatewayBuilder
         builder.Services.Configure<MessagesOptions>(builder.Configuration.GetSection(MessagesOptions.Section));
         builder.Services.Configure<ApprovalsOptions>(builder.Configuration.GetSection(ApprovalsOptions.Section));
         builder.Services.Configure<ChatOptions>(builder.Configuration.GetSection(ChatOptions.Section));
+        builder.Services.Configure<EventsOptions>(builder.Configuration.GetSection(EventsOptions.Section));
 
         builder.Services.AddSingleton(TimeProvider.System);
 

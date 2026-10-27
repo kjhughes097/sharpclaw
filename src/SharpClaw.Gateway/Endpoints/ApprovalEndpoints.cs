@@ -34,7 +34,7 @@ public static class ApprovalEndpoints
 
     private static async Task<IResult> Create(
         CreateApprovalRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IThreadEventBus bus, GatewayMetrics metrics, IOptions<ApprovalsOptions> options,
+        IThreadEventBus bus, IEventPublisher events, GatewayMetrics metrics, IOptions<ApprovalsOptions> options,
         ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
@@ -96,8 +96,7 @@ public static class ApprovalEndpoints
         {
             var evt = new ApprovalRequestedEvent(approval.Id, approval.CorrelationId, approval.ToolName,
                 approval.Summary, approval.Risk, approval.Reason, approval.ExpiresAt);
-            bus.Publish(approval.ThreadId, new ThreadSseEvent(SseEventNames.ApprovalRequested,
-                JsonSerializer.Serialize(evt, SharpClawJson.Options)));
+            await events.PublishDurableAsync(approval.ThreadId, SseEventNames.ApprovalRequested, evt, ct);
         }
 
         return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options, statusCode: 201);
@@ -143,7 +142,7 @@ public static class ApprovalEndpoints
 
     private static async Task<IResult> Decide(
         Guid id, DecideApprovalRequest? body, SharpClawDbContext db, TimeProvider time,
-        ApprovalSignal signal, GatewayMetrics metrics, CancellationToken ct)
+        ApprovalSignal signal, IEventPublisher events, GatewayMetrics metrics, CancellationToken ct)
     {
         if (body?.Decision is not (ApprovalStatuses.Approved or ApprovalStatuses.Denied))
             return ApiResults.ValidationFailed("decision must be 'approved' or 'denied'.");
@@ -165,6 +164,8 @@ public static class ApprovalEndpoints
 
         metrics.RecordApproval(agentName, approval.Status);
         signal.Signal(approval.Id);
+        await events.PublishDurableAsync(approval.ThreadId, SseEventNames.ApprovalDecided,
+            new ApprovalDecidedEvent(approval.Id, approval.CorrelationId, approval.Status, approval.DecidedBy), ct);
         return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options);
     }
 
