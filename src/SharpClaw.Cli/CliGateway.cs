@@ -88,10 +88,10 @@ public sealed class CliGateway : ICliGateway, IDisposable
         return (await ReadAsync<MessageListResponse>(resp)).Messages;
     }
 
-    public async Task<Guid> PostMessageAsync(Guid threadId, string content)
+    public async Task<Guid> PostMessageAsync(Guid threadId, string content, bool unattended = false)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/threads/{threadId}/messages",
-            new PostMessageRequest(content), SharpClawJson.Options);
+            new PostMessageRequest(content, unattended), SharpClawJson.Options);
         var body = await ReadAsync<QueuedMessageResponse>(resp);
         return body.Message.Id;
     }
@@ -121,6 +121,16 @@ public sealed class CliGateway : ICliGateway, IDisposable
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/approvals/{approvalId}",
             new DecideApprovalRequest(decision), SharpClawJson.Options);
         return (await ReadAsync<ApprovalResponse>(resp)).Approval;
+    }
+
+    public async Task<ApprovalListResponse> ListApprovalsAsync(string? status, string? agent)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(status)) query.Add($"status={Uri.EscapeDataString(status)}");
+        if (!string.IsNullOrWhiteSpace(agent)) query.Add($"agent={Uri.EscapeDataString(agent)}");
+        var qs = query.Count > 0 ? "?" + string.Join("&", query) : "";
+        using var resp = await _http.GetAsync($"{_baseUrl}/api/approvals{qs}");
+        return await ReadAsync<ApprovalListResponse>(resp);
     }
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage resp)

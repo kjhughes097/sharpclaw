@@ -90,6 +90,7 @@ ASP.NET `__` syntax).
 | `Inbox:ClaimTimeoutSeconds` | `300` | Stale claims return to `pending` |
 | `Messages:MaxContentChars` | `32000` | |
 | `Approvals:TimeoutSeconds` | `300` | Pending approvals expire (count as denied) after this |
+| `Approvals:SweepIntervalSeconds` | `10` | How often overdue approvals are expired |
 | `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
 | `Events:RetentionDays` | `14` | Durable SSE events kept for replay |
 
@@ -178,7 +179,9 @@ Re-run the `dotnet publish` line after pulling CLI changes. Without installing, 
 | `sharpclaw tokens issue <agent> [--expires <utc>]` | Issue a token (shown once) |
 | `sharpclaw tokens list <agent>` / `tokens revoke <agent> <tokenId>` | Token metadata / revoke |
 | `sharpclaw chat <agent> [--thread <id>]` | Interactive chat; `/exit` quits |
-| `sharpclaw ask <agent> "<text>"` | One-shot chat |
+| `sharpclaw ask <agent> "<text>" [--unattended]` | One-shot chat; `--unattended` denies any approval at once |
+| `sharpclaw approvals list [--status pending] [--agent <name>]` | The approval queue |
+| `sharpclaw approvals approve <id>` / `approvals deny <id>` | Answer a pending approval from any terminal |
 | `sharpclaw audit [--agent <name>] [--limit N]` | Recent LLM calls |
 | `sharpclaw audit tools [--agent <name>] [--limit N]` | Recent tool calls: status, decision, risk, taint |
 
@@ -218,9 +221,11 @@ How a call is decided (all in the agent's `ToolDispatcher`):
 2. **Risk** comes from the arguments. *Uncertain* calls are classified by an extra LLM call when
    `smartMode` is on (only the tool name and a content-free summary are sent), otherwise treated
    as high. After untrusted content has been read in the turn, risk goes up one level.
-3. **Above `allowedRiskLevel`**, the agent asks the user through the gateway. Nobody watching the
-   thread means an immediate denial; no answer within 300 s means expired. Denials go back to the
-   model as a tool error so it can adapt.
+3. **Above `allowedRiskLevel`**, the agent asks the user through the gateway. The approval waits
+   in a queue (`GET /api/approvals`, `sharpclaw approvals list`) whether or not anyone is
+   watching, and expires after 300 s; a message posted `unattended` has its approvals denied at
+   once. When a turn ends (reply, failure, claim timeout) its pending approvals expire. Denials
+   go back to the model as a tool error so it can adapt.
 4. Every call is **audited**: the gateway records what the model requested, the agent reports the
    outcome (`sharpclaw audit tools`). Arguments are truncated in the database and never logged.
 

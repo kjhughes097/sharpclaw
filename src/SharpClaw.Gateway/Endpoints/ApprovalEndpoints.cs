@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
@@ -13,13 +12,15 @@ using SharpClaw.Gateway.Telemetry;
 namespace SharpClaw.Gateway.Endpoints;
 
 /// <summary>
-/// Approval brokering (3.2 spec sections 8.2 and 8.3). The agent decides <i>whether</i> a call
-/// needs approval; the gateway only relays the question to the human and the answer back.
+/// Approval brokering (3.2 spec section 8; pre-3.3 spec section 9). The agent decides <i>whether</i>
+/// a call needs approval; the gateway queues the question for the human and relays the answer.
+/// Pending approvals wait for a human whether or not anyone is connected.
 /// </summary>
 public static class ApprovalEndpoints
 {
     private const int MaxSummaryChars = 200;
     private const int MaxReasonChars = 200;
+    private const int MaxListLimit = 200;
 
     public static void MapAgent(RouteGroupBuilder agent)
     {
@@ -29,12 +30,14 @@ public static class ApprovalEndpoints
 
     public static void MapClient(RouteGroupBuilder client)
     {
+        client.MapGet("/approvals", List);
+        client.MapGet("/approvals/{id}", Get);
         client.MapPost("/approvals/{id}", Decide);
     }
 
     private static async Task<IResult> Create(
         CreateApprovalRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IThreadEventBus bus, IEventPublisher events, GatewayMetrics metrics, IOptions<ApprovalsOptions> options,
+        IEventPublisher events, IApprovalNotifier notifier, GatewayMetrics metrics, IOptions<ApprovalsOptions> options,
         ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
@@ -55,10 +58,8 @@ public static class ApprovalEndpoints
         var now = time.GetUtcNow().UtcDateTime;
         await InboxRepository.TouchClaimAsync(db, agent.Id, body.CorrelationId, now, ct);
 
-        // Nobody is watching the thread, so nobody can answer: deny now rather than make the
-        // agent wait for the timeout (Hermes' "unattended -> deny").
-        var nobodyWatching = bus.SubscriberCount(body.ThreadId) == 0;
-
+        // The poster declared nobody will answer: deny now rather than make the agent wait.
+        var unattended = userMsg.Unattended;
         var approval = new Approval
         {
             Id = Guid.CreateVersion7(),
@@ -70,9 +71,9 @@ public static class ApprovalEndpoints
             Summary = body.Summary,
             Risk = body.Risk,
             Reason = body.Reason,
-            Status = nobodyWatching ? ApprovalStatuses.Denied : ApprovalStatuses.Pending,
-            DecidedBy = nobodyWatching ? ApprovalDecidedBy.System : null,
-            DecidedAt = nobodyWatching ? now : null,
+            Status = unattended ? ApprovalStatuses.Denied : ApprovalStatuses.Pending,
+            DecidedBy = unattended ? ApprovalDecidedBy.System : null,
+            DecidedAt = unattended ? now : null,
             CreatedAt = now,
             ExpiresAt = now.AddSeconds(options.Value.TimeoutSeconds),
         };
@@ -88,23 +89,39 @@ public static class ApprovalEndpoints
             logger.LogInformation("approval requested: tool={Tool} risk={Risk} status={Status}",
                 approval.ToolName, approval.Risk, approval.Status);
 
-        if (nobodyWatching)
+        if (unattended)
         {
             metrics.RecordApproval(agent.Name, approval.Status);
+            metrics.RecordApprovalDecisionTime(agent.Name, approval.Status, 0);
         }
         else
         {
-            var evt = new ApprovalRequestedEvent(approval.Id, approval.CorrelationId, approval.ToolName,
-                approval.Summary, approval.Risk, approval.Reason, approval.ExpiresAt);
-            await events.PublishDurableAsync(approval.ThreadId, SseEventNames.ApprovalRequested, evt, ct);
+            await events.PublishDurableAsync(approval.ThreadId, SseEventNames.ApprovalRequested,
+                new ApprovalRequestedEvent(approval.Id, approval.CorrelationId, approval.ToolName,
+                    approval.Summary, approval.Risk, approval.Reason, approval.ExpiresAt), ct);
+            await NotifyAsync(notifier, approval, agent.Name, logger);
         }
 
         return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options, statusCode: 201);
     }
 
+    /// <summary>A failing notifier must never affect the request; only the exception type is logged.</summary>
+    private static async Task NotifyAsync(IApprovalNotifier notifier, Approval a, string agentName, ILogger logger)
+    {
+        try
+        {
+            await notifier.NotifyRequestedAsync(new ApprovalNotification(a.Id, a.ThreadId, a.CorrelationId, agentName,
+                a.ToolName, a.Risk, a.Summary, a.ExpiresAt), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning("approval notifier failed: {Error}", ex.GetType().Name);
+        }
+    }
+
     private static async Task<IResult> Poll(
         Guid id, int? wait, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        ApprovalSignal signal, GatewayMetrics metrics, IOptions<InboxOptions> inboxOptions, CancellationToken ct)
+        ApprovalSignal signal, ApprovalDecisions decisions, IOptions<InboxOptions> inboxOptions, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         var waitSeconds = Math.Clamp(wait ?? 30, 0, inboxOptions.Value.MaxWaitSeconds);
@@ -112,12 +129,12 @@ public static class ApprovalEndpoints
 
         while (true)
         {
-            var approval = await db.Approvals.FirstOrDefaultAsync(a => a.Id == id, ct);
+            var approval = await db.Approvals.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
             if (approval is null || approval.AgentId != agent.Id)
                 return ApiResults.NotFound("Approval not found.");
 
             var now = time.GetUtcNow().UtcDateTime;
-            await ExpireIfDueAsync(db, approval, now, metrics, agent.Name, ct);
+            await ExpireIfDueAsync(db, decisions, approval, now, ct);
             if (approval.Status != ApprovalStatuses.Pending)
                 return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options);
 
@@ -128,7 +145,6 @@ public static class ApprovalEndpoints
             if (remaining <= TimeSpan.Zero)
                 return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options);
 
-            db.ChangeTracker.Clear();
             try
             {
                 await signal.WaitAsync(id, remaining < TimeSpan.FromSeconds(2) ? remaining : TimeSpan.FromSeconds(2), ct);
@@ -140,47 +156,84 @@ public static class ApprovalEndpoints
         }
     }
 
+    private static async Task<IResult> List(
+        string? status, string? agent, int? limit, SharpClawDbContext db, CancellationToken ct)
+    {
+        if (status is not null && status is not (ApprovalStatuses.Pending or ApprovalStatuses.Approved
+                or ApprovalStatuses.Denied or ApprovalStatuses.Expired))
+            return ApiResults.ValidationFailed("status must be pending, approved, denied or expired.");
+        var take = Math.Clamp(limit ?? 50, 1, MaxListLimit);
+
+        IQueryable<Approval> q = db.Approvals.AsNoTracking();
+        if (status is not null)
+            q = q.Where(a => a.Status == status);
+        if (!string.IsNullOrWhiteSpace(agent))
+        {
+            var resolved = await AgentQueries.ResolveAsync(db, agent, ct);
+            if (resolved is null)
+                return ApiResults.NotFound("Agent not found.");
+            q = q.Where(a => a.AgentId == resolved.Id);
+        }
+
+        var rows = await q.OrderByDescending(a => a.CreatedAt).ThenByDescending(a => a.Id).Take(take).ToListAsync(ct);
+        var names = await AgentNamesAsync(db, rows, ct);
+        return Results.Json(new ApprovalListResponse(rows.Select(a => ToDetail(a, names)).ToList()), SharpClawJson.Options);
+    }
+
+    private static async Task<IResult> Get(Guid id, SharpClawDbContext db, CancellationToken ct)
+    {
+        var approval = await db.Approvals.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
+        if (approval is null)
+            return ApiResults.NotFound("Approval not found.");
+        var names = await AgentNamesAsync(db, new[] { approval }, ct);
+        return Results.Json(new ApprovalDetailResponse(ToDetail(approval, names)), SharpClawJson.Options);
+    }
+
     private static async Task<IResult> Decide(
         Guid id, DecideApprovalRequest? body, SharpClawDbContext db, TimeProvider time,
-        ApprovalSignal signal, IEventPublisher events, GatewayMetrics metrics, CancellationToken ct)
+        ApprovalDecisions decisions, CancellationToken ct)
     {
         if (body?.Decision is not (ApprovalStatuses.Approved or ApprovalStatuses.Denied))
             return ApiResults.ValidationFailed("decision must be 'approved' or 'denied'.");
 
-        var approval = await db.Approvals.FirstOrDefaultAsync(a => a.Id == id, ct);
+        var approval = await db.Approvals.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
         if (approval is null)
             return ApiResults.NotFound("Approval not found.");
 
-        var agentName = await db.Agents.Where(a => a.Id == approval.AgentId).Select(a => a.Name).FirstAsync(ct);
-        var now = time.GetUtcNow().UtcDateTime;
-        await ExpireIfDueAsync(db, approval, now, metrics, agentName, ct);
-        if (approval.Status != ApprovalStatuses.Pending)
-            return ApiResults.Conflict($"Approval is already {approval.Status}.");
+        await ExpireIfDueAsync(db, decisions, approval, time.GetUtcNow().UtcDateTime, ct);
+        if (approval.Status != ApprovalStatuses.Pending ||
+            !await decisions.TryDecideAsync(db, approval, body.Decision, ApprovalDecidedBy.User, ct))
+        {
+            var current = await db.Approvals.AsNoTracking().Where(a => a.Id == id).Select(a => a.Status).FirstAsync(ct);
+            return ApiResults.Conflict($"Approval is already {current}.");
+        }
 
-        approval.Status = body.Decision;
-        approval.DecidedBy = ApprovalDecidedBy.User;
-        approval.DecidedAt = now;
-        await db.SaveChangesAsync(ct);
-
-        metrics.RecordApproval(agentName, approval.Status);
-        signal.Signal(approval.Id);
-        await events.PublishDurableAsync(approval.ThreadId, SseEventNames.ApprovalDecided,
-            new ApprovalDecidedEvent(approval.Id, approval.CorrelationId, approval.Status, approval.DecidedBy), ct);
         return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options);
     }
 
-    /// <summary>Pending approvals past their deadline become <c>expired</c> when next read.</summary>
+    /// <summary>Backup for the sweeper: an overdue approval is expired when it is read.</summary>
     private static async Task ExpireIfDueAsync(
-        SharpClawDbContext db, Approval approval, DateTime now, GatewayMetrics metrics, string agentName, CancellationToken ct)
+        SharpClawDbContext db, ApprovalDecisions decisions, Approval approval, DateTime now, CancellationToken ct)
     {
         if (approval.Status != ApprovalStatuses.Pending || now < approval.ExpiresAt)
             return;
-        approval.Status = ApprovalStatuses.Expired;
-        approval.DecidedBy = ApprovalDecidedBy.System;
-        approval.DecidedAt = now;
-        await db.SaveChangesAsync(ct);
-        metrics.RecordApproval(agentName, approval.Status);
+        if (!await decisions.TryDecideAsync(db, approval, ApprovalStatuses.Expired, ApprovalDecidedBy.System, ct))
+        {
+            var fresh = await db.Approvals.AsNoTracking().FirstAsync(a => a.Id == approval.Id, ct);
+            (approval.Status, approval.DecidedBy, approval.DecidedAt) = (fresh.Status, fresh.DecidedBy, fresh.DecidedAt);
+        }
+    }
+
+    private static Task<Dictionary<Guid, string>> AgentNamesAsync(
+        SharpClawDbContext db, IEnumerable<Approval> approvals, CancellationToken ct)
+    {
+        var ids = approvals.Select(a => a.AgentId).Distinct().ToList();
+        return db.Agents.AsNoTracking().Where(a => ids.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
     }
 
     private static ApprovalDto ToDto(Approval a) => new(a.Id, a.Status, a.DecidedBy, a.ExpiresAt);
+
+    private static ApprovalDetailDto ToDetail(Approval a, IReadOnlyDictionary<Guid, string> names) => new(
+        a.Id, names.GetValueOrDefault(a.AgentId, ""), a.ThreadId, a.CorrelationId, a.ToolName, a.Summary, a.Risk,
+        a.Reason, a.Status, a.CreatedAt, a.ExpiresAt, a.DecidedBy, a.DecidedAt);
 }

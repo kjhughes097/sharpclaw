@@ -31,8 +31,8 @@ public interface ICliGateway
     /// </summary>
     Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, long? lastEventId, CancellationToken ct);
 
-    /// <summary>Posts a user message and returns its id.</summary>
-    Task<Guid> PostMessageAsync(Guid threadId, string content);
+    /// <summary>Posts a user message and returns its id. Unattended: approvals are denied at once.</summary>
+    Task<Guid> PostMessageAsync(Guid threadId, string content, bool unattended = false);
 
     /// <summary>The thread's user messages and final replies.</summary>
     Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid threadId);
@@ -43,4 +43,6 @@ public interface ICliGateway
 
     /// <summary>Answers an approval prompt. Throws <see cref="CliException"/> if it was already decided or expired.</summary>
     Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision);
+
+    Task<ApprovalListResponse> ListApprovalsAsync(string? status, string? agent);
 }

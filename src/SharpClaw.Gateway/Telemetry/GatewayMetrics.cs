@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Microsoft.EntityFrameworkCore;
+using SharpClaw.Contracts;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Services;
 
@@ -29,6 +30,7 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Counter<long> _authFailures;
     private readonly Counter<long> _toolCalls;
     private readonly Counter<long> _approvals;
+    private readonly Histogram<double> _approvalDecisionTime;
 
     private readonly ConcurrentDictionary<string, double> _lastSeenUnix = new();
 
@@ -58,11 +60,14 @@ public sealed class GatewayMetrics : IDisposable
         _authFailures = _meter.CreateCounter<long>("sharpclaw.auth.failures", "{failure}");
         _toolCalls = _meter.CreateCounter<long>("sharpclaw.tool.calls", "{call}");
         _approvals = _meter.CreateCounter<long>("sharpclaw.approvals", "{approval}");
+        _approvalDecisionTime = _meter.CreateHistogram("sharpclaw.approval.decision_time", "s", null, null,
+            new InstrumentAdvice<double> { HistogramBucketBoundaries = [1, 5, 10, 30, 60, 120, 300, 600] });
 
         _meter.CreateObservableGauge("sharpclaw.budget.remaining_usd", ObserveBudgetRemaining, "USD");
         _meter.CreateObservableGauge("sharpclaw.inbox.depth", ObserveInboxDepth, "{message}");
         _meter.CreateObservableGauge("sharpclaw.agent.last_seen", ObserveLastSeen, "s");
         _meter.CreateObservableGauge("sharpclaw.sse.subscribers", ObserveSubscribers, "{subscriber}");
+        _meter.CreateObservableGauge("sharpclaw.approvals.pending", ObservePendingApprovals, "{approval}");
     }
 
     public void RecordCall(string agent, string model, string status) =>
@@ -102,6 +107,10 @@ public sealed class GatewayMetrics : IDisposable
     public void RecordApproval(string agent, string status) =>
         _approvals.Add(1, Tag("agent", agent), Tag("status", status));
 
+    /// <summary>From creation to decision or expiry.</summary>
+    public void RecordApprovalDecisionTime(string agent, string status, double seconds) =>
+        _approvalDecisionTime.Record(seconds, Tag("agent", agent), Tag("status", status));
+
     public void RecordAuthFailure(string listener) =>
         _authFailures.Add(1, Tag("listener", listener));
 
@@ -119,6 +128,20 @@ public sealed class GatewayMetrics : IDisposable
             new Measurement<int>(thread, Tag("scope", "thread")),
             new Measurement<int>(global, Tag("scope", "global")),
         };
+    }
+
+    private IEnumerable<Measurement<int>> ObservePendingApprovals()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SharpClawDbContext>();
+        var counts = db.Approvals.AsNoTracking()
+            .Where(a => a.Status == ApprovalStatuses.Pending)
+            .GroupBy(a => a.AgentId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionary(x => x.Key, x => x.Count);
+        // Every agent reports, so the gauge drops to 0 rather than going stale.
+        return db.Agents.AsNoTracking().ToList()
+            .Select(a => new Measurement<int>(counts.GetValueOrDefault(a.Id), Tag("agent", a.Name)));
     }
 
     private IEnumerable<Measurement<double>> ObserveBudgetRemaining()

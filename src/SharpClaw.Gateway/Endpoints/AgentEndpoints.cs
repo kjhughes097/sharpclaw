@@ -24,7 +24,7 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Inbox(
         HttpContext http, int? wait, SharpClawDbContext db, TimeProvider time,
-        IAgentInboxSignal signal, ActiveTurnBuffers buffers, IOptions<InboxOptions> inboxOpt,
+        IAgentInboxSignal signal, ActiveTurnBuffers buffers, ApprovalDecisions decisions, IOptions<InboxOptions> inboxOpt,
         ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Inbox");
@@ -39,7 +39,10 @@ public static class AgentEndpoints
             var threshold = now.AddSeconds(-opt.ClaimTimeoutSeconds);
             var requeued = await InboxRepository.RequeueStaleAsync(db, agent.Id, threshold, ct);
             foreach (var stale in requeued)
+            {
                 buffers.Remove(stale);
+                await decisions.ExpireForCorrelationAsync(db, stale, ct);
+            }
 
             var claimed = await InboxRepository.ClaimNextAsync(db, agent.Id, now, ct);
             if (claimed is not null)
@@ -83,8 +86,8 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Reply(
         Guid id, AgentReplyRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IEventPublisher events, ActiveTurnBuffers buffers, GatewayMetrics metrics, IOptions<MessagesOptions> messages,
-        ILoggerFactory loggerFactory, CancellationToken ct)
+        IEventPublisher events, ActiveTurnBuffers buffers, ApprovalDecisions decisions, GatewayMetrics metrics,
+        IOptions<MessagesOptions> messages, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
@@ -128,6 +131,7 @@ public static class AgentEndpoints
         }
 
         buffers.Remove(body.CorrelationId);
+        await decisions.ExpireForCorrelationAsync(db, body.CorrelationId, ct);
         await events.PublishDurableAsync(id, SseEventNames.MessageCompleted,
             new MessageCompletedEvent(body.CorrelationId, assistant.Id, body.Content), ct);
         var messageSeconds = (now - userMsg.CreatedAt).TotalSeconds;
@@ -146,7 +150,8 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Fail(
         Guid id, FailMessageRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IEventPublisher events, ActiveTurnBuffers buffers, ILoggerFactory loggerFactory, CancellationToken ct)
+        IEventPublisher events, ActiveTurnBuffers buffers, ApprovalDecisions decisions, ILoggerFactory loggerFactory,
+        CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
@@ -174,6 +179,7 @@ public static class AgentEndpoints
             logger.LogWarning("message failed: reason={Reason}", reason);
 
         buffers.Remove(msg.Id);
+        await decisions.ExpireForCorrelationAsync(db, msg.Id, ct);
         await events.PublishDurableAsync(msg.ThreadId, SseEventNames.Error, new ErrorEvent(msg.Id, reason, reason), ct);
         return Results.StatusCode(204);
     }

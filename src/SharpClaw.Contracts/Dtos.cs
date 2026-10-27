@@ -52,7 +52,8 @@ public sealed record ThreadListResponse(IReadOnlyList<ThreadDto> Threads);
 
 // ----- Messages -----
 
-public sealed record PostMessageRequest(string Content);
+/// <summary><c>Unattended</c>: nobody will answer approvals for this message (scripts, schedules).</summary>
+public sealed record PostMessageRequest(string Content, bool Unattended = false);
 
 public sealed record MessageDto(
     Guid Id,
@@ -157,3 +158,23 @@ public sealed record ApprovalResponse(ApprovalDto Approval);
 
 /// <summary><c>Decision</c> is <c>approved</c> or <c>denied</c>.</summary>
 public sealed record DecideApprovalRequest(string Decision);
+
+/// <summary>An approval as shown in the client queue. Never carries tool arguments.</summary>
+public sealed record ApprovalDetailDto(
+    Guid Id,
+    string Agent,
+    Guid ThreadId,
+    Guid CorrelationId,
+    string ToolName,
+    string Summary,
+    string Risk,
+    string Reason,
+    string Status,
+    DateTime CreatedAt,
+    DateTime ExpiresAt,
+    string? DecidedBy,
+    DateTime? DecidedAt);
+
+public sealed record ApprovalListResponse(IReadOnlyList<ApprovalDetailDto> Approvals);
+
+public sealed record ApprovalDetailResponse(ApprovalDetailDto Approval);

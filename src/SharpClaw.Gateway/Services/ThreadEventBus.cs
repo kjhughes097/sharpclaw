@@ -21,9 +21,6 @@ public interface IThreadEventBus
 
     /// <summary>Open subscriptions: (per-thread, global).</summary>
     (int Thread, int Global) SubscriberCounts();
-
-    /// <summary>How many clients are currently watching the thread.</summary>
-    int SubscriberCount(Guid threadId);
 }
 
 public sealed class ThreadEventBus : IThreadEventBus
@@ -58,9 +55,6 @@ public sealed class ThreadEventBus : IThreadEventBus
 
     public (int Thread, int Global) SubscriberCounts() =>
         (_subscribers.Values.Sum(m => m.Count), _global.Count);
-
-    public int SubscriberCount(Guid threadId) =>
-        _subscribers.TryGetValue(threadId, out var map) ? map.Count : 0;
 
     private void Unsubscribe(Guid? threadId, Guid id)
     {

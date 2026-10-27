@@ -47,6 +47,9 @@ public class Message
     public DateTime? ClaimedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? FailReason { get; set; }
+
+    /// <summary>On user messages: nobody will answer approvals, so they are denied at once.</summary>
+    public bool Unattended { get; set; }
 }
 
 public class LlmCall

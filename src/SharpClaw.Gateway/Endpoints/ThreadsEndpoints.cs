@@ -95,6 +95,7 @@ public static class ThreadsEndpoints
             Role = Roles.User,
             Content = body.Content,
             Status = MessageStatus.Pending,
+            Unattended = body.Unattended,
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
         db.Messages.Add(message);

@@ -19,13 +19,13 @@ public static class ChatRunner
 
     public static async Task RunOnceAsync(
         ICliGateway gateway, Guid threadId, string content, TextWriter output, TextReader input, CancellationToken ct,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null, bool unattended = false)
     {
         delay ??= Task.Delay;
 
         // Open first so the stream's baseline precedes our message.
         var stream = await gateway.OpenThreadStreamAsync(threadId, null, ct);
-        var turn = new Turn(await gateway.PostMessageAsync(threadId, content));
+        var turn = new Turn(await gateway.PostMessageAsync(threadId, content, unattended));
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(IdleTimeout);

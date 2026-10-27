@@ -354,6 +354,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("thread_id");
 
+                    b.Property<bool>("Unattended")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("unattended");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CorrelationId")

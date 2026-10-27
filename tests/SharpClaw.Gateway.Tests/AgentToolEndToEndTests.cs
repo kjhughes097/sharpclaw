@@ -165,11 +165,36 @@ public class AgentToolEndToEndTests : IDisposable
     }
 
     [Fact]
-    public async Task Unattended_high_risk_call_is_denied_without_waiting()
+    public async Task Approval_waits_with_nobody_watching_and_can_be_approved_from_the_queue()
     {
         await using var h = await StartAsync();
         File.WriteAllText(Path.Combine(_workspace, "old.md"), "old");
         await h.Fx.PostUserMessageAsync(h.Thread, "delete the old note");
+
+        var turn = Task.Run(() => h.Loop.ProcessOnceAsync(CancellationToken.None));
+        using var admin = h.Fx.Admin();
+        ApprovalDetailDto? pending = null;
+        for (var i = 0; i < 50 && pending is null; i++)
+        {
+            await Task.Delay(100);
+            var list = await admin.GetFromJsonAsync<ApprovalListResponse>("/api/approvals?status=pending", SharpClawJson.Options);
+            pending = list!.Approvals.FirstOrDefault();
+        }
+        Assert.NotNull(pending);
+        (await admin.PostAsJsonAsync($"/api/approvals/{pending.Id}",
+            new DecideApprovalRequest(ApprovalStatuses.Approved), SharpClawJson.Options)).EnsureSuccessStatusCode();
+
+        await turn;
+        Assert.Equal("Deleted old.md.", await FinalReplyAsync(h));
+        Assert.False(File.Exists(Path.Combine(_workspace, "old.md")));
+    }
+
+    [Fact]
+    public async Task Unattended_high_risk_call_is_denied_without_waiting()
+    {
+        await using var h = await StartAsync();
+        File.WriteAllText(Path.Combine(_workspace, "old.md"), "old");
+        await h.Fx.PostUserMessageAsync(h.Thread, "delete the old note", unattended: true);
 
         var started = DateTime.UtcNow;
         await h.Loop.ProcessOnceAsync(CancellationToken.None);

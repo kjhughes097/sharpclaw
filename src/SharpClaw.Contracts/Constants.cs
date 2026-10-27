@@ -99,7 +99,7 @@ public static class ApprovalStatuses
     public const string Expired = "expired";
 }
 
-/// <summary>Who decided an approval: the human, or the gateway (nobody watching, or timeout).</summary>
+/// <summary>Who decided an approval: the human, or the gateway (unattended message, timeout, orphaned turn).</summary>
 public static class ApprovalDecidedBy
 {
     public const string User = "user";

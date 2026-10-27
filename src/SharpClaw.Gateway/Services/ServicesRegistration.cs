@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharpClaw.Gateway.Services;
 
 namespace SharpClaw.Gateway;
@@ -13,5 +14,9 @@ public static partial class GatewayServices
         builder.Services.AddHostedService(sp => sp.GetRequiredService<EventRetentionService>());
         builder.Services.AddSingleton<IAgentInboxSignal, AgentInboxSignal>();
         builder.Services.AddSingleton<ApprovalSignal>();
+        builder.Services.AddSingleton<ApprovalDecisions>();
+        builder.Services.TryAddSingleton<IApprovalNotifier, NoApprovalNotifier>();
+        builder.Services.AddSingleton<ApprovalExpirySweeper>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<ApprovalExpirySweeper>());
     }
 }

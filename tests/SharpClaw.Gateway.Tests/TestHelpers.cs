@@ -17,11 +17,11 @@ public static class TestHelpers
     }
 
     /// <summary>Posts a user message to a thread (client API).</summary>
-    public static async Task<Guid> PostUserMessageAsync(this GatewayFixture fx, Guid threadId, string content)
+    public static async Task<Guid> PostUserMessageAsync(this GatewayFixture fx, Guid threadId, string content, bool unattended = false)
     {
         using var admin = fx.Admin();
         var resp = await admin.PostAsJsonAsync($"/api/threads/{threadId}/messages",
-            new PostMessageRequest(content), SharpClawJson.Options);
+            new PostMessageRequest(content, unattended), SharpClawJson.Options);
         resp.EnsureSuccessStatusCode();
         var body = await resp.Content.ReadFromJsonAsync<QueuedMessageResponse>(SharpClawJson.Options);
         return body!.Message.Id;

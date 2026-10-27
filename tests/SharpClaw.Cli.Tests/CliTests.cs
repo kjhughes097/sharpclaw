@@ -235,6 +235,47 @@ public class CliTests
         Assert.Equal(new[] { 1, 2, 4, 8, 10, 10, 10, 10, 10 }, waited.Select(w => (int)w.TotalSeconds));
     }
 
+    // ---- approvals queue (pre-3.3 §9.6) ----
+
+    [Fact]
+    public async Task Approvals_list_passes_filters_and_prints_the_queue()
+    {
+        var gw = new FakeGateway();
+        gw.Approvals.Add(new ApprovalDetailDto(Guid.NewGuid(), "assistant", Guid.NewGuid(), Guid.NewGuid(), "workspace_delete",
+            "delete old.md", "high", "deletes a file", "pending", DateTime.UtcNow, DateTime.UtcNow.AddMinutes(5), null, null));
+        var output = new StringWriter();
+
+        await Commands.RunAsync(new[] { "approvals", "list", "--status", "pending", "--agent", "assistant" },
+            gw, output, TextReader.Null, CancellationToken.None);
+
+        Assert.Equal(("pending", "assistant"), gw.LastApprovalQuery);
+        Assert.Contains("workspace_delete", output.ToString());
+        Assert.Contains("delete old.md", output.ToString());
+    }
+
+    [Theory]
+    [InlineData("approve", "approved")]
+    [InlineData("deny", "denied")]
+    public async Task Approvals_approve_and_deny_post_the_decision(string verb, string expected)
+    {
+        var gw = new FakeGateway();
+        var id = Guid.NewGuid();
+        var output = new StringWriter();
+
+        await Commands.RunAsync(new[] { "approvals", verb, id.ToString() }, gw, output, TextReader.Null, CancellationToken.None);
+
+        Assert.Equal((id, expected), Assert.Single(gw.Decisions));
+        Assert.Contains(expected, output.ToString());
+    }
+
+    [Fact]
+    public async Task Ask_unattended_posts_the_flag()
+    {
+        var gw = new FakeGateway();
+        await Commands.RunAsync(new[] { "ask", "assistant", "hi", "--unattended" }, gw, new StringWriter(), TextReader.Null, CancellationToken.None);
+        Assert.True(gw.PostedUnattended);
+    }
+
     // ---- fake gateway ----
 
     private sealed class FakeGateway : ICliGateway
@@ -311,9 +352,10 @@ public class CliTests
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
 
-        public Task<Guid> PostMessageAsync(Guid threadId, string content)
+        public Task<Guid> PostMessageAsync(Guid threadId, string content, bool unattended = false)
         {
             MessagePostedAt = Interlocked.Increment(ref _seq);
+            PostedUnattended = unattended;
             _postedMessageId = Guid.NewGuid();
             return Task.FromResult(_postedMessageId);
         }
@@ -334,6 +376,15 @@ public class CliTests
         public Func<Guid, IEnumerable<CliSseEvent>> BeforeCompletion { get; set; } = _ => Array.Empty<CliSseEvent>();
         public List<(Guid Id, string Decision)> Decisions { get; } = new();
         public bool DecisionConflicts { get; set; }
+        public bool PostedUnattended { get; private set; }
+        public List<ApprovalDetailDto> Approvals { get; } = new();
+        public (string? Status, string? Agent) LastApprovalQuery { get; private set; }
+
+        public Task<ApprovalListResponse> ListApprovalsAsync(string? status, string? agent)
+        {
+            LastApprovalQuery = (status, agent);
+            return Task.FromResult(new ApprovalListResponse(Approvals));
+        }
 
         public Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision)
         {

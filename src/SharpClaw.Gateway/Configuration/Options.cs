@@ -60,6 +60,9 @@ public sealed class ApprovalsOptions
 
     /// <summary>A pending approval expires (counts as denied) after this many seconds.</summary>
     public int TimeoutSeconds { get; set; } = 300;
+
+    /// <summary>How often the background sweeper expires overdue approvals.</summary>
+    public int SweepIntervalSeconds { get; set; } = 10;
 }
 
 public sealed class EventsOptions

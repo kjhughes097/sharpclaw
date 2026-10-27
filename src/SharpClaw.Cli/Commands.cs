@@ -29,6 +29,9 @@ public static class Commands
             case "chat":
                 await Chat(parsed, gateway, output, input, ct);
                 break;
+            case "approvals":
+                await Approvals(parsed, gateway, output);
+                break;
             default:
                 throw new CliException(Usage);
         }
@@ -145,7 +148,35 @@ public static class Commands
         var agent = a.Positionals.ElementAtOrDefault(1) ?? throw new CliException("agent is required.");
         var text = a.Positionals.ElementAtOrDefault(2) ?? throw new CliException("message text is required.");
         var thread = await ResolveThread(a, gw, agent);
-        await ChatRunner.RunOnceAsync(gw, thread, text, o, input, ct);
+        await ChatRunner.RunOnceAsync(gw, thread, text, o, input, ct, unattended: a.Has("unattended"));
+    }
+
+    private static async Task Approvals(ParsedArgs a, ICliGateway gw, TextWriter o)
+    {
+        var verb = a.Positionals.ElementAtOrDefault(1) ?? throw new CliException(Usage);
+        switch (verb)
+        {
+            case "list":
+            {
+                var list = await gw.ListApprovalsAsync(a.Get("status"), a.Get("agent"));
+                await o.WriteLineAsync($"{"ID",-38} {"AGENT",-14} {"TOOL",-18} {"RISK",-9} {"STATUS",-9} {"EXPIRES",-20} SUMMARY");
+                foreach (var ap in list.Approvals)
+                    await o.WriteLineAsync(
+                        $"{ap.Id,-38} {ap.Agent,-14} {ap.ToolName,-18} {ap.Risk,-9} {ap.Status,-9} {ap.ExpiresAt:u} {ap.Summary}");
+                break;
+            }
+            case "approve" or "deny":
+            {
+                var raw = a.Positionals.ElementAtOrDefault(2) ?? throw new CliException("approval id is required.");
+                if (!Guid.TryParse(raw, out var id)) throw new CliException("approval id must be a GUID.");
+                var decided = await gw.DecideApprovalAsync(id,
+                    verb == "approve" ? ApprovalStatuses.Approved : ApprovalStatuses.Denied);
+                await o.WriteLineAsync($"Approval {decided.Id}: {decided.Status}.");
+                break;
+            }
+            default:
+                throw new CliException(Usage);
+        }
     }
 
     private static async Task Chat(ParsedArgs a, ICliGateway gw, TextWriter o, TextReader input, CancellationToken ct)
@@ -197,7 +228,10 @@ public static class Commands
           sharpclaw tokens list <agent>
           sharpclaw tokens revoke <agent> <tokenId>
           sharpclaw chat <agent> [--thread <id>]
-          sharpclaw ask <agent> "<text>"
+          sharpclaw ask <agent> "<text>" [--unattended]
+          sharpclaw approvals list [--status pending] [--agent <name>]
+          sharpclaw approvals approve <id>
+          sharpclaw approvals deny <id>
           sharpclaw audit [--agent <name>] [--limit N]
           sharpclaw audit tools [--agent <name>] [--limit N]
         """;
