@@ -20,8 +20,8 @@ public class AgentToolLoopTests
         public List<ToolCallReportRequest> Reports { get; } = new();
 
         public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => Task.FromResult(InboxResult.Of(Message));
-        public Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<ChatMessage>>(new[] { new ChatMessage(Roles.User, "do the task") });
+        public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct) =>
+            Task.FromResult(new ContextResult(new[] { new ChatMessage(Roles.User, "do the task") }));
 
         public Task<ChatOutcome> StreamChatAsync(IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,
             Guid correlationId, Guid threadId, CancellationToken ct)
@@ -30,9 +30,13 @@ public class AgentToolLoopTests
             return Task.FromResult(Outcomes.Dequeue());
         }
 
-        public Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct)
+        public List<IReadOnlyList<ToolExchangeDto>> ReplyExchanges { get; } = new();
+
+        public Task PostReplyAsync(Guid threadId, string content, Guid correlationId,
+            IReadOnlyList<ToolExchangeDto> exchanges, CancellationToken ct)
         {
             Replies.Add(content);
+            ReplyExchanges.Add(exchanges);
             return Task.CompletedTask;
         }
 
@@ -103,6 +107,58 @@ public class AgentToolLoopTests
         Assert.Equal("call_1", last[3].ToolCallId);
         Assert.Contains("\"value\":42", last[3].Content);
         Assert.Equal(new[] { "call_1", "call_2" }, gw.Reports.Select(r => r.ToolCallId));
+    }
+
+    [Fact]
+    public async Task Exchanges_are_collected_in_order_and_posted_with_the_reply()
+    {
+        var (loop, gw, _) = Create();
+        gw.Outcomes.Enqueue(ChatOutcome.Ok("Let me check.", new[] { new ChatToolCall("call_1", "t", "{}") }));
+        gw.Outcomes.Enqueue(ToolCall("call_2", "t"));
+        gw.Outcomes.Enqueue(ChatOutcome.Ok("All done."));
+
+        await loop.ProcessOnceAsync(CancellationToken.None);
+
+        var exchanges = Assert.Single(gw.ReplyExchanges);
+        Assert.Equal(2, exchanges.Count);
+        Assert.Equal("Let me check.", exchanges[0].AssistantContent);
+        Assert.Null(exchanges[1].AssistantContent);
+        Assert.Equal("call_1", Assert.Single(exchanges[0].ToolCalls).Id);
+        var result = Assert.Single(exchanges[0].Results);
+        Assert.Equal("call_1", result.ToolCallId);
+        Assert.True(result.Ok);
+        Assert.False(result.Untrusted);
+        Assert.Contains("\"value\":42", result.Content);
+    }
+
+    [Fact]
+    public async Task Exchanges_are_truncated_before_posting_and_untrusted_results_flagged()
+    {
+        var gateway = new ScriptedGateway();
+        var reader = new FakeTool("read", new ToolAssessment.Scored(RiskLevel.Low, "safe"), untrusted: true)
+        {
+            Execute = _ => ToolResult.Success(new { content = new string('x', 10_000) }),
+        };
+        var config = new AgentToolConfig(RiskLevel.Low, false, 5, new[] { "read" });
+        var registry = new ToolRegistry(new IAgentTool[] { reader }, config.Tools);
+        var dispatcher = new ToolDispatcher(registry, config, gateway, NullLogger<ToolDispatcher>.Instance);
+        var loop = new AgentLoop(gateway, new FixedSoul(), new AgentConfig { GatewayUrl = "http://gw", AgentToken = "sc_x", SoulPath = "/nope" },
+            NullLogger<AgentLoop>.Instance, new FakeTimeProvider(), new AgentTools(registry, dispatcher, 5));
+        var longArg = $$"""{"path":"{{new string('p', 900)}}"}""";
+        gateway.Outcomes.Enqueue(ChatOutcome.Ok("", new[] { new ChatToolCall("call_1", "read", longArg) }));
+        gateway.Outcomes.Enqueue(ChatOutcome.Ok("done"));
+
+        await loop.ProcessOnceAsync(CancellationToken.None);
+
+        var exchange = Assert.Single(Assert.Single(gateway.ReplyExchanges));
+        var args = System.Text.Json.JsonDocument.Parse(Assert.Single(exchange.ToolCalls).Arguments).RootElement;
+        Assert.EndsWith("…[truncated 400 chars]", args.GetProperty("path").GetString());
+        var result = Assert.Single(exchange.Results);
+        Assert.True(result.Untrusted);
+        Assert.Contains("…[truncated ", result.Content);
+        Assert.True(result.Content.Length < 4100);
+        // The model itself still saw the full result within the turn.
+        Assert.True(gateway.Requests[^1].Messages[^1].Content!.Length > 10_000);
     }
 
     [Fact]

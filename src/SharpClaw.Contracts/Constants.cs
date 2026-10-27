@@ -13,7 +13,28 @@ public static class ErrorCodes
     public const string LoopLimitExceeded = "loop_limit_exceeded";
     public const string ProviderError = "provider_error";
     public const string ProviderTimeout = "provider_timeout";
+    public const string ContextTooLarge = "context_too_large";
+    public const string CsrfFailed = "csrf_failed";
+    public const string RateLimited = "rate_limited";
     public const string InternalError = "internal_error";
+}
+
+/// <summary>Context-window defaults shared by the gateway and the agent (pre-3.3 spec section 6).</summary>
+public static class ContextDefaults
+{
+    /// <summary>Token estimate heuristic: characters per token.</summary>
+    public const int CharsPerToken = 4;
+
+    /// <summary>Added to every message's estimate (role, separators).</summary>
+    public const int MessageOverheadTokens = 4;
+
+    public const int DefaultWindowTokens = 32000;
+    public const int MinWindowTokens = 1000;
+    public const int MaxWindowTokens = 2_000_000;
+
+    /// <summary><c>ceil(chars / CharsPerToken)</c>.</summary>
+    public static int Tokens(long chars, int charsPerToken = CharsPerToken) =>
+        (int)((chars + charsPerToken - 1) / charsPerToken);
 }
 
 /// <summary>Message roles.</summary>
@@ -23,6 +44,15 @@ public static class Roles
     public const string User = "user";
     public const string Assistant = "assistant";
     public const string Tool = "tool";
+}
+
+/// <summary>What a thread row is (pre-3.3 spec section 5).</summary>
+public static class MessageKinds
+{
+    /// <summary>A user message or a final assistant reply.</summary>
+    public const string Message = "message";
+    public const string ToolRequest = "tool_request";
+    public const string ToolResult = "tool_result";
 }
 
 /// <summary>Message statuses.</summary>
@@ -99,7 +129,7 @@ public static class ApprovalStatuses
     public const string Expired = "expired";
 }
 
-/// <summary>Who decided an approval: the human, or the gateway (nobody watching, or timeout).</summary>
+/// <summary>Who decided an approval: the human, or the gateway (unattended message, timeout, orphaned turn).</summary>
 public static class ApprovalDecidedBy
 {
     public const string User = "user";

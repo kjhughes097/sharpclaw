@@ -143,6 +143,52 @@ public class AgentLoopTests
     }
 
     [Fact]
+    public async Task Context_too_large_fails_the_message_without_calling_the_model()
+    {
+        var msgId = Guid.NewGuid();
+        var client = new FakeGatewayClient
+        {
+            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            ContextFailCode = "context_too_large",
+        };
+
+        await NewLoop(client).ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal((msgId, "context_too_large"), Assert.Single(client.Failures));
+        Assert.Null(client.LastChatMessages);
+    }
+
+    [Fact]
+    public async Task Chat_context_too_large_fails_the_message()
+    {
+        var msgId = Guid.NewGuid();
+        var client = new FakeGatewayClient
+        {
+            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextChat = ChatOutcome.Fail("context_too_large"),
+        };
+
+        await NewLoop(client).ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal((msgId, "context_too_large"), Assert.Single(client.Failures));
+    }
+
+    [Fact]
+    public async Task Reserve_tokens_cover_the_soul()
+    {
+        var client = new FakeGatewayClient
+        {
+            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextChat = ChatOutcome.Ok("r"),
+        };
+
+        await NewLoop(client, new FixedSoul(new string('s', 4001))).ProcessOnceAsync(CancellationToken.None);
+
+        // ceil(4001 / 4) for the soul, plus the per-message overhead; no tools.
+        Assert.Equal(1005, client.LastReserveTokens);
+    }
+
+    [Fact]
     public async Task Logs_do_not_contain_message_content()
     {
         var logs = new ConcurrentQueue<string>();
@@ -175,8 +221,13 @@ public class AgentLoopTests
         public IReadOnlyList<ChatMessage>? LastChatMessages { get; private set; }
 
         public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => Task.FromResult(NextInbox);
-        public Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct) =>
-            Task.FromResult(History);
+        public string? ContextFailCode { get; set; }
+        public int? LastReserveTokens { get; private set; }
+        public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct)
+        {
+            LastReserveTokens = reserveTokens;
+            return Task.FromResult(ContextFailCode is null ? new ContextResult(History) : ContextResult.Fail(ContextFailCode));
+        }
         public Task<ChatOutcome> StreamChatAsync(
             IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<SharpClaw.Agent.Tools.IAgentTool> tools,
             Guid correlationId, Guid threadId, CancellationToken ct)
@@ -184,7 +235,8 @@ public class AgentLoopTests
             LastChatMessages = messages;
             return Task.FromResult(NextChat);
         }
-        public Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct)
+        public Task PostReplyAsync(Guid threadId, string content, Guid correlationId,
+            IReadOnlyList<ToolExchangeDto> exchanges, CancellationToken ct)
         {
             Replies.Add((threadId, content, correlationId));
             return Task.CompletedTask;

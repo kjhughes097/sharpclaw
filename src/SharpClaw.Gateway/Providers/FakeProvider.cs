@@ -53,6 +53,8 @@ public sealed class FakeProvider : IChatProvider
             throw new ProviderException(ProviderErrorKind.Upstream, httpErr.Status ?? 500, "fake http error");
         if (rule?.Error is { Type: FakeErrorType.Timeout })
             throw new ProviderException(ProviderErrorKind.Timeout, null, "fake timeout");
+        if (rule?.Error is { Type: FakeErrorType.ContextLength })
+            throw new ProviderException(ProviderErrorKind.ContextLength, 400, "fake context length exceeded");
 
         var midstreamAfter = rule?.Error is { Type: FakeErrorType.Midstream } mid ? mid.AfterChars ?? 0 : (int?)null;
 

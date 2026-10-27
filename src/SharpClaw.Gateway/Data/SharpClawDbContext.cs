@@ -14,6 +14,10 @@ public class SharpClawDbContext : DbContext
     public DbSet<LlmCall> LlmCalls => Set<LlmCall>();
     public DbSet<ToolCallRecord> ToolCalls => Set<ToolCallRecord>();
     public DbSet<Approval> Approvals => Set<Approval>();
+    public DbSet<ThreadEvent> ThreadEvents => Set<ThreadEvent>();
+    public DbSet<EventLogState> EventLogState => Set<EventLogState>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Session> Sessions => Set<Session>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -68,11 +72,12 @@ public class SharpClawDbContext : DbContext
             e.ToTable("messages");
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.AgentId, x.Role, x.Status, x.CreatedAt });
-            e.HasIndex(x => new { x.ThreadId, x.CreatedAt });
-            // One assistant reply per user message.
+            e.HasIndex(x => new { x.ThreadId, x.Seq }).IsUnique();
+            e.Property(x => x.Kind).HasDefaultValue("message");
+            // One final assistant reply per user message; tool_request rows share the correlation id.
             e.HasIndex(x => x.CorrelationId)
                 .IsUnique()
-                .HasFilter("role = 'assistant'");
+                .HasFilter("role = 'assistant' AND kind = 'message'");
         });
 
         b.Entity<LlmCall>(e =>
@@ -99,6 +104,39 @@ public class SharpClawDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.CorrelationId);
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
+        });
+
+        b.Entity<ThreadEvent>(e =>
+        {
+            e.ToTable("thread_events");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedOnAdd();
+            e.HasIndex(x => new { x.ThreadId, x.Id });
+            e.HasIndex(x => x.CreatedAt);
+        });
+
+        b.Entity<EventLogState>(e =>
+        {
+            e.ToTable("event_log_state");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.HasData(new EventLogState { Id = 1, PrunedThrough = 0 });
+        });
+
+        b.Entity<User>(e =>
+        {
+            e.ToTable("users");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Name).IsUnique();
+        });
+
+        b.Entity<Session>(e =>
+        {
+            e.ToTable("sessions");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.TokenHash).IsUnique();
+            e.HasIndex(x => x.UserId);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId);
         });
     }
 

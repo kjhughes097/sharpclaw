@@ -20,6 +20,7 @@ public class ToolDispatcherTests
     private static ToolCallRequest Call(string name, string args = "{}") => new("call_1", name, args);
 
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;
+    private static JsonElement Parse(ToolDispatchResult result) => Parse(result.Content);
 
     [Fact]
     public async Task Risk_at_or_below_allowed_level_runs_without_approval()
@@ -197,7 +198,7 @@ public class ToolDispatcherTests
         };
         var (d, gw, logger) = Create(new IAgentTool[] { tool });
 
-        var json = await d.DispatchAsync(Call("t"), new TurnContext(Guid.NewGuid(), Guid.NewGuid()), default);
+        var json = (await d.DispatchAsync(Call("t"), new TurnContext(Guid.NewGuid(), Guid.NewGuid()), default)).Content;
 
         Assert.Equal("tool_failed", Parse(json).GetProperty("error").GetString());
         Assert.DoesNotContain("SECRET", json);

@@ -2,7 +2,7 @@
 
 Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in detail; later phases are deliberately rough and will be refined when reached.
 
-**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`.
+**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`; pre-3.3 foundations: `sharpclaw-3.2-post-implementation-work.md`.
 
 ## 1. Architecture
 
@@ -45,7 +45,7 @@ Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in d
 - No multiple LLM backend implementations beyond what the gateway's single provider adapter needs
 - No hierarchical memory architecture
 - No gateway-managed container lifecycle (no Docker socket access)
-- No multi-user support
+- No multi-user support (the pre-3.3 schema allows several browser users, but there are no per-user permissions or data separation)
 
 ---
 
@@ -107,13 +107,35 @@ built in a later phase, with the gateway performing fetches under fixed rules.
 
 ---
 
+## Pre-3.3 foundations (built)
+
+> **Source of truth:** `sharpclaw-3.2-post-implementation-work.md`. This section is a summary only.
+
+Five things the web UI needs, built before it so the UI doesn't have to work around them:
+
+- **Browser authentication:** gateway-native username/password login, server-side sessions in an
+  `HttpOnly`, `SameSite=Strict` cookie, CSRF and origin checks, login rate limiting. The admin key
+  stays for the CLI and scripts and is the only credential for user management. The UI is served
+  same-origin; TLS ends at a reverse proxy.
+- **Tool exchanges in thread history:** stored (truncated) and replayed to the model; untrusted
+  results from earlier turns are replaced by a stub. Rows are ordered by a per-thread `seq`.
+- **Context management:** the gateway fits whole turns into a per-agent window (default 32,000
+  tokens, character-based estimate) and reports dropped turns; a summariser seam exists but
+  summarisation is deferred.
+- **SSE replay:** durable events in `thread_events` with `Last-Event-ID` replay, snapshots of
+  in-flight replies, a global `/api/events` stream, 14-day retention; the CLI reconnects.
+- **Approvals without a watcher:** a durable approval queue with an expiry sweeper and a
+  notifier seam; `unattended` messages deny at once.
+
+---
+
 ## Phase 3.3 — Client API and web UI
 
 **Goal:** replace the CLI with a proper interface.
 
 **Scope**
-- Client-facing listener with user auth
-- REST endpoints for agents, sessions/threads, messages; SSE stream of agent output and events
+- Client-facing listener with user auth (login, sessions and CSRF are in place from the pre-3.3 foundations)
+- REST endpoints for agents, sessions/threads, messages; SSE stream of agent output and events (replayable)
 - OpenAPI spec and generated client
 - Web UI: agent list, chat view with streaming, basic audit/trace view (LLM calls and tool calls for a thread)
 - Admin actions in the UI: create agent, issue and revoke tokens
@@ -126,7 +148,7 @@ built in a later phase, with the gateway performing fetches under fixed rules.
 
 ## Phase 3.4 — Controls *(outline)*
 
-- Human approval in the UI (the CLI flow lands in 3.2)
+- Human approval in the UI (the CLI flow lands in 3.2; the queue API in the pre-3.3 foundations)
 - Per-thread budgets, rate limits, global kill switch
 - Richer policy rules
 - Network tools mediated by the gateway (design agreed in the 3.2 spec)
@@ -160,4 +182,4 @@ built in a later phase, with the gateway performing fetches under fixed rules.
 
 - Agent memory beyond conversation history: what lives in the gateway DB vs. mounted workspace files, and who can write what? (Deferred past 3.1.)
 - Does the full agent definition (persona, tools, limits) eventually move into the gateway as data, with `soul.md` as the only mounted file?
-- Context management for long threads: truncate, summarise, or both, and who owns it? (Gateway, most likely.)
+- Context management for long threads: truncate, summarise, or both, and who owns it? (Decided in the pre-3.3 foundations: the gateway drops whole oldest turns; summarisation is a future extension behind `IContextSummariser`.)

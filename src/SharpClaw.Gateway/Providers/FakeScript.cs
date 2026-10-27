@@ -10,7 +10,7 @@ public sealed class FakeUsageSpec
     public double? CostUsd { get; init; }
 }
 
-public enum FakeErrorType { Http, Timeout, Midstream }
+public enum FakeErrorType { Http, Timeout, Midstream, ContextLength }
 
 public sealed class FakeErrorSpec
 {
@@ -78,6 +78,7 @@ public sealed class FakeScript
                 {
                     "timeout" => FakeErrorType.Timeout,
                     "midstream" => FakeErrorType.Midstream,
+                    "context_length" => FakeErrorType.ContextLength,
                     _ => FakeErrorType.Http,
                 };
                 error = new FakeErrorSpec

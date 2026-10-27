@@ -53,12 +53,16 @@ Run a focused suite with `dotnet test tests/SharpClaw.Gateway.Tests --filter "Fu
   `SharpClawJson.Options`. Shared by every project; put wire shapes here.
 - `src/SharpClaw.Gateway` — one process, two Kestrel listeners. Route groups are separated by
   `HttpContext.Connection.LocalPort` (`ListenerFilter`), **never** the `Host` header:
-  client `/api/*` (admin key, port 8080) vs agent `/agent/*` + `/v1/*` (agent token, port 8081).
+  client `/api/*` (admin key or session cookie + CSRF, port 8080) vs agent `/agent/*` + `/v1/*`
+  (agent token, port 8081). `/api/users*` is admin-key only.
   Wrong listener → `404`. Endpoint registration lives in `Endpoints/`, wired via
   `Endpoints/EndpointMapping.cs`; service registration is split into `GatewayServices` partials.
 - `src/SharpClaw.Agent` — console loop; HTTP and soul file behind `IGatewayClient` / `ISoulProvider`.
-- `src/SharpClaw.Cli` — assembly `sharpclaw`; gateway access behind `ICliGateway`. Chat must open
-  the SSE stream **before** posting (no replay).
+- `src/SharpClaw.Cli` — assembly `sharpclaw`; gateway access behind `ICliGateway`. Chat opens the
+  SSE stream **before** posting (a fresh connect replays nothing) and resumes with `Last-Event-ID`.
+- **Events:** durable client events go through `IEventPublisher.PublishDurableAsync` (stored in
+  `thread_events`, then published with an id); only `delta` is ephemeral. Never put tool arguments
+  or results in an event.
 
 ## Conventions
 

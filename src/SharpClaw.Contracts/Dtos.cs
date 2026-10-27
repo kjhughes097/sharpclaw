@@ -1,11 +1,14 @@
+using System.Text.Json.Serialization;
+
 namespace SharpClaw.Contracts;
 
 // ----- Agents -----
 
-public sealed record CreateAgentRequest(string Name, string Model, double DailyBudgetUsd);
+public sealed record CreateAgentRequest(string Name, string Model, double DailyBudgetUsd, int? ContextWindowTokens = null);
 
-public sealed record UpdateAgentRequest(string? Model, double? DailyBudgetUsd, bool? Enabled);
+public sealed record UpdateAgentRequest(string? Model, double? DailyBudgetUsd, bool? Enabled, int? ContextWindowTokens = null);
 
+/// <summary><c>ContextWindowTokens</c> is the agent's override; null means the gateway default.</summary>
 public sealed record AgentDto(
     Guid Id,
     string Name,
@@ -14,7 +17,8 @@ public sealed record AgentDto(
     bool Enabled,
     DateTime CreatedAt,
     double TodaySpendUsd,
-    double RemainingUsd);
+    double RemainingUsd,
+    int? ContextWindowTokens = null);
 
 public sealed record AgentListResponse(IReadOnlyList<AgentDto> Agents);
 
@@ -44,7 +48,13 @@ public sealed record CreatedTokenResponse(TokenValueDto Token);
 
 public sealed record CreateThreadRequest(string AgentId, string? Title);
 
-public sealed record ThreadDto(Guid Id, Guid AgentId, string? Title, DateTime CreatedAt);
+/// <summary>
+/// <c>Context</c>: how the thread fit the model's window the last time the agent built its context.
+/// <c>DroppedTurns</c> &gt; 0 means older messages are no longer seen by the model.
+/// </summary>
+public sealed record ThreadDto(Guid Id, Guid AgentId, string? Title, DateTime CreatedAt, ThreadContextDto? Context = null);
+
+public sealed record ThreadContextDto(int DroppedTurns, int EstimatedTokens, int WindowTokens);
 
 public sealed record CreatedThreadResponse(ThreadDto Thread);
 
@@ -52,15 +62,28 @@ public sealed record ThreadListResponse(IReadOnlyList<ThreadDto> Threads);
 
 // ----- Messages -----
 
-public sealed record PostMessageRequest(string Content);
+/// <summary><c>Unattended</c>: nobody will answer approvals for this message (scripts, schedules).</summary>
+public sealed record PostMessageRequest(string Content, bool Unattended = false);
 
+/// <summary>
+/// A thread row. <c>Kind</c> is <c>message</c> (user messages and final replies), <c>tool_request</c>
+/// (role assistant, <c>ToolCalls</c> set) or <c>tool_result</c> (role tool, <c>ToolCallId</c> set).
+/// Rows are ordered by <c>Seq</c>.
+/// </summary>
 public sealed record MessageDto(
     Guid Id,
     string Role,
     string Content,
     string Status,
     Guid? CorrelationId,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    string Kind = MessageKinds.Message,
+    int Seq = 0,
+    IReadOnlyList<ChatToolCall>? ToolCalls = null,
+    string? ToolCallId = null,
+    bool? ToolOk = null,
+    bool Untrusted = false,
+    bool Truncated = false);
 
 public sealed record MessageListResponse(IReadOnlyList<MessageDto> Messages);
 
@@ -75,7 +98,18 @@ public sealed record InboxMessageDto(Guid Id, Guid ThreadId, string Content, Dat
 
 public sealed record InboxMessageResponse(InboxMessageDto Message);
 
-public sealed record AgentReplyRequest(string Content, Guid CorrelationId);
+/// <summary>
+/// The agent's final reply, with the tool exchanges of the turn (in order) so the thread keeps
+/// the whole conversation the model took part in.
+/// </summary>
+public sealed record AgentReplyRequest(string Content, Guid CorrelationId, IReadOnlyList<ToolExchangeDto>? Exchanges = null);
+
+/// <summary>One model round that asked for tools: any text it produced, its calls, and their results.</summary>
+public sealed record ToolExchangeDto(
+    string? AssistantContent, IReadOnlyList<ChatToolCall> ToolCalls, IReadOnlyList<ToolResultDto> Results);
+
+/// <summary><c>Untrusted</c>: the content may carry prompt injection and is never replayed on later turns.</summary>
+public sealed record ToolResultDto(string ToolCallId, string Content, bool Ok, bool Untrusted);
 
 public sealed record AgentReplyDto(Guid Id, DateTime CreatedAt);
 
@@ -157,3 +191,54 @@ public sealed record ApprovalResponse(ApprovalDto Approval);
 
 /// <summary><c>Decision</c> is <c>approved</c> or <c>denied</c>.</summary>
 public sealed record DecideApprovalRequest(string Decision);
+
+// ----- Browser auth and users (pre-3.3 spec section 4) -----
+
+public sealed record LoginRequest(string Username, string Password);
+
+public sealed record UserDto(Guid Id, string Name);
+
+public sealed record LoginResponse(UserDto User, string CsrfToken, DateTime ExpiresAt);
+
+/// <summary><c>Method</c> is <c>session</c> or <c>admin_key</c>; the rest is omitted when not authenticated.</summary>
+public sealed record SessionInfoResponse(
+    bool Authenticated,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Method = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] UserDto? User = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? CsrfToken = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTime? ExpiresAt = null);
+
+public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+public sealed record CreateUserRequest(string Name, string Password);
+
+public sealed record SetPasswordRequest(string Password);
+
+public sealed record UpdateUserRequest(bool? Disabled);
+
+/// <summary>A user as shown to the admin. Never carries the password hash.</summary>
+public sealed record UserAdminDto(Guid Id, string Name, bool Disabled, DateTime CreatedAt);
+
+public sealed record UserListResponse(IReadOnlyList<UserAdminDto> Users);
+
+public sealed record CreatedUserResponse(UserAdminDto User);
+
+/// <summary>An approval as shown in the client queue. Never carries tool arguments.</summary>
+public sealed record ApprovalDetailDto(
+    Guid Id,
+    string Agent,
+    Guid ThreadId,
+    Guid CorrelationId,
+    string ToolName,
+    string Summary,
+    string Risk,
+    string Reason,
+    string Status,
+    DateTime CreatedAt,
+    DateTime ExpiresAt,
+    string? DecidedBy,
+    DateTime? DecidedAt);
+
+public sealed record ApprovalListResponse(IReadOnlyList<ApprovalDetailDto> Approvals);
+
+public sealed record ApprovalDetailResponse(ApprovalDetailDto Approval);

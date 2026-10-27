@@ -17,10 +17,12 @@ public static class ThreadsEndpoints
         client.MapGet("/threads/{id}/messages", GetMessages);
         client.MapPost("/threads/{id}/messages", PostMessage);
         client.MapGet("/threads/{id}/stream", StreamThread);
+        client.MapGet("/events", StreamAll);
     }
 
     private static async Task<IResult> CreateThread(
-        CreateThreadRequest? body, SharpClawDbContext db, TimeProvider time, CancellationToken ct)
+        CreateThreadRequest? body, SharpClawDbContext db, TimeProvider time, IOptions<ContextOptions> context,
+        CancellationToken ct)
     {
         if (body is null || string.IsNullOrWhiteSpace(body.AgentId))
             return ApiResults.ValidationFailed("agentId is required.");
@@ -39,12 +41,15 @@ public static class ThreadsEndpoints
         db.Threads.Add(thread);
         await db.SaveChangesAsync(ct);
 
-        var dto = new ThreadDto(thread.Id, thread.AgentId, thread.Title, thread.CreatedAt);
+        var dto = ToDto(thread, context.Value.WindowFor(agent.ContextWindowTokens));
         return Results.Json(new CreatedThreadResponse(dto), SharpClawJson.Options, statusCode: 201);
     }
 
+    private static ThreadDto ToDto(ConversationThread t, int windowTokens) => new(t.Id, t.AgentId, t.Title, t.CreatedAt,
+        new ThreadContextDto(t.ContextDroppedTurns, t.ContextEstimatedTokens, windowTokens));
+
     private static async Task<IResult> ListThreads(
-        string? agentId, SharpClawDbContext db, CancellationToken ct)
+        string? agentId, SharpClawDbContext db, IOptions<ContextOptions> context, CancellationToken ct)
     {
         IQueryable<ConversationThread> q = db.Threads.AsNoTracking();
         if (!string.IsNullOrWhiteSpace(agentId))
@@ -56,25 +61,26 @@ public static class ThreadsEndpoints
         }
 
         var threads = await q.OrderByDescending(t => t.CreatedAt).Take(50)
-            .Select(t => new ThreadDto(t.Id, t.AgentId, t.Title, t.CreatedAt))
+            .Select(t => new { Thread = t, Window = t.Agent!.ContextWindowTokens })
             .ToListAsync(ct);
-        return Results.Json(new ThreadListResponse(threads), SharpClawJson.Options);
+        var dtos = threads.Select(x => ToDto(x.Thread, context.Value.WindowFor(x.Window))).ToList();
+        return Results.Json(new ThreadListResponse(dtos), SharpClawJson.Options);
     }
 
     private static async Task<IResult> GetMessages(
-        Guid id, Guid? after, SharpClawDbContext db, CancellationToken ct)
+        Guid id, Guid? after, bool? includeTools, SharpClawDbContext db, CancellationToken ct)
     {
         var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
         if (thread is null)
             return ApiResults.NotFound("Thread not found.");
 
-        var messages = await MessageQueries.ListAsync(db, id, after, ct);
+        var messages = await MessageQueries.ListAsync(db, id, after, includeTools ?? false, ct);
         return Results.Json(new MessageListResponse(messages), SharpClawJson.Options);
     }
 
     private static async Task<IResult> PostMessage(
         Guid id, PostMessageRequest? body, SharpClawDbContext db, TimeProvider time,
-        IAgentInboxSignal signal, IOptions<MessagesOptions> messages, ILoggerFactory loggerFactory,
+        IAgentInboxSignal signal, IEventPublisher events, IOptions<MessagesOptions> messages, ILoggerFactory loggerFactory,
         CancellationToken ct)
     {
         var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
@@ -94,11 +100,19 @@ public static class ThreadsEndpoints
             Role = Roles.User,
             Content = body.Content,
             Status = MessageStatus.Pending,
+            Unattended = body.Unattended,
             CreatedAt = time.GetUtcNow().UtcDateTime,
         };
-        db.Messages.Add(message);
-        await db.SaveChangesAsync(ct);
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            message.Seq = await MessageQueries.NextSeqAsync(db, thread.Id, ct);
+            db.Messages.Add(message);
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        }
 
+        await events.PublishDurableAsync(thread.Id, SseEventNames.MessageCreated,
+            new MessageCreatedEvent(message.Id, thread.Id, message.Id), ct);
         signal.Signal(thread.AgentId);
 
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
@@ -115,12 +129,15 @@ public static class ThreadsEndpoints
     }
 
     private static async Task<IResult> StreamThread(
-        Guid id, HttpContext http, SharpClawDbContext db, IThreadEventBus bus, CancellationToken ct)
+        Guid id, HttpContext http, SharpClawDbContext db, CancellationToken ct)
     {
         var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
         if (thread is null)
             return ApiResults.NotFound("Thread not found.");
 
-        return new ThreadStreamResult(id, bus);
+        return new EventStreamResult(id, EventStreamResult.ReadLastEventId(http.Request));
     }
+
+    private static IResult StreamAll(HttpContext http) =>
+        new EventStreamResult(null, EventStreamResult.ReadLastEventId(http.Request));
 }

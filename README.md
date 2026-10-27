@@ -14,8 +14,13 @@ Phase 3.2 adds **agent tools with policy and approval**: the agent scores each t
 from its arguments and asks the user before running anything above its allowed risk level, and
 every tool call is audited (see [Agent tools](#agent-tools-phase-32)).
 
+The **pre-3.3 foundations** prepare for the web UI: browser login with session cookies, tool
+exchanges kept in thread history, per-agent context windows, replayable SSE events, and an
+approval queue that works with nobody watching.
+
 Specifications: [Phase 3.1](docs/sharpclaw-3.1-implementation-spec.md),
-[Phase 3.2](docs/sharpclaw-3.2-implementation-spec.md). Roadmap: [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md).
+[Phase 3.2](docs/sharpclaw-3.2-implementation-spec.md),
+[pre-3.3 foundations](docs/sharpclaw-3.2-post-implementation-work.md). Roadmap: [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md).
 
 ## Projects
 
@@ -45,21 +50,45 @@ secrets or network required.
 - **Two listeners, one process.** The client API (default port 8080) and the agent API (default
   port 8081) are separated by the **local port the connection arrived on**, never the `Host`
   header. A request to the wrong listener returns `404`.
-- **Auth.** The client API uses an admin key (`Authorization: Bearer <admin key>`, constant-time
-  compared). The agent API uses per-agent tokens (`sc_…`); only a SHA-256 hash and an 8-char
-  prefix are stored, and the full value is shown exactly once at creation.
+- **Auth.** The client API accepts the admin key (`Authorization: Bearer <admin key>`,
+  constant-time compared; used by the CLI and scripts) or a browser session cookie. The agent API
+  uses per-agent tokens (`sc_…`); only a SHA-256 hash and an 8-char prefix are stored, and the full
+  value is shown exactly once at creation.
+- **Browser login.** `POST /api/auth/login` with a username and password (PBKDF2-SHA256, 600,000
+  iterations; at least 12 characters) sets an `HttpOnly`, `SameSite=Strict` session cookie and
+  returns a CSRF token. Cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` need a same-origin
+  `Origin` (or `Referer`) and `X-CSRF-Token`; otherwise `403 csrf_failed`. Failed logins are
+  rate limited per username and per IP (`429 rate_limited`). Sessions slide (7 days idle, 30 days
+  absolute). `/api/users*` accepts only the admin key. TLS is terminated by a reverse proxy; set
+  `Auth:ForwardedHeaders:*` so the gateway trusts its forwarded headers, and `Auth:AllowedOrigins`
+  if the browser's origin differs from what the gateway sees. No CORS. Create users with
+  `sharpclaw users create <name>`.
 - **Chat completions.** `POST /v1/chat/completions` is OpenAI-compatible and streaming only. The
   gateway always uses the agent's configured model, enforces the daily budget before streaming,
   records every call in `llm_calls`, and tees content deltas to the client's SSE stream.
 - **Messaging.** Clients post user messages to a thread; agents claim them via a long-poll inbox
   (atomic single-statement claim), answer via the chat endpoint, and post a reply. Live output
-  reaches clients over `GET /api/threads/{id}/stream` (SSE, no replay).
+  reaches clients over SSE: `GET /api/threads/{id}/stream` for one thread, `GET /api/events` for
+  all threads.
+- **Event replay.** Durable events (`message.created`, `message.completed`, `error`,
+  `tool.requested`, `approval.requested`, `approval.decided`) are stored in `thread_events` and
+  carry an SSE `id:`. Reconnecting with `Last-Event-ID` (or `?lastEventId=`) replays what was
+  missed, then a `ready` event marks the baseline and a `snapshot` carries any reply streamed so
+  far. Deltas are not stored. Events are kept for `Events:RetentionDays`; a last id older than that
+  gets `reset` (reload history).
 - **Tools (3.2).** The agent owns its tool loop, risk scoring and approval decisions; its container
   is the sandbox. The gateway forwards tools to the model, records every tool call the model
   requests, brokers approvals to the CLI, and caps LLM calls per message.
 - **Budgets.** Each agent has a daily USD cap. Spend is the sum of `llm_calls.cost_usd` since the
   start of the current UTC day; exceeding it returns `429` with `Retry-After` and records a
   `rejected` call. Budgets reset at UTC midnight.
+- **Context window.** The agent gets its history from `GET /agent/threads/{id}/context`, which
+  fits whole turns, newest first, into the agent's window (`contextWindowTokens`, default
+  `Context:DefaultWindowTokens`) minus the agent's reserve for its soul and tool schemas and
+  `Context:ReplyReserveTokens`. Older turns are dropped and replaced by a note; the thread's
+  `context.droppedTurns` shows it. Tokens are estimated as characters / 4. A turn that alone
+  doesn't fit, a chat request over the window, or a provider context-length error fails with
+  `context_too_large`.
 
 ## Configuration
 
@@ -72,6 +101,13 @@ ASP.NET `__` syntax).
 | `Listeners:AgentPort` | `8081` | Agent API; never published to the host |
 | `Database:Path` | `/data/sharpclaw.db` | SQLite file (WAL, `busy_timeout=5000`) |
 | `Auth:AdminKey` | (required) | `Auth__AdminKey`; the gateway refuses to start if empty |
+| `Auth:Session:CookieName` | `sharpclaw_session` | |
+| `Auth:Session:CookieSecure` | `Auto` | `Auto` (Secure when the request is HTTPS), `Always`, `Never` |
+| `Auth:Session:IdleTimeoutHours` / `AbsoluteTimeoutDays` | `168` / `30` | Session lifetime |
+| `Auth:Password:Pbkdf2Iterations` | `600000` | Never lower; hashes are upgraded on login |
+| `Auth:Login:MaxFailures` / `WindowMinutes` | `5` / `15` | Login rate limit (per username and per IP) |
+| `Auth:AllowedOrigins` | empty | Extra browser origins accepted (reverse proxy); not CORS |
+| `Auth:ForwardedHeaders:Enabled` / `KnownProxies` | `false` / empty | Trust `X-Forwarded-*` from these proxies only |
 | `Provider:Type` | `OpenRouter` | `OpenRouter` or `Fake` |
 | `OpenRouter:BaseUrl` | `https://openrouter.ai/api/v1` | |
 | `OpenRouter:ApiKey` | (required for OpenRouter) | `OpenRouter__ApiKey` |
@@ -83,7 +119,16 @@ ASP.NET `__` syntax).
 | `Inbox:ClaimTimeoutSeconds` | `300` | Stale claims return to `pending` |
 | `Messages:MaxContentChars` | `32000` | |
 | `Approvals:TimeoutSeconds` | `300` | Pending approvals expire (count as denied) after this |
+| `Approvals:SweepIntervalSeconds` | `10` | How often overdue approvals are expired |
 | `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
+| `Events:RetentionDays` | `14` | Durable SSE events kept for replay |
+| `Tools:MaxStoredResultChars` | `4000` | Stored tool results are cut to this |
+| `Tools:MaxStoredArgumentStringChars` | `500` | Each string in stored tool arguments is cut to this |
+| `Tools:MaxExchangesPerReply` | `50` | Tool rounds accepted with one reply |
+| `Context:DefaultWindowTokens` | `32000` | Used when the agent has no `contextWindowTokens` |
+| `Context:ReplyReserveTokens` | `2000` | Kept free for the model's reply |
+| `Context:CharsPerToken` | `4` | Estimation heuristic |
+| `Context:MessageOverheadTokens` | `4` | Added per message |
 
 Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 
@@ -164,17 +209,25 @@ Re-run the `dotnet publish` line after pulling CLI changes. Without installing, 
 
 | Command | Behaviour |
 |---|---|
-| `sharpclaw agents create <name> --model <id> --daily-budget <usd>` | Creates the agent and its first token (shown once) |
+| `sharpclaw agents create <name> --model <id> --daily-budget <usd> [--context-window <tokens>]` | Creates the agent and its first token (shown once) |
 | `sharpclaw agents list` / `agents show <name>` | List or detail incl. today's spend and remaining budget |
-| `sharpclaw agents set <name> [--model …] [--daily-budget …] [--enabled true\|false]` | Patch an agent |
+| `sharpclaw agents set <name> [--model …] [--daily-budget …] [--enabled true\|false] [--context-window …]` | Patch an agent |
 | `sharpclaw tokens issue <agent> [--expires <utc>]` | Issue a token (shown once) |
 | `sharpclaw tokens list <agent>` / `tokens revoke <agent> <tokenId>` | Token metadata / revoke |
 | `sharpclaw chat <agent> [--thread <id>]` | Interactive chat; `/exit` quits |
-| `sharpclaw ask <agent> "<text>"` | One-shot chat |
+| `sharpclaw ask <agent> "<text>" [--unattended]` | One-shot chat; `--unattended` denies any approval at once |
+| `sharpclaw approvals list [--status pending] [--agent <name>]` | The approval queue |
+| `sharpclaw approvals approve <id>` / `approvals deny <id>` | Answer a pending approval from any terminal |
+| `sharpclaw users create <name> [--password-stdin]` | Create a browser user (prompts twice without echo) |
+| `sharpclaw users list` | Users and whether they are disabled |
+| `sharpclaw users set-password <name> [--password-stdin]` | Reset a password; signs out their sessions |
+| `sharpclaw users disable <name>` / `users enable <name>` | Disabling signs out their sessions |
 | `sharpclaw audit [--agent <name>] [--limit N]` | Recent LLM calls |
 | `sharpclaw audit tools [--agent <name>] [--limit N]` | Recent tool calls: status, decision, risk, taint |
 
-The chat client opens the SSE stream **before** posting a message (streams have no replay). During
+The chat client opens the SSE stream before posting a message. If the stream drops it reconnects
+(1 s backoff doubling to 10 s, giving up after 60 s) and resumes from the last event it handled,
+printing each character once. During
 `chat` and `ask` it prints a `[tool] <name>` line for each tool call and, when the agent needs
 approval, shows the request and asks `Allow? [y/N]` (anything but `y`/`yes` denies).
 
@@ -208,11 +261,18 @@ How a call is decided (all in the agent's `ToolDispatcher`):
 2. **Risk** comes from the arguments. *Uncertain* calls are classified by an extra LLM call when
    `smartMode` is on (only the tool name and a content-free summary are sent), otherwise treated
    as high. After untrusted content has been read in the turn, risk goes up one level.
-3. **Above `allowedRiskLevel`**, the agent asks the user through the gateway. Nobody watching the
-   thread means an immediate denial; no answer within 300 s means expired. Denials go back to the
-   model as a tool error so it can adapt.
+3. **Above `allowedRiskLevel`**, the agent asks the user through the gateway. The approval waits
+   in a queue (`GET /api/approvals`, `sharpclaw approvals list`) whether or not anyone is
+   watching, and expires after 300 s; a message posted `unattended` has its approvals denied at
+   once. When a turn ends (reply, failure, claim timeout) its pending approvals expire. Denials
+   go back to the model as a tool error so it can adapt.
 4. Every call is **audited**: the gateway records what the model requested, the agent reports the
    outcome (`sharpclaw audit tools`). Arguments are truncated in the database and never logged.
+5. **Thread history keeps the tool exchanges.** With its reply the agent posts each round's tool
+   calls and results; they are stored as `tool_request` / `tool_result` rows (arguments and results
+   truncated, see `Tools:*`), shown by `GET …/messages?includeTools=true`, and replayed to the
+   model on later turns, except results of tools that return untrusted content (`workspace_read`),
+   which are replaced by a stub so injected text can't persist in the thread.
 
 No tool executes code or shell commands. The agent container (no network, read-only root
 filesystem, only its own `/workspace`) contains anything a tool does.
@@ -238,9 +298,12 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment=home
   `correlation_id` attribute, to discover the exact metric name VictoriaMetrics lands it under and
   confirm Loki accepts `correlation_id` as structured metadata. See
   [docs/telemetry-notes.md](docs/telemetry-notes.md).
-- **Dashboard:** `docker/grafana/sharpclaw-dashboard.json` is an importable starter dashboard
+- **Dashboard:** `docker/grafana/sharpclaw-dashboard.json` (imported into Grafana as uid
+  `sharpclaw-gateway`; re-import via *Dashboards → New → Import* or the API after changes)
   (LLM calls by status, cost vs budget, duration/TTFT percentiles, tokens, inbox depth, last-seen
-  age, budget rejections, auth failures, and a Loki logs panel with a `correlation_id` variable).
+  age, budget rejections, tool calls, approvals (rate, pending, decision time), unreported tool
+  calls, context truncations/rejections, logins and auth failures by method, and a Loki logs panel
+  with a `correlation_id` variable).
   Panel queries use the actual landed names (dotted OTel names via `{__name__="…"}`).
 
 ## Isolation verification
@@ -257,57 +320,10 @@ wrong port, and that the agent container's root filesystem and `/config` are rea
 
 ## Verification results
 
-Verified in this environment with the **fake provider** (no secrets or external network):
-
-- All automated tests pass: `dotnet test` → gateway 37, agent 10, CLI 3.
-- End-to-end locally: `sharpclaw ask assistant "…"` streamed `Fake reply to: …`, and the call
-  appeared in `sharpclaw audit` with model, tokens, cost, latency and status `ok`.
-- End-to-end in Docker Compose: gateway healthy via `--healthcheck`, agent container running,
-  `sharpclaw ask` streamed a reply through the containerised agent.
-- `scripts/verify-isolation.sh` passed all checks against the running stack.
-
-Verified against the live environment (2026-10-25):
-
-- **Telemetry:** the smoke test and gateway metrics land in VictoriaMetrics, and logs land in Loki
-  with `correlation_id` as structured metadata. One message was traced end to end in Loki by
-  `correlation_id`. Landed metric names and findings are in
-  [docs/telemetry-notes.md](docs/telemetry-notes.md); the dashboard uses those names.
-- **Real OpenRouter** (`openai/gpt-4o-mini`, Docker Compose stack): `sharpclaw ask` streamed real
-  replies through the isolated agent. Each call was audited with tokens, cost (e.g. 68/28 tokens,
-  $0.000027, 1235 ms) and status `ok`.
-- **Budget, live:** lowering the cap below today's spend gave `429` → `fail(budget_exceeded)` →
-  `Error: budget_exceeded` in the CLI, plus a `rejected` audit row.
-- `scripts/verify-isolation.sh` passed all checks on the OpenRouter-backed stack.
-- No prompt or reply text found in the gateway logs in Loki.
-
-Not yet done: importing `docker/grafana/sharpclaw-dashboard.json` into Grafana (its API needs
-credentials). Import it via *Dashboards → New → Import*; the queries were checked directly against
-VictoriaMetrics.
-
-### Phase 3.2 acceptance (2026-10-25)
-
-**Fake provider (automated):** `AgentToolEndToEndTests` runs the real agent (HTTP client, loop,
-dispatcher, workspace tools) against the real gateway with a scripted FakeProvider: multi-step
-write → read → reply; high-risk delete approved and denied by a watching user; unattended delete
-denied immediately; `../../etc/passwd` blocked by the hardline rules. All automated tests pass
-(gateway 101, agent 72, CLI 11).
-
-**Real OpenRouter** (`openai/gpt-4o-mini`, Docker Compose stack, `allowedRiskLevel: low`,
-smart mode on):
-
-| Scenario | Result |
-|---|---|
-| Multi-step: create `notes/shopping.md`, read it back, report | `[tool] workspace_write`, `[tool] workspace_read`, correct reply; file on the host |
-| Delete `notes/old.md`, user answers `n` | Prompt shown (`high risk: delete notes/old.md`); denied; file kept; model explained |
-| Same, user answers `y` | Approved; file deleted |
-| Delete with nobody watching the thread | Denied immediately by the gateway; file kept; model said no approver was available |
-| Write `scripts/hello.sh` (uncertain) | Smart mode classified it `low` via one `risk_assessment` LLM call; allowed |
-| Read a file, then write a new file in the same turn | Taint raised the write from low to **medium**; approval prompt; approved |
-| Audit | `sharpclaw audit tools` showed every call with status, decision, risk and taint |
-| Telemetry | `sharpclaw.tool.calls` and `sharpclaw.approvals` landed in VictoriaMetrics |
-| Isolation | `scripts/verify-isolation.sh` passed all checks; agent writes `/workspace`, `/config` read-only |
+Dated manual and live verification (Phase 3.1, Phase 3.2, pre-3.3 foundations) is recorded in
+[docs/verification-log.md](docs/verification-log.md).
 
 ## Known gaps and tech debt
 
-Accepted Phase 3.1 limitations and known code-level debt are tracked in
-[docs/tech-debt.md](docs/tech-debt.md).
+Accepted design limits (Phase 3.1, 3.2 and the pre-3.3 foundations) and known code-level debt are
+tracked in [docs/tech-debt.md](docs/tech-debt.md).

@@ -8,7 +8,7 @@ try
     using var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-    await Commands.RunAsync(args, gateway, Console.Out, Console.In, cts.Token);
+    await Commands.RunAsync(args, gateway, Console.Out, Console.In, cts.Token, ConsoleSecret.Read);
     return 0;
 }
 catch (CliException ex)

@@ -17,8 +17,10 @@ applyTo: "tests/**"
   `ChatAsync` buffers the whole response; if you use `ResponseHeadersRead`, read the body to the
   end before asserting DB state. To test client aborts, dispose the response mid-stream and poll
   the DB for the `cancelled` row.
-- **SSE has no replay:** subscribe to `/api/threads/{id}/stream` (and give it ~200 ms) before
-  triggering the event you assert on.
+- **SSE:** a fresh connect replays nothing, so subscribe to `/api/threads/{id}/stream` (and give
+  it ~200 ms) before triggering the event you assert on, or connect with `Last-Event-ID` via
+  `fx.OpenStreamAsync(path, lastEventId)`. `ReadSseEventsAsync` skips the `ready` framing event;
+  `ReadSseAsync` returns ids too. Posting a message emits `message.created` on the stream.
 - Simulate provider behaviour with FakeProvider scripts (`error.type` = `http` / `timeout` /
   `midstream`, `"usage": null` for unknown usage) rather than mocking `IChatProvider`.
 - Privacy tests: assert captured logs contain no message content, token or admin key.

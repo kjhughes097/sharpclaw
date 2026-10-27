@@ -1,7 +1,8 @@
 namespace SharpClaw.Gateway.Auth;
 
 /// <summary>The agent authenticated on the current agent-listener request.</summary>
-public sealed record AuthenticatedAgent(Guid Id, string Name, string Model, double DailyBudgetUsd);
+public sealed record AuthenticatedAgent(
+    Guid Id, string Name, string Model, double DailyBudgetUsd, int? ContextWindowTokens = null);
 
 public static class AuthContext
 {

@@ -50,15 +50,15 @@ public sealed class GatewayHttpClient : IGatewayClient
         }
     }
 
-    public async Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct)
+    public async Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct)
     {
-        using var resp = await _http.GetAsync($"{_baseUrl}/agent/threads/{threadId}/messages", ct);
+        using var resp = await _http.GetAsync($"{_baseUrl}/agent/threads/{threadId}/context?reserveTokens={reserveTokens}", ct);
+        if (resp.StatusCode == HttpStatusCode.BadRequest &&
+            await ReadErrorCodeAsync(resp, ct) == ErrorCodes.ContextTooLarge)
+            return ContextResult.Fail(ErrorCodes.ContextTooLarge);
         resp.EnsureSuccessStatusCode();
-        var body = await resp.Content.ReadFromJsonAsync<MessageListResponse>(SharpClawJson.Options, ct);
-        return (body?.Messages ?? Array.Empty<MessageDto>())
-            .Where(m => m.Role is Roles.User or Roles.Assistant)
-            .Select(m => new ChatMessage(m.Role, m.Content))
-            .ToList();
+        var body = await resp.Content.ReadFromJsonAsync<ContextResponse>(SharpClawJson.Options, ct);
+        return new ContextResult((body?.Messages ?? Array.Empty<ContextMessage>()).Select(m => m.ToChatMessage()).ToList());
     }
 
     public Task<ChatOutcome> StreamChatAsync(
@@ -80,16 +80,7 @@ public sealed class GatewayHttpClient : IGatewayClient
         };
         if (tools.Count > 0)
         {
-            payload["tools"] = tools.Select(t => new Dictionary<string, object?>
-            {
-                ["type"] = "function",
-                ["function"] = new Dictionary<string, object?>
-                {
-                    ["name"] = t.Name,
-                    ["description"] = t.Description,
-                    ["parameters"] = JsonDocument.Parse(t.ParametersJson).RootElement.Clone(),
-                },
-            }).ToList();
+            payload["tools"] = ToolSchemas.ToWire(tools);
             payload["tool_choice"] = "auto";
         }
         return payload;
@@ -130,6 +121,9 @@ public sealed class GatewayHttpClient : IGatewayClient
                 return ChatOutcome.Fail(await ReadErrorCodeAsync(resp, ct) ?? ErrorCodes.BudgetExceeded);
             if (resp.StatusCode is HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout)
                 return ChatOutcome.Fail("provider_error");
+            if (resp.StatusCode == HttpStatusCode.BadRequest &&
+                await ReadErrorCodeAsync(resp, ct) == ErrorCodes.ContextTooLarge)
+                return ChatOutcome.Fail(ErrorCodes.ContextTooLarge);
             if (!resp.IsSuccessStatusCode)
                 return ChatOutcome.Fail("agent_error");
 
@@ -218,10 +212,11 @@ public sealed class GatewayHttpClient : IGatewayClient
         }
     }
 
-    public async Task PostReplyAsync(Guid threadId, string content, Guid correlationId, CancellationToken ct)
+    public async Task PostReplyAsync(
+        Guid threadId, string content, Guid correlationId, IReadOnlyList<ToolExchangeDto> exchanges, CancellationToken ct)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/agent/threads/{threadId}/messages",
-            new AgentReplyRequest(content, correlationId), SharpClawJson.Options, ct);
+            new AgentReplyRequest(content, correlationId, exchanges), SharpClawJson.Options, ct);
         resp.EnsureSuccessStatusCode();
     }
 

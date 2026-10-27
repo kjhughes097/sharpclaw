@@ -41,10 +41,26 @@ public sealed class GatewayFixture : IAsyncDisposable
         IDictionary<string, string?>? extraConfig = null,
         Action<WebApplicationBuilder>? configure = null)
     {
+        time ??= new FakeTimeProvider(DateTimeOffset.Parse("2026-10-25T12:00:00Z"));
+        // FreePort can race with other tests in parallel: retry with fresh ports if a bind fails.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await TryCreateAsync(time, extraConfig, configure);
+            }
+            catch (IOException) when (attempt < 5)
+            {
+            }
+        }
+    }
+
+    private static async Task<GatewayFixture> TryCreateAsync(
+        FakeTimeProvider time, IDictionary<string, string?>? extraConfig, Action<WebApplicationBuilder>? configure)
+    {
         var clientPort = FreePort();
         var agentPort = FreePort();
         var dbPath = Path.Combine(Path.GetTempPath(), $"sharpclaw-test-{Guid.NewGuid():N}.db");
-        time ??= new FakeTimeProvider(DateTimeOffset.Parse("2026-10-25T12:00:00Z"));
 
         var config = new Dictionary<string, string?>
         {
@@ -53,6 +69,8 @@ public sealed class GatewayFixture : IAsyncDisposable
             ["Database:Path"] = dbPath,
             ["Listeners:ClientPort"] = clientPort.ToString(),
             ["Listeners:AgentPort"] = agentPort.ToString(),
+            // FakeTimeProvider fires every elapsed period on Advance; a 10 s sweep makes multi-day jumps slow.
+            ["Approvals:SweepIntervalSeconds"] = "3600",
         };
         if (extraConfig is not null)
             foreach (var kv in extraConfig) config[kv.Key] = kv.Value;
@@ -65,7 +83,15 @@ public sealed class GatewayFixture : IAsyncDisposable
         });
 
         GatewayBuilder.Migrate(app);
-        await app.StartAsync();
+        try
+        {
+            await app.StartAsync();
+        }
+        catch (IOException)
+        {
+            await app.DisposeAsync();
+            throw;
+        }
 
         return new GatewayFixture(app, time, clientPort, agentPort, dbPath);
     }

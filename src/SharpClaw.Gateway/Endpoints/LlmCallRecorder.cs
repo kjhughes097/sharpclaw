@@ -59,6 +59,9 @@ public sealed class LlmCallRecorder
     /// <summary>Stored tool-call arguments are truncated to this many characters.</summary>
     public const int MaxStoredArgumentChars = 1000;
 
+    /// <summary>The gateway's prompt estimate for this call, stored with the row.</summary>
+    public int? EstimatedPromptTokens { get; set; }
+
     /// <summary>
     /// Persists the call and emits telemetry. Any tool calls the model requested are stored in the
     /// same save, so the gateway's audit of them never depends on the agent reporting.
@@ -86,6 +89,7 @@ public sealed class LlmCallRecorder
             ErrorCode = outcome.ErrorCode,
             ErrorDetail = Truncate(outcome.ErrorDetail, 200),
             Purpose = _purpose,
+            EstimatedPromptTokens = EstimatedPromptTokens,
             CreatedAt = _startedAt,
         };
         _db.LlmCalls.Add(row);

@@ -18,13 +18,15 @@ public static class AgentEndpoints
     {
         agent.MapGet("/inbox", Inbox);
         agent.MapGet("/threads/{id}/messages", ThreadHistory);
+        agent.MapGet("/threads/{id}/context", Context);
         agent.MapPost("/threads/{id}/messages", Reply);
         agent.MapPost("/messages/{id}/fail", Fail);
     }
 
     private static async Task<IResult> Inbox(
         HttpContext http, int? wait, SharpClawDbContext db, TimeProvider time,
-        IAgentInboxSignal signal, IOptions<InboxOptions> inboxOpt, ILoggerFactory loggerFactory, CancellationToken ct)
+        IAgentInboxSignal signal, ActiveTurnBuffers buffers, ApprovalDecisions decisions, IOptions<InboxOptions> inboxOpt,
+        ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Inbox");
         var agent = AuthContext.Agent(http);
@@ -36,7 +38,12 @@ public static class AgentEndpoints
         {
             var now = time.GetUtcNow().UtcDateTime;
             var threshold = now.AddSeconds(-opt.ClaimTimeoutSeconds);
-            await InboxRepository.RequeueStaleAsync(db, agent.Id, threshold, ct);
+            var requeued = await InboxRepository.RequeueStaleAsync(db, agent.Id, threshold, ct);
+            foreach (var stale in requeued)
+            {
+                buffers.Remove(stale);
+                await decisions.ExpireForCorrelationAsync(db, stale, ct);
+            }
 
             var claimed = await InboxRepository.ClaimNextAsync(db, agent.Id, now, ct);
             if (claimed is not null)
@@ -74,14 +81,68 @@ public static class AgentEndpoints
         if (thread is null || thread.AgentId != agent.Id)
             return ApiResults.NotFound("Thread not found.");
 
-        var messages = await MessageQueries.ListAsync(db, id, null, ct);
+        var messages = await MessageQueries.ListAsync(db, id, null, includeTools: true, ct);
         return Results.Json(new MessageListResponse(messages), SharpClawJson.Options);
+    }
+
+    /// <summary>The model-ready history that fits the agent's context window (pre-3.3 spec section 6.4).</summary>
+    private static async Task<IResult> Context(
+        Guid id, int? reserveTokens, HttpContext http, SharpClawDbContext db, IContextSummariser summariser,
+        IOptions<ContextOptions> contextOptions, GatewayMetrics metrics, ILoggerFactory loggerFactory, CancellationToken ct)
+    {
+        var agent = AuthContext.Agent(http);
+        var reserve = reserveTokens ?? 0;
+        if (reserve < 0)
+            return ApiResults.ValidationFailed("reserveTokens must be >= 0.");
+        var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (thread is null || thread.AgentId != agent.Id)
+            return ApiResults.NotFound("Thread not found.");
+
+        var rows = await db.Messages.AsNoTracking().Where(m => m.ThreadId == id).OrderBy(m => m.Seq).ToListAsync(ct);
+        var users = rows.Where(r => r.Role == Roles.User && r.Kind == MessageKinds.Message).ToList();
+        // The turn being processed: the agent's claimed message, else the latest one.
+        var current = users.LastOrDefault(r => r.Status == MessageStatus.Claimed) ?? users.LastOrDefault();
+        var options = contextOptions.Value;
+        var window = options.WindowFor(agent.ContextWindowTokens);
+        if (current is null)
+            return Results.Json(new ContextResponse(Array.Empty<ContextMessage>(), false, 0, 0, window), SharpClawJson.Options);
+
+        var result = await new ContextBuilder(options, summariser).BuildAsync(id, rows, current.Id, window, reserve, ct);
+        var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Context");
+        using var scope = logger.BeginScope(new Dictionary<string, object>
+        {
+            ["thread_id"] = id.ToString(),
+            ["correlation_id"] = current.Id.ToString(),
+        });
+        if (result.TooLarge)
+        {
+            metrics.RecordContextRejection(agent.Name);
+            logger.LogWarning("context rejected: estimated_tokens={EstimatedTokens} window_tokens={WindowTokens} reserve_tokens={ReserveTokens}",
+                result.EstimatedTokens, window, reserve);
+            return ApiResults.Error(400, ErrorCodes.ContextTooLarge,
+                "The current message does not fit in the agent's context window.");
+        }
+
+        await db.Threads.Where(t => t.Id == id).ExecuteUpdateAsync(s => s
+            .SetProperty(t => t.ContextDroppedTurns, result.DroppedTurns)
+            .SetProperty(t => t.ContextEstimatedTokens, result.EstimatedTokens), ct);
+        metrics.RecordContextEstimate(agent.Name, result.EstimatedTokens);
+        if (result.DroppedTurns > 0)
+        {
+            metrics.RecordContextTruncation(agent.Name);
+            logger.LogInformation("context truncated: dropped_turns={DroppedTurns} estimated_tokens={EstimatedTokens} window_tokens={WindowTokens}",
+                result.DroppedTurns, result.EstimatedTokens, window);
+        }
+
+        return Results.Json(new ContextResponse(result.Messages, result.DroppedTurns > 0, result.DroppedTurns,
+            result.EstimatedTokens, window), SharpClawJson.Options);
     }
 
     private static async Task<IResult> Reply(
         Guid id, AgentReplyRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IThreadEventBus bus, GatewayMetrics metrics, IOptions<MessagesOptions> messages,
-        ILoggerFactory loggerFactory, CancellationToken ct)
+        IEventPublisher events, ActiveTurnBuffers buffers, ApprovalDecisions decisions, GatewayMetrics metrics,
+        IOptions<MessagesOptions> messages, IOptions<ToolsOptions> toolsOptions, ILoggerFactory loggerFactory,
+        CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
@@ -89,6 +150,9 @@ public static class AgentEndpoints
             return ApiResults.ValidationFailed("content is required.");
         if (body.Content.Length > messages.Value.MaxContentChars)
             return ApiResults.ValidationFailed($"content exceeds {messages.Value.MaxContentChars} characters.");
+        var exchanges = body.Exchanges ?? Array.Empty<ToolExchangeDto>();
+        if (ToolExchangeRows.Validate(exchanges, toolsOptions.Value) is { } invalid)
+            return ApiResults.ValidationFailed(invalid);
 
         var userMsg = await db.Messages.FirstOrDefaultAsync(m => m.Id == body.CorrelationId, ct);
         if (userMsg is null || userMsg.AgentId != agent.Id || userMsg.ThreadId != id || userMsg.Role != Roles.User)
@@ -99,33 +163,45 @@ public static class AgentEndpoints
             return ApiResults.NotFound("Correlation message is not claimed.");
 
         var now = time.GetUtcNow().UtcDateTime;
-        var assistant = new Message
+        Message assistant;
+        // Exchanges, the final reply and the user message's status change commit together or not at all.
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
         {
-            Id = Guid.CreateVersion7(),
-            ThreadId = id,
-            AgentId = agent.Id,
-            Role = Roles.Assistant,
-            Content = body.Content,
-            Status = MessageStatus.Done,
-            CorrelationId = body.CorrelationId,
-            CreatedAt = now,
-            CompletedAt = now,
-        };
-        userMsg.Status = MessageStatus.Done;
-        userMsg.CompletedAt = now;
-        db.Messages.Add(assistant);
+            var seq = await MessageQueries.NextSeqAsync(db, id, ct);
+            db.Messages.AddRange(ToolExchangeRows.Build(exchanges, userMsg, now, toolsOptions.Value, ref seq));
+            assistant = new Message
+            {
+                Id = Guid.CreateVersion7(),
+                ThreadId = id,
+                AgentId = agent.Id,
+                Role = Roles.Assistant,
+                Kind = MessageKinds.Message,
+                Content = body.Content,
+                Status = MessageStatus.Done,
+                CorrelationId = body.CorrelationId,
+                CreatedAt = now,
+                CompletedAt = now,
+                Seq = seq,
+            };
+            userMsg.Status = MessageStatus.Done;
+            userMsg.CompletedAt = now;
+            db.Messages.Add(assistant);
 
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException)
-        {
-            return ApiResults.Conflict("A reply already exists for this message.");
+            try
+            {
+                await db.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                return ApiResults.Conflict("A reply already exists for this message.");
+            }
         }
 
-        Publish(bus, id, SseEventNames.MessageCompleted,
-            new MessageCompletedEvent(body.CorrelationId, assistant.Id, body.Content));
+        buffers.Remove(body.CorrelationId);
+        await decisions.ExpireForCorrelationAsync(db, body.CorrelationId, ct);
+        await events.PublishDurableAsync(id, SseEventNames.MessageCompleted,
+            new MessageCompletedEvent(body.CorrelationId, assistant.Id, body.Content), ct);
         var messageSeconds = (now - userMsg.CreatedAt).TotalSeconds;
         metrics.RecordMessageDuration(agent.Name, messageSeconds);
         using (logger.BeginScope(new Dictionary<string, object>
@@ -142,7 +218,8 @@ public static class AgentEndpoints
 
     private static async Task<IResult> Fail(
         Guid id, FailMessageRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IThreadEventBus bus, ILoggerFactory loggerFactory, CancellationToken ct)
+        IEventPublisher events, ActiveTurnBuffers buffers, ApprovalDecisions decisions, ILoggerFactory loggerFactory,
+        CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
@@ -169,13 +246,9 @@ public static class AgentEndpoints
         }))
             logger.LogWarning("message failed: reason={Reason}", reason);
 
-        Publish(bus, msg.ThreadId, SseEventNames.Error, new ErrorEvent(msg.Id, reason, reason));
+        buffers.Remove(msg.Id);
+        await decisions.ExpireForCorrelationAsync(db, msg.Id, ct);
+        await events.PublishDurableAsync(msg.ThreadId, SseEventNames.Error, new ErrorEvent(msg.Id, reason, reason), ct);
         return Results.StatusCode(204);
-    }
-
-    private static void Publish<T>(IThreadEventBus bus, Guid threadId, string eventName, T payload)
-    {
-        var json = JsonSerializer.Serialize(payload, SharpClawJson.Options);
-        bus.Publish(threadId, new ThreadSseEvent(eventName, json));
     }
 }

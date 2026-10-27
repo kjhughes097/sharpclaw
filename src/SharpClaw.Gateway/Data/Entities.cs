@@ -9,6 +9,9 @@ public class Agent
     public bool Enabled { get; set; } = true;
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>Model context window override; null uses <c>Context:DefaultWindowTokens</c>.</summary>
+    public int? ContextWindowTokens { get; set; }
+
     public List<AgentToken> Tokens { get; set; } = new();
 }
 
@@ -32,6 +35,10 @@ public class ConversationThread
     public Agent? Agent { get; set; }
     public string? Title { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Turns left out of the model's context the last time it was built.</summary>
+    public int ContextDroppedTurns { get; set; }
+    public int ContextEstimatedTokens { get; set; }
 }
 
 public class Message
@@ -47,6 +54,23 @@ public class Message
     public DateTime? ClaimedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? FailReason { get; set; }
+
+    /// <summary>On user messages: nobody will answer approvals, so they are denied at once.</summary>
+    public bool Unattended { get; set; }
+
+    /// <summary>Per-thread order, assigned at insert as max+1 inside the write transaction.</summary>
+    public int Seq { get; set; }
+
+    /// <summary><c>message</c>, <c>tool_request</c> or <c>tool_result</c> (see <c>MessageKinds</c>).</summary>
+    public string Kind { get; set; } = "message";
+
+    /// <summary>On <c>tool_request</c> rows: JSON array of <c>{ id, name, arguments }</c>.</summary>
+    public string? ToolCalls { get; set; }
+
+    public string? ToolCallId { get; set; }
+    public bool? ToolOk { get; set; }
+    public bool Untrusted { get; set; }
+    public bool Truncated { get; set; }
 }
 
 public class LlmCall
@@ -68,6 +92,9 @@ public class LlmCall
 
     /// <summary><c>chat</c> or <c>risk_assessment</c> (smart-mode classification).</summary>
     public string Purpose { get; set; } = "chat";
+
+    /// <summary>The gateway's prompt estimate, kept beside the provider's count to tune the heuristic.</summary>
+    public int? EstimatedPromptTokens { get; set; }
 
     public DateTime CreatedAt { get; set; }
 }
@@ -95,6 +122,47 @@ public class ToolCallRecord
     public int? DurationMs { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ReportedAt { get; set; }
+}
+
+/// <summary>A browser user (pre-3.3 spec section 4). The password is stored only as a PBKDF2 hash.</summary>
+public class User
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string PasswordHash { get; set; } = "";
+    public bool Disabled { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>A browser session. The cookie value is stored only as its SHA-256 hex.</summary>
+public class Session
+{
+    public Guid Id { get; set; }
+    public Guid UserId { get; set; }
+    public User? User { get; set; }
+    public string TokenHash { get; set; } = "";
+    public string CsrfToken { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public DateTime LastSeenAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
+}
+
+/// <summary>A durable SSE event (pre-3.3 §8). <c>Id</c> is the SSE event id: global and monotonic.</summary>
+public class ThreadEvent
+{
+    public long Id { get; set; }
+    public Guid ThreadId { get; set; }
+    public string Type { get; set; } = "";
+    public string Data { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>Single row: the highest event id removed by retention pruning.</summary>
+public class EventLogState
+{
+    public int Id { get; set; }
+    public long PrunedThrough { get; set; }
 }
 
 /// <summary>A request for the human to allow a tool call (3.2).</summary>

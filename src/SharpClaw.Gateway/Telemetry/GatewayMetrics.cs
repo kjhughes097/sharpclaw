@@ -1,13 +1,16 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Microsoft.EntityFrameworkCore;
+using SharpClaw.Contracts;
 using SharpClaw.Gateway.Data;
+using SharpClaw.Gateway.Services;
 
 namespace SharpClaw.Gateway.Telemetry;
 
 /// <summary>
-/// All gateway metrics. Meter name is "SharpClaw.Gateway". Labels are limited to agent name,
-/// model, status, type and listener — never thread, message, correlation id or token.
+/// All gateway metrics. Meter name is "SharpClaw.Gateway". Labels are limited to small fixed sets
+/// (agent name, model, status, type, listener, tool, method, result, scope) — never thread,
+/// message, correlation, session or user ids, or tokens.
 /// </summary>
 public sealed class GatewayMetrics : IDisposable
 {
@@ -16,6 +19,7 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Meter _meter;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _time;
+    private readonly IThreadEventBus _bus;
 
     private readonly Counter<long> _calls;
     private readonly Counter<long> _tokens;
@@ -25,15 +29,21 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Counter<long> _budgetExceeded;
     private readonly Histogram<double> _messageDuration;
     private readonly Counter<long> _authFailures;
+    private readonly Counter<long> _logins;
     private readonly Counter<long> _toolCalls;
     private readonly Counter<long> _approvals;
+    private readonly Histogram<double> _approvalDecisionTime;
+    private readonly Counter<long> _contextTruncations;
+    private readonly Counter<long> _contextRejections;
+    private readonly Histogram<int> _contextEstimatedTokens;
 
     private readonly ConcurrentDictionary<string, double> _lastSeenUnix = new();
 
-    public GatewayMetrics(IServiceScopeFactory scopeFactory, TimeProvider time)
+    public GatewayMetrics(IServiceScopeFactory scopeFactory, TimeProvider time, IThreadEventBus bus)
     {
         _scopeFactory = scopeFactory;
         _time = time;
+        _bus = bus;
         _meter = new Meter(MeterName);
 
         _calls = _meter.CreateCounter<long>("sharpclaw.llm.calls", "{call}");
@@ -53,12 +63,22 @@ public sealed class GatewayMetrics : IDisposable
         _budgetExceeded = _meter.CreateCounter<long>("sharpclaw.budget.exceeded", "{rejection}");
         _messageDuration = _meter.CreateHistogram("sharpclaw.message.duration", "s", null, null, messageBuckets);
         _authFailures = _meter.CreateCounter<long>("sharpclaw.auth.failures", "{failure}");
+        _logins = _meter.CreateCounter<long>("sharpclaw.auth.logins", "{login}");
         _toolCalls = _meter.CreateCounter<long>("sharpclaw.tool.calls", "{call}");
         _approvals = _meter.CreateCounter<long>("sharpclaw.approvals", "{approval}");
+        _approvalDecisionTime = _meter.CreateHistogram("sharpclaw.approval.decision_time", "s", null, null,
+            new InstrumentAdvice<double> { HistogramBucketBoundaries = [1, 5, 10, 30, 60, 120, 300, 600] });
+        _contextTruncations = _meter.CreateCounter<long>("sharpclaw.context.truncations", "{truncation}");
+        _contextRejections = _meter.CreateCounter<long>("sharpclaw.context.rejections", "{rejection}");
+        _contextEstimatedTokens = _meter.CreateHistogram("sharpclaw.context.estimated_tokens", "{token}", null, null,
+            new InstrumentAdvice<int> { HistogramBucketBoundaries = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000] });
 
         _meter.CreateObservableGauge("sharpclaw.budget.remaining_usd", ObserveBudgetRemaining, "USD");
         _meter.CreateObservableGauge("sharpclaw.inbox.depth", ObserveInboxDepth, "{message}");
         _meter.CreateObservableGauge("sharpclaw.agent.last_seen", ObserveLastSeen, "s");
+        _meter.CreateObservableGauge("sharpclaw.sse.subscribers", ObserveSubscribers, "{subscriber}");
+        _meter.CreateObservableGauge("sharpclaw.approvals.pending", ObservePendingApprovals, "{approval}");
+        _meter.CreateObservableGauge("sharpclaw.tool.unreported", ObserveUnreportedToolCalls, "{call}");
     }
 
     public void RecordCall(string agent, string model, string status) =>
@@ -98,14 +118,72 @@ public sealed class GatewayMetrics : IDisposable
     public void RecordApproval(string agent, string status) =>
         _approvals.Add(1, Tag("agent", agent), Tag("status", status));
 
-    public void RecordAuthFailure(string listener) =>
-        _authFailures.Add(1, Tag("listener", listener));
+    /// <summary>From creation to decision or expiry.</summary>
+    public void RecordApprovalDecisionTime(string agent, string status, double seconds) =>
+        _approvalDecisionTime.Record(seconds, Tag("agent", agent), Tag("status", status));
+
+    /// <summary>Older turns were left out of the model's context.</summary>
+    public void RecordContextTruncation(string agent) => _contextTruncations.Add(1, Tag("agent", agent));
+
+    /// <summary>A turn (context endpoint) or request (chat preflight) did not fit the window.</summary>
+    public void RecordContextRejection(string agent) => _contextRejections.Add(1, Tag("agent", agent));
+
+    public void RecordContextEstimate(string agent, int tokens) =>
+        _contextEstimatedTokens.Record(tokens, Tag("agent", agent));
+
+    public void RecordAuthFailure(string listener, string method) =>
+        _authFailures.Add(1, Tag("listener", listener), Tag("method", method));
+
+    /// <summary><c>result</c>: success, failure or rate_limited.</summary>
+    public void RecordLogin(string result) => _logins.Add(1, Tag("result", result));
 
     public void MarkSeen(string agent) =>
         _lastSeenUnix[agent] = _time.GetUtcNow().ToUnixTimeSeconds();
 
     private IEnumerable<Measurement<double>> ObserveLastSeen() =>
         _lastSeenUnix.Select(kv => new Measurement<double>(kv.Value, Tag("agent", kv.Key)));
+
+    private IEnumerable<Measurement<int>> ObserveSubscribers()
+    {
+        var (thread, global) = _bus.SubscriberCounts();
+        return new[]
+        {
+            new Measurement<int>(thread, Tag("scope", "thread")),
+            new Measurement<int>(global, Tag("scope", "global")),
+        };
+    }
+
+    private IEnumerable<Measurement<int>> ObservePendingApprovals()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SharpClawDbContext>();
+        var counts = db.Approvals.AsNoTracking()
+            .Where(a => a.Status == ApprovalStatuses.Pending)
+            .GroupBy(a => a.AgentId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionary(x => x.Key, x => x.Count);
+        // Every agent reports, so the gauge drops to 0 rather than going stale.
+        return db.Agents.AsNoTracking().ToList()
+            .Select(a => new Measurement<int>(counts.GetValueOrDefault(a.Id), Tag("agent", a.Name)));
+    }
+
+    /// <summary>
+    /// Tool calls the model requested more than 5 minutes ago that the agent never reported: the
+    /// integrity signal the 3.2 design relies on (the audit can't be silently skipped).
+    /// </summary>
+    private IEnumerable<Measurement<int>> ObserveUnreportedToolCalls()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SharpClawDbContext>();
+        var cutoff = _time.GetUtcNow().UtcDateTime.AddMinutes(-5);
+        var counts = db.ToolCalls.AsNoTracking()
+            .Where(t => t.ReportedAt == null && t.CreatedAt < cutoff)
+            .GroupBy(t => t.AgentId)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionary(x => x.Key, x => x.Count);
+        return db.Agents.AsNoTracking().ToList()
+            .Select(a => new Measurement<int>(counts.GetValueOrDefault(a.Id), Tag("agent", a.Name)));
+    }
 
     private IEnumerable<Measurement<double>> ObserveBudgetRemaining()
     {

@@ -5,6 +5,13 @@
 described here is out of scope (section 14). The Phase 3.1 spec still applies wherever this
 document does not change it.
 
+> **Superseded in part** by the [pre-3.3 foundations spec](sharpclaw-3.2-post-implementation-work.md)
+> (built): tool exchanges are now stored in thread history as `tool_request` / `tool_result` rows
+> and replayed to the model, except untrusted results from earlier turns (§5 there, replacing §7
+> "only the final reply is stored"); approvals stay `pending` when nobody is watching unless the
+> message was posted `unattended`, a sweeper expires them, and a client queue API lists them
+> (§9, replacing §8.2's "no subscriber → denied").
+
 ## 0. How to use this document
 
 - Implement in the task order given in section 15. Each task is one branch and one pull request,

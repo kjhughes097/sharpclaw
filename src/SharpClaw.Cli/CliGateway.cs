@@ -18,10 +18,10 @@ public sealed class CliGateway : ICliGateway, IDisposable
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.AdminKey);
     }
 
-    public async Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget)
+    public async Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget, int? contextWindow = null)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/agents",
-            new CreateAgentRequest(name, model, budget), SharpClawJson.Options);
+            new CreateAgentRequest(name, model, budget, contextWindow), SharpClawJson.Options);
         return await ReadAsync<CreatedAgentResponse>(resp);
     }
 
@@ -37,10 +37,10 @@ public sealed class CliGateway : ICliGateway, IDisposable
         return await ReadAsync<AgentDto>(resp);
     }
 
-    public async Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled)
+    public async Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled, int? contextWindow = null)
     {
         using var resp = await _http.PatchAsJsonAsync($"{_baseUrl}/api/agents/{idOrName}",
-            new UpdateAgentRequest(model, budget, enabled), SharpClawJson.Options);
+            new UpdateAgentRequest(model, budget, enabled, contextWindow), SharpClawJson.Options);
         return await ReadAsync<AgentDto>(resp);
     }
 
@@ -71,19 +71,27 @@ public sealed class CliGateway : ICliGateway, IDisposable
         return body.Thread;
     }
 
-    public async Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, CancellationToken ct)
+    public async Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, long? lastEventId, CancellationToken ct)
     {
-        var resp = await _http.GetAsync($"{_baseUrl}/api/threads/{threadId}/stream",
-            HttpCompletionOption.ResponseHeadersRead, ct);
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{_baseUrl}/api/threads/{threadId}/stream");
+        if (lastEventId is { } last)
+            request.Headers.TryAddWithoutValidation("Last-Event-ID", last.ToString());
+        var resp = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         await EnsureAsync(resp);
         var stream = await resp.Content.ReadAsStreamAsync(ct);
         return new HttpThreadStream(resp, stream);
     }
 
-    public async Task<Guid> PostMessageAsync(Guid threadId, string content)
+    public async Task<IReadOnlyList<MessageDto>> GetMessagesAsync(Guid threadId)
+    {
+        using var resp = await _http.GetAsync($"{_baseUrl}/api/threads/{threadId}/messages");
+        return (await ReadAsync<MessageListResponse>(resp)).Messages;
+    }
+
+    public async Task<Guid> PostMessageAsync(Guid threadId, string content, bool unattended = false)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/threads/{threadId}/messages",
-            new PostMessageRequest(content), SharpClawJson.Options);
+            new PostMessageRequest(content, unattended), SharpClawJson.Options);
         var body = await ReadAsync<QueuedMessageResponse>(resp);
         return body.Message.Id;
     }
@@ -113,6 +121,42 @@ public sealed class CliGateway : ICliGateway, IDisposable
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/approvals/{approvalId}",
             new DecideApprovalRequest(decision), SharpClawJson.Options);
         return (await ReadAsync<ApprovalResponse>(resp)).Approval;
+    }
+
+    public async Task<ApprovalListResponse> ListApprovalsAsync(string? status, string? agent)
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(status)) query.Add($"status={Uri.EscapeDataString(status)}");
+        if (!string.IsNullOrWhiteSpace(agent)) query.Add($"agent={Uri.EscapeDataString(agent)}");
+        var qs = query.Count > 0 ? "?" + string.Join("&", query) : "";
+        using var resp = await _http.GetAsync($"{_baseUrl}/api/approvals{qs}");
+        return await ReadAsync<ApprovalListResponse>(resp);
+    }
+
+    public async Task<UserAdminDto> CreateUserAsync(string name, string password)
+    {
+        using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/users", new CreateUserRequest(name, password), SharpClawJson.Options);
+        return (await ReadAsync<CreatedUserResponse>(resp)).User;
+    }
+
+    public async Task<UserListResponse> ListUsersAsync()
+    {
+        using var resp = await _http.GetAsync($"{_baseUrl}/api/users");
+        return await ReadAsync<UserListResponse>(resp);
+    }
+
+    public async Task SetUserPasswordAsync(string name, string password)
+    {
+        using var resp = await _http.PutAsJsonAsync($"{_baseUrl}/api/users/{Uri.EscapeDataString(name)}/password",
+            new SetPasswordRequest(password), SharpClawJson.Options);
+        await EnsureAsync(resp);
+    }
+
+    public async Task<UserAdminDto> SetUserDisabledAsync(string name, bool disabled)
+    {
+        using var resp = await _http.PatchAsJsonAsync($"{_baseUrl}/api/users/{Uri.EscapeDataString(name)}",
+            new UpdateUserRequest(disabled), SharpClawJson.Options);
+        return await ReadAsync<UserAdminDto>(resp);
     }
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage resp)
@@ -153,6 +197,7 @@ public sealed class CliGateway : ICliGateway, IDisposable
         public async IAsyncEnumerable<CliSseEvent> ReadAsync([EnumeratorCancellation] CancellationToken ct)
         {
             string? currentEvent = null;
+            long? currentId = null;
             var data = new List<string>();
             while (true)
             {
@@ -161,14 +206,16 @@ public sealed class CliGateway : ICliGateway, IDisposable
                 if (line.Length == 0)
                 {
                     if (currentEvent is not null && data.Count > 0)
-                        yield return new CliSseEvent(currentEvent, string.Join("\n", data));
+                        yield return new CliSseEvent(currentEvent, string.Join("\n", data), currentId);
                     currentEvent = null;
+                    currentId = null;
                     data.Clear();
                     continue;
                 }
                 if (line.StartsWith(':')) continue;
                 if (line.StartsWith("event:", StringComparison.Ordinal)) currentEvent = line[6..].Trim();
                 else if (line.StartsWith("data:", StringComparison.Ordinal)) data.Add(line[5..].Trim());
+                else if (line.StartsWith("id:", StringComparison.Ordinal) && long.TryParse(line[3..].Trim(), out var id)) currentId = id;
             }
         }
 
