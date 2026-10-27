@@ -235,6 +235,21 @@ public class CliTests
         Assert.Equal(new[] { 1, 2, 4, 8, 10, 10, 10, 10, 10 }, waited.Select(w => (int)w.TotalSeconds));
     }
 
+    [Theory]
+    [InlineData("create")]
+    [InlineData("set")]
+    public async Task Context_window_flag_is_passed_through(string verb)
+    {
+        var gw = new FakeGateway();
+        var args = verb == "create"
+            ? new[] { "agents", "create", "a", "--model", "m", "--daily-budget", "1", "--context-window", "128000" }
+            : new[] { "agents", "set", "a", "--context-window", "128000" };
+
+        await Commands.RunAsync(args, gw, new StringWriter(), TextReader.Null, CancellationToken.None);
+
+        Assert.Equal(128000, gw.LastContextWindow);
+    }
+
     // ---- approvals queue (pre-3.3 §9.6) ----
 
     [Fact]
@@ -285,8 +300,11 @@ public class CliTests
         public long MessagePostedAt { get; private set; }
         private Guid _postedMessageId;
 
-        public Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget)
+        public int? LastContextWindow { get; private set; }
+
+        public Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget, int? contextWindow = null)
         {
+            LastContextWindow = contextWindow;
             var agent = new AgentDto(Guid.NewGuid(), name, model, budget, true, DateTime.UtcNow, 0, budget);
             var token = new TokenValueDto(Guid.NewGuid(), "sc_fake-token", "sc_fake-", null);
             return Task.FromResult(new CreatedAgentResponse(agent, token));
@@ -298,8 +316,12 @@ public class CliTests
         public Task<AgentDto> GetAgentAsync(string idOrName) =>
             Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, "m", 1, true, DateTime.UtcNow, 0, 1));
 
-        public Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled) =>
-            Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, model ?? "m", budget ?? 1, enabled ?? true, DateTime.UtcNow, 0, 1));
+        public Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled, int? contextWindow = null)
+        {
+            LastContextWindow = contextWindow;
+            return Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, model ?? "m", budget ?? 1, enabled ?? true, DateTime.UtcNow, 0, 1,
+                contextWindow));
+        }
 
         public Task<CreatedTokenResponse> IssueTokenAsync(string agent, DateTime? expiresAt) =>
             Task.FromResult(new CreatedTokenResponse(new TokenValueDto(Guid.NewGuid(), "sc_fake-token", "sc_fake-", expiresAt)));

@@ -18,6 +18,7 @@ public static class AgentEndpoints
     {
         agent.MapGet("/inbox", Inbox);
         agent.MapGet("/threads/{id}/messages", ThreadHistory);
+        agent.MapGet("/threads/{id}/context", Context);
         agent.MapPost("/threads/{id}/messages", Reply);
         agent.MapPost("/messages/{id}/fail", Fail);
     }
@@ -82,6 +83,59 @@ public static class AgentEndpoints
 
         var messages = await MessageQueries.ListAsync(db, id, null, includeTools: true, ct);
         return Results.Json(new MessageListResponse(messages), SharpClawJson.Options);
+    }
+
+    /// <summary>The model-ready history that fits the agent's context window (pre-3.3 spec section 6.4).</summary>
+    private static async Task<IResult> Context(
+        Guid id, int? reserveTokens, HttpContext http, SharpClawDbContext db, IContextSummariser summariser,
+        IOptions<ContextOptions> contextOptions, GatewayMetrics metrics, ILoggerFactory loggerFactory, CancellationToken ct)
+    {
+        var agent = AuthContext.Agent(http);
+        var reserve = reserveTokens ?? 0;
+        if (reserve < 0)
+            return ApiResults.ValidationFailed("reserveTokens must be >= 0.");
+        var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == id, ct);
+        if (thread is null || thread.AgentId != agent.Id)
+            return ApiResults.NotFound("Thread not found.");
+
+        var rows = await db.Messages.AsNoTracking().Where(m => m.ThreadId == id).OrderBy(m => m.Seq).ToListAsync(ct);
+        var users = rows.Where(r => r.Role == Roles.User && r.Kind == MessageKinds.Message).ToList();
+        // The turn being processed: the agent's claimed message, else the latest one.
+        var current = users.LastOrDefault(r => r.Status == MessageStatus.Claimed) ?? users.LastOrDefault();
+        var options = contextOptions.Value;
+        var window = options.WindowFor(agent.ContextWindowTokens);
+        if (current is null)
+            return Results.Json(new ContextResponse(Array.Empty<ContextMessage>(), false, 0, 0, window), SharpClawJson.Options);
+
+        var result = await new ContextBuilder(options, summariser).BuildAsync(id, rows, current.Id, window, reserve, ct);
+        var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Context");
+        using var scope = logger.BeginScope(new Dictionary<string, object>
+        {
+            ["thread_id"] = id.ToString(),
+            ["correlation_id"] = current.Id.ToString(),
+        });
+        if (result.TooLarge)
+        {
+            metrics.RecordContextRejection(agent.Name);
+            logger.LogWarning("context rejected: estimated_tokens={EstimatedTokens} window_tokens={WindowTokens} reserve_tokens={ReserveTokens}",
+                result.EstimatedTokens, window, reserve);
+            return ApiResults.Error(400, ErrorCodes.ContextTooLarge,
+                "The current message does not fit in the agent's context window.");
+        }
+
+        await db.Threads.Where(t => t.Id == id).ExecuteUpdateAsync(s => s
+            .SetProperty(t => t.ContextDroppedTurns, result.DroppedTurns)
+            .SetProperty(t => t.ContextEstimatedTokens, result.EstimatedTokens), ct);
+        metrics.RecordContextEstimate(agent.Name, result.EstimatedTokens);
+        if (result.DroppedTurns > 0)
+        {
+            metrics.RecordContextTruncation(agent.Name);
+            logger.LogInformation("context truncated: dropped_turns={DroppedTurns} estimated_tokens={EstimatedTokens} window_tokens={WindowTokens}",
+                result.DroppedTurns, result.EstimatedTokens, window);
+        }
+
+        return Results.Json(new ContextResponse(result.Messages, result.DroppedTurns > 0, result.DroppedTurns,
+            result.EstimatedTokens, window), SharpClawJson.Options);
     }
 
     private static async Task<IResult> Reply(

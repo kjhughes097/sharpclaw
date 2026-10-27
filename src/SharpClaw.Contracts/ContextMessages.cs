@@ -26,3 +26,10 @@ public sealed record ContextToolCall(
 public sealed record ContextFunction(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("arguments")] string Arguments);
+
+/// <summary>
+/// <c>GET /agent/threads/{id}/context</c>: the model-ready history that fits the agent's window.
+/// <c>EstimatedTokens</c> covers <c>Messages</c> only (not the caller's reserve).
+/// </summary>
+public sealed record ContextResponse(
+    IReadOnlyList<ContextMessage> Messages, bool Truncated, int DroppedTurns, int EstimatedTokens, int WindowTokens);

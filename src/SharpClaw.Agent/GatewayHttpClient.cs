@@ -50,15 +50,15 @@ public sealed class GatewayHttpClient : IGatewayClient
         }
     }
 
-    public async Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct)
+    public async Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct)
     {
-        using var resp = await _http.GetAsync($"{_baseUrl}/agent/threads/{threadId}/messages", ct);
+        using var resp = await _http.GetAsync($"{_baseUrl}/agent/threads/{threadId}/context?reserveTokens={reserveTokens}", ct);
+        if (resp.StatusCode == HttpStatusCode.BadRequest &&
+            await ReadErrorCodeAsync(resp, ct) == ErrorCodes.ContextTooLarge)
+            return ContextResult.Fail(ErrorCodes.ContextTooLarge);
         resp.EnsureSuccessStatusCode();
-        var body = await resp.Content.ReadFromJsonAsync<MessageListResponse>(SharpClawJson.Options, ct);
-        return (body?.Messages ?? Array.Empty<MessageDto>())
-            .Where(m => m.Kind == MessageKinds.Message && m.Role is Roles.User or Roles.Assistant)
-            .Select(m => new ChatMessage(m.Role, m.Content))
-            .ToList();
+        var body = await resp.Content.ReadFromJsonAsync<ContextResponse>(SharpClawJson.Options, ct);
+        return new ContextResult((body?.Messages ?? Array.Empty<ContextMessage>()).Select(m => m.ToChatMessage()).ToList());
     }
 
     public Task<ChatOutcome> StreamChatAsync(
@@ -130,6 +130,9 @@ public sealed class GatewayHttpClient : IGatewayClient
                 return ChatOutcome.Fail(await ReadErrorCodeAsync(resp, ct) ?? ErrorCodes.BudgetExceeded);
             if (resp.StatusCode is HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout)
                 return ChatOutcome.Fail("provider_error");
+            if (resp.StatusCode == HttpStatusCode.BadRequest &&
+                await ReadErrorCodeAsync(resp, ct) == ErrorCodes.ContextTooLarge)
+                return ChatOutcome.Fail(ErrorCodes.ContextTooLarge);
             if (!resp.IsSuccessStatusCode)
                 return ChatOutcome.Fail("agent_error");
 

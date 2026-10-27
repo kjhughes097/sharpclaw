@@ -103,9 +103,16 @@ public sealed class AgentLoop
 
         try
         {
-            var history = await _client.GetThreadHistoryAsync(msg.ThreadId, ct);
-            var messages = new List<ChatMessage> { new(Roles.System, _soul.Read()) };
-            messages.AddRange(history);
+            var soul = _soul.Read();
+            var context = await _client.GetContextAsync(msg.ThreadId, ReserveTokens(soul), ct);
+            if (context.FailCode is not null)
+            {
+                await _client.FailAsync(msg.Id, context.FailCode, ct);
+                _logger.LogWarning("message failed: outcome={Outcome}", context.FailCode);
+                return LoopOutcome.Processed;
+            }
+            var messages = new List<ChatMessage> { new(Roles.System, soul) };
+            messages.AddRange(context.Messages);
 
             var (reply, failCode, exchanges) = await RunTurnAsync(messages, new TurnContext(msg.Id, msg.ThreadId), ct);
             if (reply is not null)
@@ -180,6 +187,16 @@ public sealed class AgentLoop
                 }).ToList(),
                 results));
         }
+    }
+
+    /// <summary>
+    /// The gateway fits history into the window minus this: the soul and the tool schemas sent
+    /// with every call, estimated with the shared characters-per-token heuristic.
+    /// </summary>
+    private int ReserveTokens(string soul)
+    {
+        var schemaChars = _tools?.Registry.Tools.Sum(t => t.Name.Length + t.Description.Length + t.ParametersJson.Length) ?? 0;
+        return ContextDefaults.Tokens(soul.Length + schemaChars);
     }
 
     private async Task SafeFail(Guid messageId, string reason)

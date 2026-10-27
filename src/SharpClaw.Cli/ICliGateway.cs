@@ -14,10 +14,10 @@ public interface IThreadStream : IAsyncDisposable
 /// <summary>Everything the CLI needs from the gateway's client listener.</summary>
 public interface ICliGateway
 {
-    Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget);
+    Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget, int? contextWindow = null);
     Task<AgentListResponse> ListAgentsAsync();
     Task<AgentDto> GetAgentAsync(string idOrName);
-    Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled);
+    Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled, int? contextWindow = null);
 
     Task<CreatedTokenResponse> IssueTokenAsync(string agent, DateTime? expiresAt);
     Task<TokenListResponse> ListTokensAsync(string agent);

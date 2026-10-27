@@ -31,6 +31,13 @@ public static class AgentQueries
     public static AgentDto ToDto(Agent a, double todaySpend)
     {
         var remaining = Math.Max(0, a.DailyBudgetUsd - todaySpend);
-        return new AgentDto(a.Id, a.Name, a.Model, a.DailyBudgetUsd, a.Enabled, a.CreatedAt, todaySpend, remaining);
+        return new AgentDto(a.Id, a.Name, a.Model, a.DailyBudgetUsd, a.Enabled, a.CreatedAt, todaySpend, remaining,
+            a.ContextWindowTokens);
     }
+
+    /// <summary>Null when valid; otherwise the validation message.</summary>
+    public static string? ValidateContextWindow(int? tokens) =>
+        tokens is null or (>= ContextDefaults.MinWindowTokens and <= ContextDefaults.MaxWindowTokens)
+            ? null
+            : $"contextWindowTokens must be between {ContextDefaults.MinWindowTokens} and {ContextDefaults.MaxWindowTokens}.";
 }

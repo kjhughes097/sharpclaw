@@ -54,7 +54,11 @@ public sealed class OpenRouterProvider : IChatProvider
         using (response)
         {
             if (!response.IsSuccessStatusCode)
+            {
+                if (await IsContextLengthErrorAsync(response, ct))
+                    throw new ProviderException(ProviderErrorKind.ContextLength, (int)response.StatusCode, "context length exceeded");
                 throw new ProviderException(ProviderErrorKind.Upstream, (int)response.StatusCode, "upstream non-2xx");
+            }
 
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -137,6 +141,30 @@ public sealed class OpenRouterProvider : IChatProvider
                 throw new ProviderException(ProviderErrorKind.Upstream, null, "upstream tool call without a name");
             var args = _arguments.Length == 0 ? "{}" : _arguments.ToString();
             return new ChatStreamEvent.ToolCall(_id ?? $"call_{Guid.NewGuid():N}", _name, args);
+        }
+    }
+
+    /// <summary>
+    /// Reads at most 4 KB of an error body, only to recognise a context-length error. The body is
+    /// never logged or stored (it may echo the prompt).
+    /// </summary>
+    private static async Task<bool> IsContextLengthErrorAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if ((int)response.StatusCode is not (400 or 413))
+            return false;
+        try
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(ct);
+            var buffer = new byte[4096];
+            var read = await stream.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, ct);
+            var text = Encoding.UTF8.GetString(buffer, 0, read);
+            return text.Contains("context_length_exceeded", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("context length", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("context window", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException)
+        {
+            return false;
         }
     }
 

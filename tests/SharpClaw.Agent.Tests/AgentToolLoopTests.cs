@@ -20,8 +20,8 @@ public class AgentToolLoopTests
         public List<ToolCallReportRequest> Reports { get; } = new();
 
         public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => Task.FromResult(InboxResult.Of(Message));
-        public Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<ChatMessage>>(new[] { new ChatMessage(Roles.User, "do the task") });
+        public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct) =>
+            Task.FromResult(new ContextResult(new[] { new ChatMessage(Roles.User, "do the task") }));
 
         public Task<ChatOutcome> StreamChatAsync(IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,
             Guid correlationId, Guid threadId, CancellationToken ct)

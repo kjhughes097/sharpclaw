@@ -201,6 +201,37 @@ public class AgentToolEndToEndTests : IDisposable
     }
 
     [Fact]
+    public async Task Next_turn_sees_earlier_trusted_tool_results_but_not_untrusted_content()
+    {
+        await using var h = await StartAsync();
+        await h.Fx.PostUserMessageAsync(h.Thread, "make a note");
+        await h.Loop.ProcessOnceAsync(CancellationToken.None);
+        await h.Fx.PostUserMessageAsync(h.Thread, "what did you do?");
+
+        // What the agent will be given for turn 2 (the context endpoint the loop calls).
+        var token = await IssueTokenAsync(h);
+        Assert.NotNull(await h.Fx.ClaimAsync(token));
+        using var agent = h.Fx.AgentClient(token);
+        var context = await agent.GetFromJsonAsync<ContextResponse>($"/agent/threads/{h.Thread}/context", SharpClawJson.Options);
+
+        var roles = context!.Messages.Select(m => m.Role).ToList();
+        Assert.Equal(new[] { Roles.User, Roles.Assistant, Roles.Tool, Roles.Assistant, Roles.Tool, Roles.Assistant, Roles.User }, roles);
+        Assert.Equal("workspace_write", context.Messages[1].ToolCalls![0].Function.Name);
+        Assert.Contains("\"created\":true", context.Messages[2].Content);
+        Assert.DoesNotContain("buy milk", context.Messages[4].Content);
+        Assert.Contains("not replayed", context.Messages[4].Content);
+        Assert.Equal("what did you do?", context.Messages[^1].Content);
+    }
+
+    private static async Task<string> IssueTokenAsync(Harness h)
+    {
+        using var admin = h.Fx.Admin();
+        var created = await (await admin.PostAsJsonAsync($"/api/agents/{h.Agent.Name}/tokens", new CreateTokenRequest(null), SharpClawJson.Options))
+            .Content.ReadFromJsonAsync<CreatedTokenResponse>(SharpClawJson.Options);
+        return created!.Token.Value;
+    }
+
+    [Fact]
     public async Task Unattended_high_risk_call_is_denied_without_waiting()
     {
         await using var h = await StartAsync();

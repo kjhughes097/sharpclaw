@@ -9,6 +9,9 @@ public class Agent
     public bool Enabled { get; set; } = true;
     public DateTime CreatedAt { get; set; }
 
+    /// <summary>Model context window override; null uses <c>Context:DefaultWindowTokens</c>.</summary>
+    public int? ContextWindowTokens { get; set; }
+
     public List<AgentToken> Tokens { get; set; } = new();
 }
 
@@ -32,6 +35,10 @@ public class ConversationThread
     public Agent? Agent { get; set; }
     public string? Title { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    /// <summary>Turns left out of the model's context the last time it was built.</summary>
+    public int ContextDroppedTurns { get; set; }
+    public int ContextEstimatedTokens { get; set; }
 }
 
 public class Message
@@ -85,6 +92,9 @@ public class LlmCall
 
     /// <summary><c>chat</c> or <c>risk_assessment</c> (smart-mode classification).</summary>
     public string Purpose { get; set; } = "chat";
+
+    /// <summary>The gateway's prompt estimate, kept beside the provider's count to tune the heuristic.</summary>
+    public int? EstimatedPromptTokens { get; set; }
 
     public DateTime CreatedAt { get; set; }
 }

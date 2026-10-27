@@ -47,7 +47,7 @@ public static class Commands
                 var name = a.Positionals.ElementAtOrDefault(2) ?? throw new CliException("agent name is required.");
                 var model = a.Get("model") ?? throw new CliException("--model is required.");
                 var budget = a.GetDouble("daily-budget") ?? throw new CliException("--daily-budget is required.");
-                var created = await gw.CreateAgentAsync(name, model, budget);
+                var created = await gw.CreateAgentAsync(name, model, budget, ContextWindow(a));
                 PrintAgent(o, created.Agent);
                 await o.WriteLineAsync();
                 await o.WriteLineAsync($"Token (shown once, store it now): {created.Token.Value}");
@@ -71,7 +71,8 @@ public static class Commands
             case "set":
             {
                 var name = a.Positionals.ElementAtOrDefault(2) ?? throw new CliException("agent name is required.");
-                var updated = await gw.PatchAgentAsync(name, a.Get("model"), a.GetDouble("daily-budget"), a.GetBool("enabled"));
+                var updated = await gw.PatchAgentAsync(name, a.Get("model"), a.GetDouble("daily-budget"), a.GetBool("enabled"),
+                    ContextWindow(a));
                 PrintAgent(o, updated);
                 break;
             }
@@ -207,6 +208,11 @@ public static class Commands
         return thread.Id;
     }
 
+    private static int? ContextWindow(ParsedArgs a) =>
+        a.Has("context-window")
+            ? a.GetInt("context-window") ?? throw new CliException("--context-window must be a whole number of tokens.")
+            : null;
+
     private static void PrintAgent(TextWriter o, AgentDto a)
     {
         o.WriteLine($"id:          {a.Id}");
@@ -214,16 +220,17 @@ public static class Commands
         o.WriteLine($"model:       {a.Model}");
         o.WriteLine($"dailyBudget: {a.DailyBudgetUsd:0.####} USD");
         o.WriteLine($"enabled:     {a.Enabled}");
+        o.WriteLine($"context:     {(a.ContextWindowTokens is { } w ? $"{w} tokens" : "gateway default")}");
         o.WriteLine($"todaySpend:  {a.TodaySpendUsd:0.####} USD");
         o.WriteLine($"remaining:   {a.RemainingUsd:0.####} USD");
     }
 
     public const string Usage = """
         Usage:
-          sharpclaw agents create <name> --model <id> --daily-budget <usd>
+          sharpclaw agents create <name> --model <id> --daily-budget <usd> [--context-window <tokens>]
           sharpclaw agents list
           sharpclaw agents show <name>
-          sharpclaw agents set <name> [--model <id>] [--daily-budget <usd>] [--enabled true|false]
+          sharpclaw agents set <name> [--model <id>] [--daily-budget <usd>] [--enabled true|false] [--context-window <tokens>]
           sharpclaw tokens issue <agent> [--expires <utc>]
           sharpclaw tokens list <agent>
           sharpclaw tokens revoke <agent> <tokenId>

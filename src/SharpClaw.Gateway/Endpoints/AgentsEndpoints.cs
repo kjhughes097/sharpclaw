@@ -33,6 +33,8 @@ public static class AgentsEndpoints
             return ApiResults.ValidationFailed("model is required.");
         if (body.DailyBudgetUsd < 0)
             return ApiResults.ValidationFailed("dailyBudgetUsd must be >= 0.");
+        if (AgentQueries.ValidateContextWindow(body.ContextWindowTokens) is { } windowError)
+            return ApiResults.ValidationFailed(windowError);
 
         if (await db.Agents.AnyAsync(a => a.Name == body.Name, ct))
             return ApiResults.Conflict($"Agent name '{body.Name}' is already taken.");
@@ -45,6 +47,7 @@ public static class AgentsEndpoints
             Model = body.Model,
             DailyBudgetUsd = body.DailyBudgetUsd,
             Enabled = true,
+            ContextWindowTokens = body.ContextWindowTokens,
             CreatedAt = now,
         };
         var (tokenEntity, tokenValue) = NewToken(agent.Id, now, null);
@@ -106,6 +109,12 @@ public static class AgentsEndpoints
         }
         if (body.Enabled is not null)
             agent.Enabled = body.Enabled.Value;
+        if (body.ContextWindowTokens is not null)
+        {
+            if (AgentQueries.ValidateContextWindow(body.ContextWindowTokens) is { } windowError)
+                return ApiResults.ValidationFailed(windowError);
+            agent.ContextWindowTokens = body.ContextWindowTokens;
+        }
 
         await db.SaveChangesAsync(ct);
         var spend = await AgentQueries.TodaySpendAsync(db, time, agent.Id, ct);

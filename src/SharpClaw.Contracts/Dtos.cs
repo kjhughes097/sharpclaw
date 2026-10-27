@@ -2,10 +2,11 @@ namespace SharpClaw.Contracts;
 
 // ----- Agents -----
 
-public sealed record CreateAgentRequest(string Name, string Model, double DailyBudgetUsd);
+public sealed record CreateAgentRequest(string Name, string Model, double DailyBudgetUsd, int? ContextWindowTokens = null);
 
-public sealed record UpdateAgentRequest(string? Model, double? DailyBudgetUsd, bool? Enabled);
+public sealed record UpdateAgentRequest(string? Model, double? DailyBudgetUsd, bool? Enabled, int? ContextWindowTokens = null);
 
+/// <summary><c>ContextWindowTokens</c> is the agent's override; null means the gateway default.</summary>
 public sealed record AgentDto(
     Guid Id,
     string Name,
@@ -14,7 +15,8 @@ public sealed record AgentDto(
     bool Enabled,
     DateTime CreatedAt,
     double TodaySpendUsd,
-    double RemainingUsd);
+    double RemainingUsd,
+    int? ContextWindowTokens = null);
 
 public sealed record AgentListResponse(IReadOnlyList<AgentDto> Agents);
 
@@ -44,7 +46,13 @@ public sealed record CreatedTokenResponse(TokenValueDto Token);
 
 public sealed record CreateThreadRequest(string AgentId, string? Title);
 
-public sealed record ThreadDto(Guid Id, Guid AgentId, string? Title, DateTime CreatedAt);
+/// <summary>
+/// <c>Context</c>: how the thread fit the model's window the last time the agent built its context.
+/// <c>DroppedTurns</c> &gt; 0 means older messages are no longer seen by the model.
+/// </summary>
+public sealed record ThreadDto(Guid Id, Guid AgentId, string? Title, DateTime CreatedAt, ThreadContextDto? Context = null);
+
+public sealed record ThreadContextDto(int DroppedTurns, int EstimatedTokens, int WindowTokens);
 
 public sealed record CreatedThreadResponse(ThreadDto Thread);
 

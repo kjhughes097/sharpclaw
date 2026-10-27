@@ -67,6 +67,13 @@ secrets or network required.
 - **Budgets.** Each agent has a daily USD cap. Spend is the sum of `llm_calls.cost_usd` since the
   start of the current UTC day; exceeding it returns `429` with `Retry-After` and records a
   `rejected` call. Budgets reset at UTC midnight.
+- **Context window.** The agent gets its history from `GET /agent/threads/{id}/context`, which
+  fits whole turns, newest first, into the agent's window (`contextWindowTokens`, default
+  `Context:DefaultWindowTokens`) minus the agent's reserve for its soul and tool schemas and
+  `Context:ReplyReserveTokens`. Older turns are dropped and replaced by a note; the thread's
+  `context.droppedTurns` shows it. Tokens are estimated as characters / 4. A turn that alone
+  doesn't fit, a chat request over the window, or a provider context-length error fails with
+  `context_too_large`.
 
 ## Configuration
 
@@ -96,6 +103,10 @@ ASP.NET `__` syntax).
 | `Tools:MaxStoredResultChars` | `4000` | Stored tool results are cut to this |
 | `Tools:MaxStoredArgumentStringChars` | `500` | Each string in stored tool arguments is cut to this |
 | `Tools:MaxExchangesPerReply` | `50` | Tool rounds accepted with one reply |
+| `Context:DefaultWindowTokens` | `32000` | Used when the agent has no `contextWindowTokens` |
+| `Context:ReplyReserveTokens` | `2000` | Kept free for the model's reply |
+| `Context:CharsPerToken` | `4` | Estimation heuristic |
+| `Context:MessageOverheadTokens` | `4` | Added per message |
 
 Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 
@@ -176,9 +187,9 @@ Re-run the `dotnet publish` line after pulling CLI changes. Without installing, 
 
 | Command | Behaviour |
 |---|---|
-| `sharpclaw agents create <name> --model <id> --daily-budget <usd>` | Creates the agent and its first token (shown once) |
+| `sharpclaw agents create <name> --model <id> --daily-budget <usd> [--context-window <tokens>]` | Creates the agent and its first token (shown once) |
 | `sharpclaw agents list` / `agents show <name>` | List or detail incl. today's spend and remaining budget |
-| `sharpclaw agents set <name> [--model …] [--daily-budget …] [--enabled true\|false]` | Patch an agent |
+| `sharpclaw agents set <name> [--model …] [--daily-budget …] [--enabled true\|false] [--context-window …]` | Patch an agent |
 | `sharpclaw tokens issue <agent> [--expires <utc>]` | Issue a token (shown once) |
 | `sharpclaw tokens list <agent>` / `tokens revoke <agent> <tokenId>` | Token metadata / revoke |
 | `sharpclaw chat <agent> [--thread <id>]` | Interactive chat; `/exit` quits |

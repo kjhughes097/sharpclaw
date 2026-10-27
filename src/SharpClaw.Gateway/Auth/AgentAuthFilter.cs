@@ -47,7 +47,8 @@ public sealed class AgentAuthFilter : IEndpointFilter
 
         var agent = token.Agent;
         metrics.MarkSeen(agent.Name);
-        AuthContext.Set(http, new AuthenticatedAgent(agent.Id, agent.Name, agent.Model, agent.DailyBudgetUsd));
+        AuthContext.Set(http, new AuthenticatedAgent(agent.Id, agent.Name, agent.Model, agent.DailyBudgetUsd,
+            agent.ContextWindowTokens));
 
         // Log attributes (not resource attributes) so ids stay searchable without becoming labels.
         var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("SharpClaw.Gateway.Agent");

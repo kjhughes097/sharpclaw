@@ -18,10 +18,10 @@ public sealed class CliGateway : ICliGateway, IDisposable
         _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.AdminKey);
     }
 
-    public async Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget)
+    public async Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget, int? contextWindow = null)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/agents",
-            new CreateAgentRequest(name, model, budget), SharpClawJson.Options);
+            new CreateAgentRequest(name, model, budget, contextWindow), SharpClawJson.Options);
         return await ReadAsync<CreatedAgentResponse>(resp);
     }
 
@@ -37,10 +37,10 @@ public sealed class CliGateway : ICliGateway, IDisposable
         return await ReadAsync<AgentDto>(resp);
     }
 
-    public async Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled)
+    public async Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled, int? contextWindow = null)
     {
         using var resp = await _http.PatchAsJsonAsync($"{_baseUrl}/api/agents/{idOrName}",
-            new UpdateAgentRequest(model, budget, enabled), SharpClawJson.Options);
+            new UpdateAgentRequest(model, budget, enabled, contextWindow), SharpClawJson.Options);
         return await ReadAsync<AgentDto>(resp);
     }
 

@@ -31,6 +31,9 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Counter<long> _toolCalls;
     private readonly Counter<long> _approvals;
     private readonly Histogram<double> _approvalDecisionTime;
+    private readonly Counter<long> _contextTruncations;
+    private readonly Counter<long> _contextRejections;
+    private readonly Histogram<int> _contextEstimatedTokens;
 
     private readonly ConcurrentDictionary<string, double> _lastSeenUnix = new();
 
@@ -62,6 +65,10 @@ public sealed class GatewayMetrics : IDisposable
         _approvals = _meter.CreateCounter<long>("sharpclaw.approvals", "{approval}");
         _approvalDecisionTime = _meter.CreateHistogram("sharpclaw.approval.decision_time", "s", null, null,
             new InstrumentAdvice<double> { HistogramBucketBoundaries = [1, 5, 10, 30, 60, 120, 300, 600] });
+        _contextTruncations = _meter.CreateCounter<long>("sharpclaw.context.truncations", "{truncation}");
+        _contextRejections = _meter.CreateCounter<long>("sharpclaw.context.rejections", "{rejection}");
+        _contextEstimatedTokens = _meter.CreateHistogram("sharpclaw.context.estimated_tokens", "{token}", null, null,
+            new InstrumentAdvice<int> { HistogramBucketBoundaries = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000] });
 
         _meter.CreateObservableGauge("sharpclaw.budget.remaining_usd", ObserveBudgetRemaining, "USD");
         _meter.CreateObservableGauge("sharpclaw.inbox.depth", ObserveInboxDepth, "{message}");
@@ -110,6 +117,15 @@ public sealed class GatewayMetrics : IDisposable
     /// <summary>From creation to decision or expiry.</summary>
     public void RecordApprovalDecisionTime(string agent, string status, double seconds) =>
         _approvalDecisionTime.Record(seconds, Tag("agent", agent), Tag("status", status));
+
+    /// <summary>Older turns were left out of the model's context.</summary>
+    public void RecordContextTruncation(string agent) => _contextTruncations.Add(1, Tag("agent", agent));
+
+    /// <summary>A turn (context endpoint) or request (chat preflight) did not fit the window.</summary>
+    public void RecordContextRejection(string agent) => _contextRejections.Add(1, Tag("agent", agent));
+
+    public void RecordContextEstimate(string agent, int tokens) =>
+        _contextEstimatedTokens.Record(tokens, Tag("agent", agent));
 
     public void RecordAuthFailure(string listener) =>
         _authFailures.Add(1, Tag("listener", listener));

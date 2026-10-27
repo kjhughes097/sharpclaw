@@ -28,11 +28,22 @@ public sealed record ChatOutcome(bool Success, string? Content, string? FailCode
     public static ChatOutcome Fail(string code) => new(false, null, code);
 }
 
+/// <summary>The model-ready history for a turn, or a fail code (e.g. <c>context_too_large</c>).</summary>
+public sealed record ContextResult(IReadOnlyList<ChatMessage> Messages, string? FailCode = null)
+{
+    public static ContextResult Fail(string code) => new(Array.Empty<ChatMessage>(), code);
+}
+
 /// <summary>Everything the agent loop needs from the gateway's agent listener.</summary>
 public interface IGatewayClient
 {
     Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct);
-    Task<IReadOnlyList<ChatMessage>> GetThreadHistoryAsync(Guid threadId, CancellationToken ct);
+
+    /// <summary>
+    /// The thread's history fitted to the agent's context window by the gateway.
+    /// <paramref name="reserveTokens"/> is the caller's estimate for the soul and tool schemas.
+    /// </summary>
+    Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct);
     /// <summary>Streams a completion, offering <paramref name="tools"/> to the model (none if empty).</summary>
     Task<ChatOutcome> StreamChatAsync(
         IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,

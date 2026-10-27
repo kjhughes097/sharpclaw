@@ -28,7 +28,7 @@ public static class ChatEndpoints
     private static async Task<IResult> Completions(
         HttpContext http, SharpClawDbContext db, TimeProvider time,
         IChatProvider provider, IEventPublisher events, ActiveTurnBuffers buffers, GatewayMetrics metrics,
-        IOptions<ChatOptions> chatOptions, ILoggerFactory loggerFactory)
+        IOptions<ChatOptions> chatOptions, IOptions<ContextOptions> contextOptions, ILoggerFactory loggerFactory)
     {
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Chat");
         var agent = AuthContext.Agent(http);
@@ -73,7 +73,10 @@ public static class ChatEndpoints
             var now = time.GetUtcNow().UtcDateTime;
             // Claim heartbeat: a multi-round tool turn must not be requeued as if the agent had died.
             await InboxRepository.TouchClaimAsync(db, agent.Id, correlationId, now, ct);
-            var recorder = new LlmCallRecorder(db, metrics, logger, agent, threadId, correlationId, now, purpose);
+            var recorder = new LlmCallRecorder(db, metrics, logger, agent, threadId, correlationId, now, purpose)
+            {
+                EstimatedPromptTokens = EstimatePrompt(parsed!, bodyDoc.RootElement, contextOptions.Value),
+            };
 
             var callsSoFar = await db.LlmCalls.CountAsync(c => c.CorrelationId == correlationId, ct);
             if (callsSoFar >= chatOptions.Value.MaxLlmCallsPerMessage)
@@ -93,6 +96,17 @@ public static class ChatEndpoints
                     spent, agent.DailyBudgetUsd);
                 metrics.RecordBudgetExceeded(agent.Name);
                 return BudgetExceeded(now);
+            }
+
+            // Preflight: a request that can't fit the window would only fail (and cost) upstream.
+            var limit = contextOptions.Value.WindowFor(agent.ContextWindowTokens) - contextOptions.Value.ReplyReserveTokens;
+            if (recorder.EstimatedPromptTokens > limit)
+            {
+                await recorder.RecordAsync(LlmCallOutcome.Rejected(ErrorCodes.ContextTooLarge), ct);
+                metrics.RecordContextRejection(agent.Name);
+                logger.LogWarning("llm call rejected: context_too_large estimated_tokens={EstimatedTokens} limit_tokens={Limit}",
+                    recorder.EstimatedPromptTokens, limit);
+                return ContextTooLarge();
             }
 
             // Risk-assessment calls are internal to the agent: never show their output to the user.
@@ -117,6 +131,20 @@ public static class ChatEndpoints
 
         return null;
     }
+
+    /// <summary>Estimate of the prompt: the messages plus the tool schemas offered with them.</summary>
+    private static int EstimatePrompt(ParsedChatRequest request, JsonElement root, ContextOptions options)
+    {
+        var estimator = new TokenEstimator(options);
+        var messages = request.Messages.Select(m => new ContextMessage(m.Role, m.Content,
+            m.ToolCalls?.Select(c => new ContextToolCall(c.Id, "function", new ContextFunction(c.Name, c.ArgumentsJson))).ToList(),
+            m.ToolCallId));
+        var schemaChars = root.TryGetProperty("tools", out var tools) ? tools.GetRawText().Length : 0;
+        return estimator.Estimate(messages) + estimator.EstimateChars(schemaChars);
+    }
+
+    private static IResult ContextTooLarge() =>
+        ApiResults.Error(400, ErrorCodes.ContextTooLarge, "The request does not fit in the agent's context window.");
 
     private static IResult BudgetExceeded(DateTime now)
     {
@@ -188,9 +216,12 @@ public static class ChatEndpoints
             catch (ProviderException pex)
             {
                 await _recorder.RecordAsync(Failed(pex), ct);
-                return pex.Kind == ProviderErrorKind.Timeout
-                    ? ApiResults.Error(504, ErrorCodes.ProviderTimeout, "Upstream timed out.")
-                    : ApiResults.Error(502, ErrorCodes.ProviderError, "Upstream failure.");
+                return pex.Kind switch
+                {
+                    ProviderErrorKind.Timeout => ApiResults.Error(504, ErrorCodes.ProviderTimeout, "Upstream timed out."),
+                    ProviderErrorKind.ContextLength => ContextTooLarge(),
+                    _ => ApiResults.Error(502, ErrorCodes.ProviderError, "Upstream failure."),
+                };
             }
             catch (OperationCanceledException)
             {
@@ -287,7 +318,12 @@ public static class ChatEndpoints
         private LlmCallOutcome Failed(ProviderException pex) => Succeeded() with
         {
             Status = LlmCallStatus.Error,
-            ErrorCode = pex.Kind == ProviderErrorKind.Timeout ? ErrorCodes.ProviderTimeout : ErrorCodes.ProviderError,
+            ErrorCode = pex.Kind switch
+            {
+                ProviderErrorKind.Timeout => ErrorCodes.ProviderTimeout,
+                ProviderErrorKind.ContextLength => ErrorCodes.ContextTooLarge,
+                _ => ErrorCodes.ProviderError,
+            },
             ErrorDetail = pex.Message,
         };
 

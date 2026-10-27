@@ -21,7 +21,8 @@ public static class ThreadsEndpoints
     }
 
     private static async Task<IResult> CreateThread(
-        CreateThreadRequest? body, SharpClawDbContext db, TimeProvider time, CancellationToken ct)
+        CreateThreadRequest? body, SharpClawDbContext db, TimeProvider time, IOptions<ContextOptions> context,
+        CancellationToken ct)
     {
         if (body is null || string.IsNullOrWhiteSpace(body.AgentId))
             return ApiResults.ValidationFailed("agentId is required.");
@@ -40,12 +41,15 @@ public static class ThreadsEndpoints
         db.Threads.Add(thread);
         await db.SaveChangesAsync(ct);
 
-        var dto = new ThreadDto(thread.Id, thread.AgentId, thread.Title, thread.CreatedAt);
+        var dto = ToDto(thread, context.Value.WindowFor(agent.ContextWindowTokens));
         return Results.Json(new CreatedThreadResponse(dto), SharpClawJson.Options, statusCode: 201);
     }
 
+    private static ThreadDto ToDto(ConversationThread t, int windowTokens) => new(t.Id, t.AgentId, t.Title, t.CreatedAt,
+        new ThreadContextDto(t.ContextDroppedTurns, t.ContextEstimatedTokens, windowTokens));
+
     private static async Task<IResult> ListThreads(
-        string? agentId, SharpClawDbContext db, CancellationToken ct)
+        string? agentId, SharpClawDbContext db, IOptions<ContextOptions> context, CancellationToken ct)
     {
         IQueryable<ConversationThread> q = db.Threads.AsNoTracking();
         if (!string.IsNullOrWhiteSpace(agentId))
@@ -57,9 +61,10 @@ public static class ThreadsEndpoints
         }
 
         var threads = await q.OrderByDescending(t => t.CreatedAt).Take(50)
-            .Select(t => new ThreadDto(t.Id, t.AgentId, t.Title, t.CreatedAt))
+            .Select(t => new { Thread = t, Window = t.Agent!.ContextWindowTokens })
             .ToListAsync(ct);
-        return Results.Json(new ThreadListResponse(threads), SharpClawJson.Options);
+        var dtos = threads.Select(x => ToDto(x.Thread, context.Value.WindowFor(x.Window))).ToList();
+        return Results.Json(new ThreadListResponse(dtos), SharpClawJson.Options);
     }
 
     private static async Task<IResult> GetMessages(

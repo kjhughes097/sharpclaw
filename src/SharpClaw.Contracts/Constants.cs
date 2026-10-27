@@ -13,7 +13,23 @@ public static class ErrorCodes
     public const string LoopLimitExceeded = "loop_limit_exceeded";
     public const string ProviderError = "provider_error";
     public const string ProviderTimeout = "provider_timeout";
+    public const string ContextTooLarge = "context_too_large";
     public const string InternalError = "internal_error";
+}
+
+/// <summary>Context-window defaults shared by the gateway and the agent (pre-3.3 spec section 6).</summary>
+public static class ContextDefaults
+{
+    /// <summary>Token estimate heuristic: characters per token.</summary>
+    public const int CharsPerToken = 4;
+
+    public const int DefaultWindowTokens = 32000;
+    public const int MinWindowTokens = 1000;
+    public const int MaxWindowTokens = 2_000_000;
+
+    /// <summary><c>ceil(chars / CharsPerToken)</c>.</summary>
+    public static int Tokens(long chars, int charsPerToken = CharsPerToken) =>
+        (int)((chars + charsPerToken - 1) / charsPerToken);
 }
 
 /// <summary>Message roles.</summary>

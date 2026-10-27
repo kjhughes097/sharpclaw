@@ -88,6 +88,21 @@ public sealed class ToolsOptions
     public int MaxExchangesPerReply { get; set; } = 50;
 }
 
+public sealed class ContextOptions
+{
+    public const string Section = "Context";
+
+    public int DefaultWindowTokens { get; set; } = ContextDefaults.DefaultWindowTokens;
+
+    /// <summary>Kept free for the model's reply.</summary>
+    public int ReplyReserveTokens { get; set; } = 2000;
+
+    public int CharsPerToken { get; set; } = ContextDefaults.CharsPerToken;
+    public int MessageOverheadTokens { get; set; } = 4;
+
+    public int WindowFor(int? agentWindow) => agentWindow ?? DefaultWindowTokens;
+}
+
 public sealed class ChatOptions
 {
     public const string Section = "Chat";

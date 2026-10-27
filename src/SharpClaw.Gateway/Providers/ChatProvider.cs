@@ -38,7 +38,8 @@ public abstract record ChatStreamEvent
     public sealed record Done(string FinishReason) : ChatStreamEvent;
 }
 
-public enum ProviderErrorKind { Upstream, Timeout, Cancelled }
+/// <summary><c>ContextLength</c>: the provider said the prompt exceeds the model's context window.</summary>
+public enum ProviderErrorKind { Upstream, Timeout, Cancelled, ContextLength }
 
 public sealed class ProviderException : Exception
 {

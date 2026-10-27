@@ -24,6 +24,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("id");
 
+                    b.Property<int?>("ContextWindowTokens")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("context_window_tokens");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("created_at");
@@ -186,6 +190,14 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("agent_id");
 
+                    b.Property<int>("ContextDroppedTurns")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("context_dropped_turns");
+
+                    b.Property<int>("ContextEstimatedTokens")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("context_estimated_tokens");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("created_at");
@@ -257,6 +269,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.Property<string>("ErrorDetail")
                         .HasColumnType("TEXT")
                         .HasColumnName("error_detail");
+
+                    b.Property<int?>("EstimatedPromptTokens")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("estimated_prompt_tokens");
 
                     b.Property<int>("LatencyMs")
                         .HasColumnType("INTEGER")

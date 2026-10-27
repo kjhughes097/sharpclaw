@@ -15,7 +15,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 
 | Item | Notes |
 |---|---|
-| Full thread history sent on every LLM call | No truncation/summarisation; very long threads will eventually fail with a provider error. |
 | No provider retries | A transient provider failure fails the message. |
 | Budget overshoot possible | Concurrent or in-flight calls aren't counted; cancelled calls may incur unrecorded upstream cost. |
 | Single gateway process, single SQLite file | No high availability. |

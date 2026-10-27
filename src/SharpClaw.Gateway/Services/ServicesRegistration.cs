@@ -16,6 +16,7 @@ public static partial class GatewayServices
         builder.Services.AddSingleton<ApprovalSignal>();
         builder.Services.AddSingleton<ApprovalDecisions>();
         builder.Services.TryAddSingleton<IApprovalNotifier, NoApprovalNotifier>();
+        builder.Services.TryAddSingleton<IContextSummariser, NoSummariser>();
         builder.Services.AddSingleton<ApprovalExpirySweeper>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ApprovalExpirySweeper>());
     }
