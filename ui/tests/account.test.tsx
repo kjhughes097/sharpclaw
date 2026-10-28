@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, within, waitFor } from '@testing-library/react';
 import { axe } from 'jest-axe';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
@@ -11,10 +11,12 @@ describe('account page', () => {
   it('shows the user, session expiry and system info', async () => {
     const { container } = renderApp('/account');
     expect(await screen.findByRole('heading', { level: 1, name: 'Account' })).toBeInTheDocument();
-    expect(screen.getByText('kevin')).toBeInTheDocument();
+    // The header shows the user and version too; check the page itself.
+    const main = within(screen.getByRole('main'));
+    expect(main.getByText('kevin')).toBeInTheDocument();
     expect(screen.getByText('Session expires').nextElementSibling?.textContent).toMatch(/2026/);
-    expect(await screen.findByText('abc1234')).toBeInTheDocument();
-    expect(screen.getByText('Fake')).toBeInTheDocument();
+    expect(await main.findByText('abc1234')).toBeInTheDocument();
+    expect(main.getByText('Fake')).toBeInTheDocument();
     expect(screen.getByText('Server time').nextElementSibling?.textContent).toMatch(/2026/);
     expect(screen.getByText("You're connected over plain HTTP on your local network.")).toBeInTheDocument();
     expect(screen.getByLabelText('Current password')).toHaveAttribute('autocomplete', 'current-password');

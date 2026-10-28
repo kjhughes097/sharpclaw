@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+  '/api/activity': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['listActivity'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/agents': {
     parameters: {
       query?: never;
@@ -196,6 +212,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/credits': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['getCredits'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/events': {
     parameters: {
       query?: never;
@@ -310,6 +342,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['getUsage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/users': {
     parameters: {
       query?: never;
@@ -362,6 +410,27 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    ActivityItemDto: {
+      /** Format: uuid */
+      agentId: string;
+      agentName: string;
+      /** Format: date-time */
+      createdAt: string;
+      from: string;
+      /** Format: uuid */
+      messageId: string;
+      preview: string;
+      role: string;
+      status: string;
+      /** Format: uuid */
+      threadId: string;
+      threadTitle: null | string;
+      to: string;
+    };
+    ActivityResponse: {
+      items: components['schemas']['ActivityItemDto'][];
+      nextCursor?: null | string;
+    };
     AgentDto: {
       /** Format: int32 */
       contextWindowTokens?: null | number;
@@ -453,6 +522,7 @@ export interface components {
     };
     CreateThreadRequest: {
       agentId: string;
+      model?: null | string;
       title: null | string;
     };
     CreateTokenRequest: {
@@ -475,6 +545,21 @@ export interface components {
     };
     CreatedUserResponse: {
       user: components['schemas']['UserAdminDto'];
+    };
+    CreditsResponse: {
+      /** Format: date-time */
+      asOf: null | string;
+      /** Format: date-time */
+      lastAttemptAt: null | string;
+      /** Format: double */
+      lowThresholdUsd: number;
+      /** Format: double */
+      remainingUsd: null | number;
+      status: string;
+      /** Format: double */
+      totalCreditsUsd: null | number;
+      /** Format: double */
+      totalUsageUsd: null | number;
     };
     DecideApprovalRequest: {
       decision: string;
@@ -538,6 +623,7 @@ export interface components {
       /** @default message */
       kind: string;
       role: string;
+      sentByUser?: null | string;
       /**
        * Format: int32
        * @default 0
@@ -600,6 +686,7 @@ export interface components {
     SystemInfoResponse: {
       /** Format: date-time */
       budgetResetAtUtc: string;
+      models: string[];
       provider: string;
       /** Format: date-time */
       utcNow: string;
@@ -633,6 +720,7 @@ export interface components {
       id: string;
       /** Format: date-time */
       lastMessageAt?: null | string;
+      model?: null | string;
       title: null | string;
     };
     ThreadListResponse: {
@@ -654,6 +742,7 @@ export interface components {
       inFlight: boolean;
       /** Format: date-time */
       lastMessageAt: string;
+      model?: null | string;
       /** Format: int32 */
       pendingApprovals: number;
       preview: null | string;
@@ -767,6 +856,8 @@ export interface components {
       durationMs: null | number;
       /** Format: uuid */
       id: string;
+      /** Format: uuid */
+      llmCallId?: null | string;
       outcome: string;
       /** Format: date-time */
       reportedAt: null | string;
@@ -814,10 +905,72 @@ export interface components {
     };
     UpdateThreadRequest: {
       archived: null | boolean;
+      model?: null | string;
       title: null | string;
     };
     UpdateUserRequest: {
       disabled: null | boolean;
+    };
+    UsageBucketDto: {
+      /** Format: int32 */
+      calls: number;
+      /** Format: int64 */
+      completionTokens: number;
+      /** Format: double */
+      costUsd: number;
+      /** Format: int64 */
+      promptTokens: number;
+      /** Format: date-time */
+      start: string;
+    };
+    UsageByAgentDto: {
+      /** Format: uuid */
+      agentId: string;
+      agentName: string;
+      /** Format: int32 */
+      calls: number;
+      /** Format: int64 */
+      completionTokens: number;
+      /** Format: double */
+      costUsd: number;
+      /** Format: int64 */
+      promptTokens: number;
+    };
+    UsageByModelDto: {
+      /** Format: int32 */
+      calls: number;
+      /** Format: int64 */
+      completionTokens: number;
+      /** Format: double */
+      costUsd: number;
+      model: string;
+      /** Format: int64 */
+      promptTokens: number;
+    };
+    UsageResponse: {
+      /** Format: int32 */
+      bucketSeconds: number;
+      buckets: components['schemas']['UsageBucketDto'][];
+      byAgent: components['schemas']['UsageByAgentDto'][];
+      byModel: components['schemas']['UsageByModelDto'][];
+      /** Format: date-time */
+      from: string;
+      range: string;
+      /** Format: date-time */
+      to: string;
+      totals: components['schemas']['UsageTotalsDto'];
+    };
+    UsageTotalsDto: {
+      /** Format: int32 */
+      calls: number;
+      /** Format: int64 */
+      completionTokens: number;
+      /** Format: double */
+      costUsd: number;
+      /** Format: int64 */
+      promptTokens: number;
+      /** Format: int32 */
+      unknownUsageCalls: number;
     };
     UserAdminDto: {
       /** Format: date-time */
@@ -844,6 +997,84 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  listActivity: {
+    parameters: {
+      query?: {
+        agent?: string;
+        limit?: number;
+        before?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ActivityResponse'];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+    };
+  };
   listAgents: {
     parameters: {
       query?: never;
@@ -2088,6 +2319,80 @@ export interface operations {
       };
     };
   };
+  getCredits: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['CreditsResponse'];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+    };
+  };
   streamEvents: {
     parameters: {
       query?: never;
@@ -2805,6 +3110,83 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TraceResponse'];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+    };
+  };
+  getUsage: {
+    parameters: {
+      query?: {
+        range?: string;
+        agent?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UsageResponse'];
         };
       };
       /** @description Bad Request */

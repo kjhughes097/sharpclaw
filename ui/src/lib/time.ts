@@ -118,3 +118,32 @@ export function formatTokens(n: number): string {
   if (n < 1000) return `${n}`;
   return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
 }
+
+/** Dashboard money (3.3.1): "$0.00", with anything above zero but under a cent shown as "<$0.01". */
+export function formatMoney(usd: number | null | undefined): string {
+  if (usd === null || usd === undefined) return '—';
+  if (usd > 0 && usd < 0.01) return '<$0.01';
+  return `$${usd.toFixed(2)}`;
+}
+
+/** Whole numbers with thousands separators ("4,092"). */
+export function formatCount(n: number): string {
+  return new Intl.NumberFormat(locale()).format(n);
+}
+
+/** A chart bucket in local time: "27 Sep" for daily buckets, "26 Oct 13:00" otherwise. */
+export function formatBucket(iso: string, bucketSeconds: number): string {
+  const date = new Date(iso);
+  const day = new Intl.DateTimeFormat(locale(), { day: 'numeric', month: 'short' }).format(date);
+  return bucketSeconds >= 86_400 ? day : `${day} ${formatClock(date)}`;
+}
+
+/** "16:30:41": a message's local time of day. */
+export function formatTimeOfDay(iso: string): string {
+  return new Intl.DateTimeFormat(locale(), {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(new Date(iso));
+}

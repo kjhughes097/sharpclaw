@@ -54,6 +54,7 @@ public class TraceTests
         Assert.Equal(LlmCallStatus.Ok, call.Status);
         var tool = Assert.Single(turn.ToolCalls);
         Assert.Equal("call_1", tool.ToolCallId);
+        Assert.Equal(llmId, tool.LlmCallId);
         Assert.Equal(ToolCallStatuses.Succeeded, tool.Outcome);
         Assert.Equal(ToolDecisions.Approved, tool.Decision);
         var approval = Assert.Single(turn.Approvals);

@@ -40,6 +40,13 @@ public sealed class ClientAuthFilter(ClientAuthMode mode) : IEndpointFilter
 
     public static ClientPrincipal? Principal(HttpContext http) => http.Items[Key] as ClientPrincipal;
 
+    /// <summary>
+    /// Who is acting, for audit columns (<c>approvals.decided_by_user</c>, <c>messages.sent_by_user</c>):
+    /// the signed-in user's name, or <c>admin_key</c> for an admin-key client.
+    /// </summary>
+    public static string ActorName(HttpContext http) =>
+        Principal(http)?.Session?.User?.Name ?? ClientAuthMethods.AdminKey;
+
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var http = context.HttpContext;

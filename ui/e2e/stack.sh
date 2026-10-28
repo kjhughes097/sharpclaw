@@ -64,7 +64,7 @@ GATEWAY_DLL="$ROOT/src/SharpClaw.Gateway/bin/Release/net10.0/SharpClaw.Gateway.d
   Auth__AdminKey="$ADMIN_KEY" Provider__Type=Fake Fake__ScriptPath="$STATE/script.json" \
   Database__Path="$STATE/sharpclaw.db" Listeners__ClientPort="$CLIENT_PORT" Listeners__AgentPort="$AGENT_PORT" \
   Ui__RootPath="$ROOT/ui/dist" Approvals__TimeoutSeconds="${E2E_APPROVAL_TIMEOUT:-25}" Approvals__SweepIntervalSeconds=1 \
-  Context__ReplyReserveTokens=100 Logging__LogLevel__Default=Warning \
+  Context__ReplyReserveTokens=100 Models__Allowed__0=fake/other Logging__LogLevel__Default=Warning \
     exec dotnet "$GATEWAY_DLL" >"$STATE/gateway.log" 2>&1
 ) &
 echo $! >"$STATE/gateway.pid"

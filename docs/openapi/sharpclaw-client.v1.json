@@ -1,6 +1,84 @@
 {
   "components": {
     "schemas": {
+      "ActivityItemDto": {
+        "properties": {
+          "agentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "threadId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "threadTitle": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "messageId",
+          "threadId",
+          "threadTitle",
+          "agentId",
+          "agentName",
+          "role",
+          "from",
+          "to",
+          "status",
+          "createdAt",
+          "preview"
+        ],
+        "type": "object"
+      },
+      "ActivityResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "AgentDto": {
         "properties": {
           "contextWindowTokens": {
@@ -326,6 +404,12 @@
           "agentId": {
             "type": "string"
           },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "title": {
             "type": [
               "null",
@@ -414,6 +498,62 @@
         },
         "required": [
           "user"
+        ],
+        "type": "object"
+      },
+      "CreditsResponse": {
+        "properties": {
+          "asOf": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastAttemptAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lowThresholdUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "remainingUsd": {
+            "format": "double",
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalCreditsUsd": {
+            "format": "double",
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          "totalUsageUsd": {
+            "format": "double",
+            "type": [
+              "null",
+              "number"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "remainingUsd",
+          "totalCreditsUsd",
+          "totalUsageUsd",
+          "asOf",
+          "lastAttemptAt",
+          "lowThresholdUsd"
         ],
         "type": "object"
       },
@@ -612,6 +752,12 @@
           },
           "role": {
             "type": "string"
+          },
+          "sentByUser": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "seq": {
             "default": 0,
@@ -826,6 +972,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "provider": {
             "type": "string"
           },
@@ -841,7 +993,8 @@
           "version",
           "provider",
           "utcNow",
-          "budgetResetAtUtc"
+          "budgetResetAtUtc",
+          "models"
         ],
         "type": "object"
       },
@@ -940,6 +1093,12 @@
               "string"
             ]
           },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "title": {
             "type": [
               "null",
@@ -1012,6 +1171,12 @@
           "lastMessageAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "pendingApprovals": {
             "format": "int32",
@@ -1432,6 +1597,13 @@
             "format": "uuid",
             "type": "string"
           },
+          "llmCallId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "outcome": {
             "type": "string"
           },
@@ -1619,6 +1791,12 @@
               "boolean"
             ]
           },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "title": {
             "type": [
               "null",
@@ -1643,6 +1821,188 @@
         },
         "required": [
           "disabled"
+        ],
+        "type": "object"
+      },
+      "UsageBucketDto": {
+        "properties": {
+          "calls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "completionTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "costUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "promptTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "calls",
+          "promptTokens",
+          "completionTokens",
+          "costUsd"
+        ],
+        "type": "object"
+      },
+      "UsageByAgentDto": {
+        "properties": {
+          "agentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "calls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "completionTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "costUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "promptTokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "agentName",
+          "calls",
+          "promptTokens",
+          "completionTokens",
+          "costUsd"
+        ],
+        "type": "object"
+      },
+      "UsageByModelDto": {
+        "properties": {
+          "calls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "completionTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "costUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
+          "promptTokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "calls",
+          "promptTokens",
+          "completionTokens",
+          "costUsd"
+        ],
+        "type": "object"
+      },
+      "UsageResponse": {
+        "properties": {
+          "bucketSeconds": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/UsageBucketDto"
+            },
+            "type": "array"
+          },
+          "byAgent": {
+            "items": {
+              "$ref": "#/components/schemas/UsageByAgentDto"
+            },
+            "type": "array"
+          },
+          "byModel": {
+            "items": {
+              "$ref": "#/components/schemas/UsageByModelDto"
+            },
+            "type": "array"
+          },
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/UsageTotalsDto"
+          }
+        },
+        "required": [
+          "range",
+          "from",
+          "to",
+          "bucketSeconds",
+          "buckets",
+          "byModel",
+          "byAgent",
+          "totals"
+        ],
+        "type": "object"
+      },
+      "UsageTotalsDto": {
+        "properties": {
+          "calls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "completionTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "costUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "promptTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unknownUsageCalls": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calls",
+          "promptTokens",
+          "completionTokens",
+          "costUsd",
+          "unknownUsageCalls"
         ],
         "type": "object"
       },
@@ -1729,6 +2089,110 @@
   },
   "openapi": "3.1.1",
   "paths": {
+    "/api/activity": {
+      "get": {
+        "operationId": "listActivity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "tags": [
+          "activity"
+        ]
+      }
+    },
     "/api/agents": {
       "get": {
         "operationId": "listAgents",
@@ -3285,6 +3749,86 @@
         ]
       }
     },
+    "/api/credits": {
+      "get": {
+        "operationId": "getCredits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "tags": [
+          "credits"
+        ]
+      }
+    },
     "/api/events": {
       "get": {
         "description": "A text/event-stream of SharpClaw events. Event names and payloads are listed in docs/ui.md.",
@@ -4265,6 +4809,102 @@
         ]
       }
     },
+    "/api/usage": {
+      "get": {
+        "operationId": "getUsage",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "tags": [
+          "usage"
+        ]
+      }
+    },
     "/api/users": {
       "get": {
         "operationId": "listUsers",
@@ -4678,6 +5318,15 @@
     },
     {
       "name": "system"
+    },
+    {
+      "name": "usage"
+    },
+    {
+      "name": "activity"
+    },
+    {
+      "name": "credits"
     },
     {
       "name": "audit"

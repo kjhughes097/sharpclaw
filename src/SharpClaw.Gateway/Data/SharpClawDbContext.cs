@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using SharpClaw.Gateway.Configuration;
 
 namespace SharpClaw.Gateway.Data;
 
@@ -66,6 +67,7 @@ public class SharpClawDbContext : DbContext
             e.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentId);
             e.HasIndex(x => x.AgentId);
             e.HasIndex(x => new { x.Archived, x.LastMessageAt });
+            e.Property(x => x.Model).HasMaxLength(ModelsOptions.MaxModelIdChars);
         });
 
         b.Entity<Message>(e =>
@@ -75,6 +77,9 @@ public class SharpClawDbContext : DbContext
             e.HasIndex(x => new { x.AgentId, x.Role, x.Status, x.CreatedAt });
             e.HasIndex(x => new { x.ThreadId, x.Seq }).IsUnique();
             e.Property(x => x.Kind).HasDefaultValue("message");
+            e.Property(x => x.SentByUser).HasMaxLength(100);
+            // GET /api/activity: newest conversational rows across all threads.
+            e.HasIndex(x => new { x.Kind, x.CreatedAt });
             // One final assistant reply per user message; tool_request rows share the correlation id.
             e.HasIndex(x => x.CorrelationId)
                 .IsUnique()
@@ -88,6 +93,8 @@ public class SharpClawDbContext : DbContext
             e.Property(x => x.Purpose).HasDefaultValue("chat");
             e.HasIndex(x => new { x.AgentId, x.CreatedAt });
             e.HasIndex(x => x.CorrelationId);
+            // The all-agent usage window (GET /api/usage without an agent filter).
+            e.HasIndex(x => x.CreatedAt);
         });
 
         b.Entity<ToolCallRecord>(e =>

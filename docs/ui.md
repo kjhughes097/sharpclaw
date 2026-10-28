@@ -5,6 +5,39 @@ The web UI (Phase 3.3, [spec](sharpclaw-3.3-implementation-spec.md)) is a React 
 extra container). The gateway is still the only trust boundary: the UI holds no secrets and talks
 only to `/api/*` on its own origin.
 
+## Shell and tabs (3.3.1)
+
+The [3.3.1 spec](sharpclaw-3.3.1-ui-redesign-spec.md) replaced the sidebar with a header and a tab
+bar (`components/AppShell.tsx`, `components/TabBar.tsx`). Every tab is a link:
+
+| Route | Tab | Code |
+|---|---|---|
+| `/overview` (and `/`) | Overview | `features/overview/` |
+| `/prompts`, `/prompts/:threadId` | Prompts | `features/prompts/` (reuses `features/chat/` for the thread) |
+| `/agents/:name` | one per agent: enabled agents alphabetically, six inline, the rest and disabled ones in "More" | `features/agents/AgentTabPage.tsx` |
+| `/approvals`, `/audit`, `/agents` | Approvals (pending badge), Audit, Agents (admin table) | unchanged features |
+| `/account` | header menu, no tab | `features/account/` |
+
+`/chats` and `/chats/:threadId` redirect to `/prompts…` for old bookmarks.
+
+- **Theme:** dark by default (the mockups' palette), light under `prefers-color-scheme: light`.
+  Tokens live in `styles/index.css`; components use them (`bg-surface`, `text-assistant`,
+  `fill-chart-in`…), never raw colours.
+- **Charts** (`features/overview/charts.tsx`) are plain SVG with sizes in attributes and colours from
+  classes, never inline `style` attributes (CSP). Each has an `aria-label` summary and a visually
+  hidden table of its buckets; hover shows a tooltip.
+- **Overview live updates:** `useLiveActivity` subscribes to the event stream itself and, debounced
+  to 1 s, invalidates `activity` (and `usage` on `message.completed`/`error`) queries. "pause" stops
+  that and counts the events instead; "resume" refetches. Usage also polls every 60 s, credits every
+  10 minutes.
+- **Prompts:** the agent picker falls back to `?agent`, the open thread's agent, the last agent
+  picked (`lib/prefs.ts`), then the first enabled agent. The model picker lists the agent's model
+  and `GET /api/system`'s `models`; on an open thread it `PATCH`es `model`, otherwise it applies to
+  the next new session. It is hidden when `Models:Allowed` is empty. The status bar sums the
+  thread's trace totals.
+- **Tool rows** pair each tool call with its model round through the trace's `llmCallId`, and match
+  a turn's approvals by tool name (approvals carry no tool-call id).
+
 ## Setup
 
 Node 24 LTS (pinned in `ui/.nvmrc` and the Docker build stage), npm with the committed lockfile.
@@ -84,7 +117,7 @@ global stream's `ready`/`reset`).
 | `ready` | id = replay baseline | `threadId` |
 | `reset` | no | `reason`, `threadId` |
 | `thread.created` | yes | `threadId`, `agentId` |
-| `thread.updated` | yes | `threadId`, `title`, `archived` |
+| `thread.updated` | yes | `threadId`, `title`, `archived`, `model` (override or null) |
 | `message.created` | yes | `messageId`, `threadId`, `correlationId` |
 | `delta` | no | `correlationId`, `content`, `threadId` |
 | `snapshot` | no | `correlationId`, `content` (all text so far), `threadId` |
@@ -118,7 +151,8 @@ tool results are always plain text. Messages over 200,000 characters render as p
 `crypto.randomUUID()`, service workers or notifications. Copy buttons use a selected textarea and
 `document.execCommand('copy')`, and values are always shown selectable; client ids come from
 `src/lib/ids.ts`. ESLint forbids `navigator.clipboard`, `crypto.randomUUID`, `sessionStorage`,
-`localStorage` outside `src/lib/prefs.ts` (one non-sensitive preference) and
+`localStorage` outside `src/lib/prefs.ts` (non-sensitive preferences only: tool-details expansion
+and the last agent picked) and
 `dangerouslySetInnerHTML`; the unit tests run with the first two undefined.
 
 **Tokens.** A new agent token is shown once in a dialog that needs an explicit "I've saved it";
@@ -136,7 +170,9 @@ it lives only in that dialog's state (mutations are removed from the cache when 
   `sudo npx playwright install-deps webkit`. CI runs the Chromium project on every pull request.
   Specs: `chat.spec.ts` (streaming, reload and offline recovery, markdown safety, banners),
   `tools.spec.ts` (approve/deny/critical confirmation/expiry, agents and tokens, audit and trace),
-  `account.spec.ts` (password change and sign-out). Wait on locators, responses or page state,
+  `account.spec.ts` (password change and sign-out), `overview.spec.ts` (a message sent elsewhere
+  shows on the agent card and today's total without a reload). The stack allows one extra model,
+  `fake/other`, for the model-override test in `chat.spec.ts`. Wait on locators, responses or page state,
   never fixed timeouts.
 
 ## Code layout notes

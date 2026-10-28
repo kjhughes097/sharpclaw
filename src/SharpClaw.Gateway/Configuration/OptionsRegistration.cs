@@ -37,6 +37,8 @@ public static class OptionsRegistration
         Add<ContextOptions, ContextOptionsValidator>(builder, ContextOptions.Section)
             .Validate(o => o.ReplyReserveTokens < o.DefaultWindowTokens,
                 "Context:ReplyReserveTokens must be smaller than Context:DefaultWindowTokens.");
+        Add<ModelsOptions, ModelsOptionsValidator>(builder, ModelsOptions.Section);
+        Add<CreditsOptions, CreditsOptionsValidator>(builder, CreditsOptions.Section);
         builder.Services.AddOptions<UiOptions>().Bind(builder.Configuration.GetSection(UiOptions.Section));
         return builder;
     }
@@ -71,3 +73,11 @@ public static class OptionsRegistration
 [OptionsValidator] public sealed partial class EventsOptionsValidator : IValidateOptions<EventsOptions>;
 [OptionsValidator] public sealed partial class ToolsOptionsValidator : IValidateOptions<ToolsOptions>;
 [OptionsValidator] public sealed partial class ContextOptionsValidator : IValidateOptions<ContextOptions>;
+[OptionsValidator] public sealed partial class CreditsOptionsValidator : IValidateOptions<CreditsOptions>;
+
+/// <summary>Hand-written: the rules are about the list as a whole, which DataAnnotations can't express.</summary>
+public sealed class ModelsOptionsValidator : IValidateOptions<ModelsOptions>
+{
+    public ValidateOptionsResult Validate(string? name, ModelsOptions options) =>
+        options.Problem() is { } problem ? ValidateOptionsResult.Fail(problem) : ValidateOptionsResult.Success;
+}

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
+using SharpClaw.Gateway.Auth;
 using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Infrastructure;
@@ -37,12 +38,16 @@ public static class ThreadsEndpoints
 
     private static async Task<IResult> CreateThread(
         CreateThreadRequest? body, SharpClawDbContext db, TimeProvider time, IOptions<ContextOptions> context,
-        IEventPublisher events, CancellationToken ct)
+        IOptions<ModelsOptions> models, IEventPublisher events, CancellationToken ct)
     {
         if (body is null || string.IsNullOrWhiteSpace(body.AgentId))
             return ApiResults.ValidationFailed("agentId is required.");
         if (body.Title is not null && TitleError(body.Title) is { } titleError)
             return ApiResults.ValidationFailed(titleError);
+        // "" means the agent's model, as on PATCH.
+        var model = string.IsNullOrEmpty(body.Model) ? null : body.Model;
+        if (model is not null && ModelOverride.Validate(model, models.Value.Allowed) is { } modelError)
+            return ApiResults.ValidationFailed(modelError);
 
         var agent = await AgentQueries.ResolveAsync(db, body.AgentId, ct);
         if (agent is null)
@@ -56,6 +61,7 @@ public static class ThreadsEndpoints
             Title = body.Title?.Trim(),
             CreatedAt = now,
             LastMessageAt = now,
+            Model = model,
         };
         await events.WriteAsync(db, batch =>
         {
@@ -69,7 +75,8 @@ public static class ThreadsEndpoints
     }
 
     private static ThreadDto ToDto(ConversationThread t, int windowTokens) => new(t.Id, t.AgentId, t.Title, t.CreatedAt,
-        new ThreadContextDto(t.ContextDroppedTurns, t.ContextEstimatedTokens, windowTokens), t.Archived, t.LastMessageAt);
+        new ThreadContextDto(t.ContextDroppedTurns, t.ContextEstimatedTokens, windowTokens), t.Archived, t.LastMessageAt,
+        t.Model);
 
     private static string? TitleError(string title)
     {
@@ -126,7 +133,8 @@ public static class ThreadsEndpoints
             p.Thread.LastMessageAt, p.Thread.LastPreview,
             approvals.GetValueOrDefault(p.Thread.Id),
             userStates.Any(s => s.ThreadId == p.Thread.Id && s.Status == MessageStatus.Claimed),
-            userStates.Where(s => s.ThreadId == p.Thread.Id && s.Status == MessageStatus.Pending).Sum(s => s.Count)))
+            userStates.Where(s => s.ThreadId == p.Thread.Id && s.Status == MessageStatus.Pending).Sum(s => s.Count),
+            p.Thread.Model))
             .ToList();
         var next = hasMore && page.Count > 0
             ? new PageCursor(page[^1].Thread.LastMessageAt, page[^1].Thread.Id).Encode()
@@ -166,25 +174,28 @@ public static class ThreadsEndpoints
 
     private static async Task<IResult> PatchThread(
         Guid id, UpdateThreadRequest? body, SharpClawDbContext db, IOptions<ContextOptions> context,
-        IEventPublisher events, CancellationToken ct)
+        IOptions<ModelsOptions> models, IEventPublisher events, CancellationToken ct)
     {
         var thread = await db.Threads.Include(t => t.Agent).FirstOrDefaultAsync(t => t.Id == id, ct);
         if (thread?.Agent is null)
             return ApiResults.NotFound("Thread not found.");
-        if (body is null || (body.Title is null && body.Archived is null))
-            return ApiResults.ValidationFailed("title or archived is required.");
+        if (body is null || (body.Title is null && body.Archived is null && body.Model is null))
+            return ApiResults.ValidationFailed("title, archived or model is required.");
+        if (body.Title is not null && TitleError(body.Title) is { } titleError)
+            return ApiResults.ValidationFailed(titleError);
+        if (!string.IsNullOrEmpty(body.Model) && ModelOverride.Validate(body.Model, models.Value.Allowed) is { } modelError)
+            return ApiResults.ValidationFailed(modelError);
+
         if (body.Title is not null)
-        {
-            if (TitleError(body.Title) is { } titleError)
-                return ApiResults.ValidationFailed(titleError);
             thread.Title = body.Title.Trim();
-        }
         if (body.Archived is { } archived)
             thread.Archived = archived;
+        if (body.Model is not null)
+            thread.Model = body.Model.Length == 0 ? null : body.Model;
 
         await events.WriteAsync(db, batch =>
         {
-            batch.Add(thread.Id, SseEventNames.ThreadUpdated, new ThreadUpdatedEvent(thread.Id, thread.Title, thread.Archived));
+            batch.Add(thread.Id, SseEventNames.ThreadUpdated, new ThreadUpdatedEvent(thread.Id, thread.Title, thread.Archived, thread.Model));
             return Task.FromResult(true);
         }, ct);
         return Results.Json(new ThreadResponse(ToDto(thread, context.Value.WindowFor(thread.Agent.ContextWindowTokens))),
@@ -208,14 +219,15 @@ public static class ThreadsEndpoints
     }
 
     private static async Task<IResult> PostMessage(
-        Guid id, PostMessageRequest? body, MessageTurns turns, IOptions<MessagesOptions> messages, CancellationToken ct)
+        Guid id, PostMessageRequest? body, HttpContext http, MessageTurns turns, IOptions<MessagesOptions> messages,
+        CancellationToken ct)
     {
         if (body is null || string.IsNullOrEmpty(body.Content))
             return ApiResults.ValidationFailed("content is required.");
         if (body.Content.Length > messages.Value.MaxContentChars)
             return ApiResults.ValidationFailed($"content exceeds {messages.Value.MaxContentChars} characters.");
 
-        var message = await turns.PostAsync(id, body.Content, body.Unattended, ct);
+        var message = await turns.PostAsync(id, body.Content, body.Unattended, ct, ClientAuthFilter.ActorName(http));
         if (message is null)
             return ApiResults.NotFound("Thread not found.");
 

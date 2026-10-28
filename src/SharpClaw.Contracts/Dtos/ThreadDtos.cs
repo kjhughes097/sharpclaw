@@ -2,11 +2,13 @@ namespace SharpClaw.Contracts;
 
 // ----- Threads -----
 
-public sealed record CreateThreadRequest(string AgentId, string? Title);
+/// <summary><c>Model</c>: optional override, one of <c>Models:Allowed</c> from <c>GET /api/system</c>.</summary>
+public sealed record CreateThreadRequest(string AgentId, string? Title, string? Model = null);
 
 /// <summary>
 /// <c>Context</c>: how the thread fit the model's window the last time the agent built its context.
 /// <c>DroppedTurns</c> &gt; 0 means older messages are no longer seen by the model.
+/// <c>Model</c>: the thread's model override; null means the agent's model.
 /// </summary>
 public sealed record ThreadDto(
     Guid Id,
@@ -15,7 +17,8 @@ public sealed record ThreadDto(
     DateTime CreatedAt,
     ThreadContextDto? Context = null,
     bool Archived = false,
-    DateTime? LastMessageAt = null);
+    DateTime? LastMessageAt = null,
+    string? Model = null);
 
 public sealed record ThreadContextDto(int DroppedTurns, int EstimatedTokens, int WindowTokens);
 
@@ -36,13 +39,17 @@ public sealed record ThreadSummaryDto(
     string? Preview,
     int PendingApprovals,
     bool InFlight,
-    int Queued);
+    int Queued,
+    string? Model = null);
 
 /// <summary>Newest <c>LastMessageAt</c> first. <c>NextCursor</c> is opaque; null on the last page.</summary>
 public sealed record ThreadListResponse(IReadOnlyList<ThreadSummaryDto> Threads, string? NextCursor = null);
 
-/// <summary>Both fields optional; <c>Title</c> is trimmed and must be 1 to 120 characters.</summary>
-public sealed record UpdateThreadRequest(string? Title, bool? Archived);
+/// <summary>
+/// Every field optional. <c>Title</c> is trimmed and must be 1 to 120 characters. <c>Model</c>: null
+/// leaves it unchanged, <c>""</c> clears the override, anything else must be in <c>Models:Allowed</c>.
+/// </summary>
+public sealed record UpdateThreadRequest(string? Title, bool? Archived, string? Model = null);
 
 public sealed record ThreadResponse(ThreadDto Thread);
 

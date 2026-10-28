@@ -207,7 +207,7 @@ public static class ApprovalEndpoints
 
         await ExpireIfDueAsync(db, decisions, approval, time.GetUtcNow().UtcDateTime, ct);
         if (approval.Status != ApprovalStatuses.Pending ||
-            !await decisions.TryDecideAsync(db, approval, body.Decision, ApprovalDecidedBy.User, ct, DeciderName(http)))
+            !await decisions.TryDecideAsync(db, approval, body.Decision, ApprovalDecidedBy.User, ct, ClientAuthFilter.ActorName(http)))
         {
             var current = await db.Approvals.AsNoTracking().Where(a => a.Id == id).Select(a => a.Status).FirstAsync(ct);
             return ApiResults.Conflict($"Approval is already {current}.");
@@ -215,10 +215,6 @@ public static class ApprovalEndpoints
 
         return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options);
     }
-
-    /// <summary>Who is deciding: the signed-in user's name, or <c>admin_key</c> for an admin-key client.</summary>
-    private static string DeciderName(HttpContext http) =>
-        ClientAuthFilter.Principal(http)?.Session?.User?.Name ?? ApprovalDecidedBy.AdminKeyUser;
 
     /// <summary>Backup for the sweeper: an overdue approval is expired when it is read.</summary>
     private static async Task ExpireIfDueAsync(

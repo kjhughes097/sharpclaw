@@ -89,7 +89,7 @@ export function Composer({
           value={text}
           onChange={(e) => update(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Message the agent"
+          placeholder="Message the agent (Enter sends, Shift+Enter newline; markdown supported)"
           aria-describedby={nearLimit ? `composer-count-${threadId}` : undefined}
           className="max-h-60 min-h-11 flex-1 resize-none rounded-md border border-border bg-surface px-3 py-2 text-base"
         />

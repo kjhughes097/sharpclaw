@@ -19,4 +19,11 @@ export const keys = {
   audit: ['audit'] as const,
   auditList: (tab: 'llm' | 'tools', filters: Record<string, string | undefined>) =>
     ['audit', tab, filters] as const,
+  /** Prefix of every usage query (completed turns invalidate them all). */
+  usage: ['usage'] as const,
+  usageFor: (range: string, agent: string | null) => ['usage', range, agent] as const,
+  /** Prefix of every activity query. */
+  activity: ['activity'] as const,
+  activityFor: (agent: string | null, limit: number) => ['activity', agent, limit] as const,
+  credits: ['credits'] as const,
 };

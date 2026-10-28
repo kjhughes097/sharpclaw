@@ -24,7 +24,8 @@ public sealed record MessageDto(
     bool? ToolOk = null,
     bool Untrusted = false,
     bool Truncated = false,
-    string? FailReason = null);
+    string? FailReason = null,
+    string? SentByUser = null);
 
 /// <summary><c>HasMoreBefore</c>: older rows exist before the first one returned.</summary>
 public sealed record MessageListResponse(IReadOnlyList<MessageDto> Messages, bool HasMoreBefore = false);

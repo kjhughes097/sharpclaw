@@ -94,7 +94,10 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 export function ThreadLink({ threadId }: { threadId: string }) {
   return (
-    <Link to={`/chats/${threadId}`} className="inline-flex min-h-11 items-center text-accent underline">
+    <Link
+      to={`/prompts/${threadId}?panel=trace`}
+      className="inline-flex min-h-11 items-center text-accent underline"
+    >
       <span className="sr-only">Thread </span>
       <code>{shortId(threadId)}</code>
     </Link>

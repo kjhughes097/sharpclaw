@@ -47,7 +47,7 @@ describe('approvals', () => {
     );
     expect(within(first).getByRole('link', { name: 'Open thread' })).toHaveAttribute(
       'href',
-      '/chats/thread-1',
+      '/prompts/thread-1',
     );
   });
 

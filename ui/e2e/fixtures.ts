@@ -42,18 +42,14 @@ export const test = base.extend<{ guard: void }>({
 
 export { expect };
 
-export async function login(page: Page, next = '/chats', user = USER, password = PASSWORD) {
+export async function login(page: Page, next = '/overview', user = USER, password = PASSWORD) {
   await page.goto(next);
   await page.getByLabel('Username').fill(user);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).not.toHaveURL(/\/login/);
-  await expect(
-    page
-      .getByText(/Live|Reconnecting/)
-      .filter({ visible: true })
-      .first(),
-  ).toBeVisible();
+  // The signed-in shell: the tab bar is up.
+  await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
 }
 
 export function admin(request: APIRequestContext) {
@@ -70,7 +66,7 @@ export async function openNewThread(page: Page, request: APIRequestContext, titl
   const res = await admin(request).post('/api/threads', { agentId: 'assistant', title });
   expect(res.ok()).toBeTruthy();
   const { thread } = (await res.json()) as { thread: { id: string } };
-  await page.goto(`/chats/${thread.id}`);
+  await page.goto(`/prompts/${thread.id}`);
   await expect(page.getByRole('textbox', { name: 'Message' })).toBeVisible();
   return thread.id;
 }
@@ -80,7 +76,7 @@ export async function send(page: Page, text: string) {
   await page.getByRole('button', { name: 'Send' }).click();
 }
 
-/** The message list (the thread list repeats previews, so scope text lookups here). */
+/** The message list (the sessions list repeats previews, so scope text lookups here). */
 export function messages(page: Page) {
   return page.getByTestId('message-scroll');
 }

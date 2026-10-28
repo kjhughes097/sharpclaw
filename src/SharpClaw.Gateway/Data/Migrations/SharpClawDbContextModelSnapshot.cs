@@ -223,6 +223,11 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("last_preview");
 
+                    b.Property<string>("Model")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("model");
+
                     b.Property<string>("Title")
                         .HasColumnType("TEXT")
                         .HasColumnName("title");
@@ -338,6 +343,8 @@ namespace SharpClaw.Gateway.Data.Migrations
 
                     b.HasIndex("CorrelationId");
 
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("AgentId", "CreatedAt");
 
                     b.ToTable("llm_calls", (string)null);
@@ -391,6 +398,11 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("role");
 
+                    b.Property<string>("SentByUser")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("sent_by_user");
+
                     b.Property<int>("Seq")
                         .HasColumnType("INTEGER")
                         .HasColumnName("seq");
@@ -433,6 +445,8 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.HasIndex("CorrelationId")
                         .IsUnique()
                         .HasFilter("role = 'assistant' AND kind = 'message'");
+
+                    b.HasIndex("Kind", "CreatedAt");
 
                     b.HasIndex("ThreadId", "Seq")
                         .IsUnique();

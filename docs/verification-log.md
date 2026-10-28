@@ -146,3 +146,27 @@ the client port with the exact CSP, reports the git sha from `GET /api/system`, 
 `sudo npx playwright install-deps webkit`); redeploying the running Compose stack and re-running
 `scripts/verify-isolation.sh` against it; and the section 16 walk-through from a phone on the LAN
 with a real OpenRouter session.
+
+## Phase 3.3.1 — tabbed UI redesign (2026-10-28)
+
+**Automated:** gateway 283, agent 80, CLI 25 tests pass; Release build 0 warnings. UI: 193 Vitest
+tests (shell and tabs, Overview charts/credits/live pause, Prompts model picker and status bar,
+agent tab, jest-axe on each tab), `lint`, `typecheck`, `check:api` and `build` pass; initial JS
+199.7 KB gzipped, `index.html` has no inline script or style.
+
+**End-to-end (Playwright, isolated fake-provider stack):** 22 tests pass on Chromium and the mobile
+viewport (Pixel 7, `@core`), each also asserting same-origin requests and no CSP violation.
+
+| Area | Checks |
+|---|---|
+| Shell | Login lands on the tabs; `/prompts` and agent-tab links; capitalised agent tabs don't clash with admin links |
+| Overview | A message posted through the API shows on the agent card (prompt and reply) and changes today's total without a reload; a row opens the thread in Prompts |
+| Prompts | Streaming, reload/offline recovery, markdown safety, banners and approvals as in 3.3; the context figure is in the status bar; switching the model to `fake/other` shows the toast and status bar, and the next reply's `llm_calls.model` is `fake/other` |
+| Agents | Create an agent (token shown once) from the admin table, open its tab, revoke a token |
+
+**Manual (screenshots, fake provider):** Overview, Prompts and agent tab at 1600×900 in dark and
+light, and at 360 px: tab strip scrolls, toolbar and status bar wrap, sessions open as a drawer.
+
+**Not yet done (needs the human):** the WebKit project (host libraries need root); the credits card
+against a real OpenRouter management key; and a walk-through of the spec's section 15 checklist
+with a real OpenRouter session.

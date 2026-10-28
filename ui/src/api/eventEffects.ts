@@ -29,20 +29,22 @@ export function applyEvent(event: StreamEvent, { queryClient, live, onTurnError 
       invalidate(keys.threads);
       break;
     case 'thread.updated': {
-      const { threadId, title, archived } = event.data;
+      const { threadId, title, archived, model } = event.data;
+      // Only the paged lists have `pages`; other queries under the prefix (the agent tab's recent
+      // sessions) are refreshed by the invalidation below.
       queryClient.setQueriesData<InfiniteData<ThreadListResponse>>({ queryKey: keys.threads }, (data) =>
-        data
+        data && 'pages' in data
           ? {
               ...data,
               pages: data.pages.map((page) => ({
                 ...page,
-                threads: page.threads.map((t) => (t.id === threadId ? { ...t, title, archived } : t)),
+                threads: page.threads.map((t) => (t.id === threadId ? { ...t, title, archived, model } : t)),
               })),
             }
           : data,
       );
       queryClient.setQueryData<ThreadDetailResponse>(keys.thread(threadId), (data) =>
-        data ? { ...data, thread: { ...data.thread, title, archived } } : data,
+        data ? { ...data, thread: { ...data.thread, title, archived, model } } : data,
       );
       // Archiving moves the thread between the active and archived lists.
       invalidate(keys.threads);

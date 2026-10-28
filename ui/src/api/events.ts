@@ -63,6 +63,8 @@ export interface ThreadUpdatedEvent {
   threadId: string;
   title: string | null;
   archived: boolean;
+  /** The thread's model override; null means the agent's model. */
+  model: string | null;
 }
 export interface ReadyEvent {
   threadId: string | null;

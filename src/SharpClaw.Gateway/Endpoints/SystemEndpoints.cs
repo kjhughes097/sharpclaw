@@ -22,14 +22,15 @@ public static class SystemEndpoints
         client.MapGet("/system", Get).WithName("getSystemInfo").WithTags("system").Produces<SystemInfoResponse>();
     }
 
-    private static IResult Get(TimeProvider time, IOptions<ProviderOptions> provider)
+    private static IResult Get(TimeProvider time, IOptions<ProviderOptions> provider, IOptions<ModelsOptions> models)
     {
         var now = time.GetUtcNow().UtcDateTime;
         var nextMidnight = now.Date.AddDays(1);
         var name = string.Equals(provider.Value.Type, FakeProvider, StringComparison.OrdinalIgnoreCase)
             ? FakeProvider
             : OpenRouterProvider;
-        return Results.Json(new SystemInfoResponse(Version, name, now, DateTime.SpecifyKind(nextMidnight, DateTimeKind.Utc)),
+        return Results.Json(new SystemInfoResponse(Version, name, now, DateTime.SpecifyKind(nextMidnight, DateTimeKind.Utc),
+                models.Value.Allowed),
             SharpClawJson.Options);
     }
 

@@ -2,7 +2,7 @@ import { admin, expect, login, messages, openNewThread, PASSWORD, send, test, US
 
 test.describe('authentication', () => {
   test('login failure, success and logout @core', async ({ page }) => {
-    await page.goto('/chats');
+    await page.goto('/prompts');
     await expect(page).toHaveURL(/\/login/);
     await page.getByLabel('Username').fill(USER);
     await page.getByLabel('Password').fill('wrong password');
@@ -11,7 +11,7 @@ test.describe('authentication', () => {
 
     await page.getByLabel('Password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page).toHaveURL(/\/chats$/);
+    await expect(page).toHaveURL(/\/prompts$/);
 
     await page.goto('/account');
     await page.getByRole('button', { name: 'Sign out' }).click();
@@ -23,17 +23,32 @@ test.describe('authentication', () => {
   test('a revoked session returns to login without leftovers', async ({ page, request }) => {
     await login(page);
     await page.goto('/agents');
-    await expect(page.getByRole('link', { name: 'assistant' })).toBeVisible();
+    // Exact: the agent's tab ("Assistant") is a link too.
+    await expect(page.getByRole('link', { name: 'assistant', exact: true })).toBeVisible();
     // Disabling the user revokes every session; re-enable for the other tests.
     expect((await admin(request).patch(`/api/users/${USER}`, { disabled: true })).ok()).toBeTruthy();
     expect((await admin(request).patch(`/api/users/${USER}`, { disabled: false })).ok()).toBeTruthy();
     await page.getByRole('link', { name: 'Audit' }).first().click();
     await expect(page).toHaveURL(/\/login\?next=%2Faudit/);
-    await expect(page.getByRole('link', { name: 'assistant' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'assistant', exact: true })).toHaveCount(0);
   });
 });
 
 test.describe('chat', () => {
+  test('a model override applies from the next reply', async ({ page, request }) => {
+    await login(page);
+    const threadId = await openNewThread(page, request, 'Model override');
+    await page.getByRole('combobox', { name: 'Model' }).selectOption('fake/other');
+    await expect(page.getByText('Model changes apply from the next reply.').first()).toBeVisible();
+    await expect(page.getByLabel('Session status')).toContainText('Model: fake/other');
+    await send(page, 'which model?');
+    await expect(messages(page).getByText('Hello from the fake provider.')).toBeVisible({ timeout: 20_000 });
+
+    const res = await admin(request).get(`/api/audit/llm-calls?threadId=${threadId}`);
+    const { calls } = (await res.json()) as { calls: { model: string }[] };
+    expect(calls.map((c) => c.model)).toEqual(['fake/other']);
+  });
+
   test('streams a reply progressively @core', async ({ page, request }) => {
     await login(page);
     await openNewThread(page, request, 'Streaming');
@@ -129,7 +144,8 @@ test.describe('chat', () => {
       await expect(
         page.getByText(/The model no longer sees the oldest \d+ turns? of this conversation\./),
       ).toBeVisible();
-      await expect(page.getByText(/\/ 1\.0k tokens/)).toBeVisible();
+      // Context use is in the status bar.
+      await expect(page.getByLabel('Session status')).toContainText(/\/ 1,000 \(/);
     } finally {
       await api.patch('/api/agents/assistant', { contextWindowTokens: 32000 });
     }

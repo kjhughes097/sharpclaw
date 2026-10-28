@@ -1,17 +1,16 @@
-import { Dialog as RadixDialog } from 'radix-ui';
+import { DropdownMenu } from 'radix-ui';
 import { useEffect, useState, type ReactNode } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { Link, Outlet } from 'react-router';
 import { usePendingApprovals, useSystem } from '../api/hooks';
+import { budgetResetLocalTime } from '../api/errors';
+import { useAuth } from '../app/auth';
 import { useConnectionState } from '../app/services';
+import { formatAbsolute } from '../lib/time';
+import { TabBar } from './TabBar';
 import { Badge } from './ui';
 
-const NAV = [
-  { to: '/chats', label: 'Chats' },
-  { to: '/approvals', label: 'Approvals' },
-  { to: '/agents', label: 'Agents' },
-  { to: '/audit', label: 'Audit' },
-  { to: '/account', label: 'Account' },
-] as const;
+const MENU_ITEM =
+  'flex min-h-11 cursor-pointer items-center rounded px-3 text-sm outline-none data-[highlighted]:bg-surface-2';
 
 function useOnline() {
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -28,143 +27,97 @@ function useOnline() {
   return online;
 }
 
-/** `Live`, `Reconnecting…` or `Offline`, from the stream manager (3.3 spec section 9.1). */
-export function ConnectionIndicator() {
+/** `live`, `reconnecting…` or `offline`, from the stream manager. */
+export function useConnectionLabel(): { label: string; tone: 'ok' | 'warn' | 'off' } {
   const state = useConnectionState();
   const online = useOnline();
-  const label = !online ? 'Offline' : state === 'open' ? 'Live' : 'Reconnecting…';
-  const dot = !online ? 'bg-danger' : state === 'open' ? 'bg-ok' : 'bg-warn';
+  if (!online) return { label: 'offline', tone: 'off' };
+  return state === 'open' ? { label: 'live', tone: 'ok' } : { label: 'reconnecting…', tone: 'warn' };
+}
+
+export const CONNECTION_DOT = { ok: 'bg-ok', warn: 'bg-warn', off: 'bg-muted' } as const;
+
+export function ConnectionIndicator() {
+  const { label, tone } = useConnectionLabel();
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-muted" role="status" aria-live="polite">
-      <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden="true" />
+    <span className="inline-flex items-center gap-1.5" role="status" aria-live="polite">
+      <span className={`h-2 w-2 rounded-full ${CONNECTION_DOT[tone]}`} aria-hidden="true" />
       {label}
     </span>
   );
 }
 
-function NavItems({ pending, onNavigate }: { pending: number; onNavigate?: () => void }) {
+function UserMenu() {
+  const { state, logout } = useAuth();
+  const system = useSystem();
+  const name = state.status === 'signed_in' ? (state.user?.name ?? 'admin key') : '';
   return (
-    <ul className="space-y-1">
-      {NAV.map((item) => (
-        <li key={item.to}>
-          <NavLink
-            to={item.to}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              `flex min-h-11 items-center justify-between rounded-md px-3 text-sm font-medium ${
-                isActive ? 'bg-accent-soft text-fg' : 'text-fg hover:bg-surface-2'
-              }`
-            }
-          >
-            {item.label}
-            {item.to === '/approvals' && pending > 0 && (
-              <span
-                className="rounded-full bg-danger px-2 text-xs text-surface"
-                aria-label={`${pending} pending`}
-              >
-                {pending}
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger
+        className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-sm hover:bg-surface-2"
+        aria-label={`Account menu (${name})`}
+      >
+        {name} <span aria-hidden="true">▾</span>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          className="z-30 min-w-60 rounded-md border border-border bg-surface p-1 shadow-lg"
+        >
+          <DropdownMenu.Item asChild className={MENU_ITEM}>
+            <Link to="/account">Account</Link>
+          </DropdownMenu.Item>
+          {system.data && (
+            <DropdownMenu.Label className="space-y-0.5 px-3 py-2 text-xs text-muted">
+              <span className="block">
+                SharpClaw {system.data.version} · {system.data.provider}
               </span>
-            )}
-          </NavLink>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function FakeBadge() {
-  const system = useSystem();
-  if (system.data?.provider !== 'Fake') return null;
-  return <Badge tone="warn">Fake provider</Badge>;
-}
-
-function Footer() {
-  const system = useSystem();
-  if (!system.data) return null;
-  return (
-    <p className="text-xs text-muted">
-      SharpClaw {system.data.version} · {system.data.provider}
-    </p>
+              <span className="block">Server time {formatAbsolute(system.data.utcNow)}</span>
+              <span className="block">Budgets reset {budgetResetLocalTime()} local</span>
+            </DropdownMenu.Label>
+          )}
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.Item className={MENU_ITEM} onSelect={() => void logout()}>
+            Sign out
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   );
 }
 
 /**
- * The app frame: a sidebar on desktop, a top bar with a drawer on mobile, a skip link, the
- * connection indicator, the pending-approvals badge and the `(N) SharpClaw` tab title.
+ * The app frame (3.3.1 spec section 4): one header row (brand, connection state, version, the
+ * fake-provider badge and the user menu), the tab bar, then the page. Also keeps the
+ * `(N) SharpClaw` tab title.
  */
 export function AppShell({ children }: { children?: ReactNode }) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const approvals = usePendingApprovals();
   const pending = approvals.data?.length ?? 0;
-  const location = useLocation();
+  const system = useSystem();
 
   useEffect(() => {
     document.title = pending > 0 ? `(${pending}) SharpClaw` : 'SharpClaw';
   }, [pending]);
 
-  useEffect(() => setDrawerOpen(false), [location.pathname]);
-
   return (
-    <div className="app-height flex flex-col md:flex-row">
+    <div className="app-height flex flex-col">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-surface focus:px-3 focus:py-2"
       >
         Skip to content
       </a>
-
-      {/* Desktop sidebar */}
-      <aside className="hidden w-56 shrink-0 flex-col justify-between border-r border-border bg-surface p-3 md:flex">
-        <div>
-          <div className="mb-4 flex items-center justify-between px-2">
-            <span className="text-lg font-semibold">SharpClaw</span>
-          </div>
-          <nav aria-label="Main">
-            <NavItems pending={pending} />
-          </nav>
-        </div>
-        <div className="space-y-2 px-2">
+      <header className="flex items-center gap-3 border-b border-border bg-surface px-3">
+        <span className="font-semibold whitespace-nowrap text-accent">SharpClaw 3</span>
+        <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm text-muted">
           <ConnectionIndicator />
-          <FakeBadge />
-          <Footer />
-        </div>
-      </aside>
-
-      {/* Mobile top bar */}
-      <header className="flex items-center justify-between gap-2 border-b border-border bg-surface px-3 py-1 md:hidden">
-        <RadixDialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
-          <RadixDialog.Trigger
-            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-surface-2"
-            aria-label={pending > 0 ? `Open navigation (${pending} approvals pending)` : 'Open navigation'}
-          >
-            <span aria-hidden="true">☰</span>
-            {pending > 0 && (
-              <span className="ml-1 rounded-full bg-danger px-1.5 text-xs text-surface">{pending}</span>
-            )}
-          </RadixDialog.Trigger>
-          <RadixDialog.Portal>
-            <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
-            <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 flex w-72 flex-col justify-between bg-surface p-3 shadow-xl">
-              <div>
-                <RadixDialog.Title className="mb-4 px-2 text-lg font-semibold">SharpClaw</RadixDialog.Title>
-                <RadixDialog.Description className="sr-only">Navigation</RadixDialog.Description>
-                <nav aria-label="Main">
-                  <NavItems pending={pending} onNavigate={() => setDrawerOpen(false)} />
-                </nav>
-              </div>
-              <div className="px-2">
-                <Footer />
-              </div>
-            </RadixDialog.Content>
-          </RadixDialog.Portal>
-        </RadixDialog.Root>
-        <span className="font-semibold">SharpClaw</span>
-        <div className="flex items-center gap-2">
-          <FakeBadge />
-          <ConnectionIndicator />
-        </div>
+          {system.data && <span className="hidden sm:inline">· {system.data.version}</span>}
+          {system.data?.provider === 'Fake' && <Badge tone="warn">Fake provider</Badge>}
+        </span>
+        <UserMenu />
       </header>
-
+      <TabBar />
       <main id="main" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none">
         {children ?? <Outlet />}
       </main>

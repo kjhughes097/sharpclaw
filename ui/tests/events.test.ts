@@ -46,7 +46,7 @@ const DECLARED: { [K in EventType]: Record<keyof EventPayloads[K], true> } = {
     decidedByUser: true,
   },
   'thread.created': { threadId: true, agentId: true },
-  'thread.updated': { threadId: true, title: true, archived: true },
+  'thread.updated': { threadId: true, title: true, archived: true, model: true },
   ready: { threadId: true },
   reset: { reason: true, threadId: true },
 };
@@ -107,6 +107,18 @@ describe('applyEvent (event → UI state)', () => {
     expect(h.queryClient.getQueryData<{ thread: { title: string } }>(keys.thread(t))?.thread.title).toBe(
       'Trip plan',
     );
+    // The model override travels too, so other tabs' pickers and status bars follow.
+    expect(h.queryClient.getQueryData<{ thread: { model: string } }>(keys.thread(t))?.thread.model).toBe(
+      'openai/gpt-4o-mini',
+    );
+  });
+
+  it('thread.updated leaves non-paged thread queries alone and still invalidates them', () => {
+    const h = harness();
+    const recent = [...keys.threads, 'recent', 'agent-1'];
+    h.queryClient.setQueryData(recent, { threads: [{ id: t, title: 'old' }], nextCursor: null });
+    expect(() => h.apply('thread.updated')).not.toThrow();
+    expect(h.invalidated).toContain(k(keys.threads));
   });
 
   it('message.created invalidates messages, list and detail', () => {

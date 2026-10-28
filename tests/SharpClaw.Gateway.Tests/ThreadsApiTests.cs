@@ -118,7 +118,7 @@ public class ThreadsApiTests
 
         var evt = Assert.Single(await read);
         Assert.Equal(SseEventNames.ThreadUpdated, evt.Event);
-        Assert.Equal(new ThreadUpdatedEvent(archive, "Renamed", true), ClientApiHelpers.Read<ThreadUpdatedEvent>(evt.Data));
+        Assert.Equal(new ThreadUpdatedEvent(archive, "Renamed", true, null), ClientApiHelpers.Read<ThreadUpdatedEvent>(evt.Data));
 
         var active = (await admin.GetFromJsonAsync<ThreadListResponse>("/api/threads", SharpClawJson.Options))!;
         Assert.Equal(new[] { keep }, active.Threads.Select(t => t.Id));

@@ -49,7 +49,8 @@ and are pruned daily.
    returns the whole turns that fit the window, newest first (`ContextBuilder`, which reads only the
    newest turns it needs, not the whole thread), and records `droppedTurns`/`estimatedTokens` on the thread.
 4. **Model calls.** `POST /v1/chat/completions` (streaming only). The gateway checks ownership, the
-   per-message call limit, the daily budget and the context size, then streams from the provider as
+   per-message call limit, the daily budget and the context size, resolves the model (the thread's
+   override while it is still in `Models:Allowed`, else the agent's), then streams from the provider as
    OpenAI-style SSE. Deltas are teed to the thread (`delta`, plus `ActiveTurnBuffers` for
    `snapshot`). Every call is recorded in `llm_calls` (append-only) and requested tool calls in `tool_calls`.
 5. **Tools.** For each tool call the agent's `ToolDispatcher` applies hardline rules → risk
@@ -75,7 +76,8 @@ The committed contract is [openapi/sharpclaw-client.v1.json](openapi/sharpclaw-c
 | events | `GET /api/events` (global SSE stream) |
 | approvals | `GET /api/approvals`, `GET /api/approvals/{id}`, `POST /api/approvals/{id}` (decide) |
 | audit | `GET /api/audit/llm-calls`, `GET /api/audit/tool-calls` (keyset cursors) |
-| system | `GET /api/system` |
+| system | `GET /api/system` (version, provider, clock, `models` allow-list) |
+| dashboard (3.3.1) | `GET /api/usage?range=today\|7d\|30d&agent=` (zero-filled UTC buckets, by model, by agent), `GET /api/activity` (recent prompts and replies across threads), `GET /api/credits` (cached OpenRouter balance) |
 
 Agent listener: `GET /agent/inbox`, `GET /agent/threads/{id}/messages`,
 `GET /agent/threads/{id}/context`, `POST /agent/threads/{id}/messages`, `POST /agent/messages/{id}/fail`,
@@ -105,8 +107,8 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), `docs/api
 | Table | Purpose |
 |---|---|
 | `agents`, `agent_tokens` | Agent config (model, daily budget, context window, enabled, last seen); hashed tokens. |
-| `threads` | Owner agent, title, archived, `last_message_at`/`last_preview`, last context figures. |
-| `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`). |
+| `threads` | Owner agent, title, archived, `last_message_at`/`last_preview`, last context figures, optional `model` override (must be in `Models:Allowed` to take effect). |
+| `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`) and `sent_by_user` (user name or `admin_key`). |
 | `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose, outcome). |
 | `tool_calls` | Every tool call the model requested, plus the agent's report. |
 | `approvals` | Approval requests and decisions (`decided_by` = user/system; `decided_by_user` = which user, or `admin_key`). |

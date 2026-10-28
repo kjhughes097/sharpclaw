@@ -110,7 +110,7 @@ export function ApprovalCard({
         {showThreadLink && approval.threadId && (
           <>
             {' · '}
-            <Link className="text-accent underline" to={`/chats/${approval.threadId}`}>
+            <Link className="text-accent underline" to={`/prompts/${approval.threadId}`}>
               Open thread
             </Link>
           </>

@@ -100,7 +100,7 @@ public class SnapshotTests
             [SseEventNames.ApprovalDecided] = new ApprovalDecidedEvent(approval, corr, ApprovalStatuses.Approved,
                 ApprovalDecidedBy.User, thread, "kevin"),
             [SseEventNames.ThreadCreated] = new ThreadCreatedEvent(thread, agent),
-            [SseEventNames.ThreadUpdated] = new ThreadUpdatedEvent(thread, "Trip plan", false),
+            [SseEventNames.ThreadUpdated] = new ThreadUpdatedEvent(thread, "Trip plan", false, "openai/gpt-4o-mini"),
         };
     }
 

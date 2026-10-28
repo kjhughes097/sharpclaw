@@ -85,6 +85,20 @@ public sealed class OpenRouterOptions
     public const string Section = "OpenRouter";
     [Required, Url] public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
     public string ApiKey { get; set; } = "";
+
+    /// <summary>
+    /// A management key, used only to read the credits balance (<c>GET /credits</c> accepts nothing
+    /// else). Empty: the Overview's credits card shows "not configured".
+    /// </summary>
+    public string ManagementKey { get; set; } = "";
+}
+
+/// <summary>The cached OpenRouter credits balance (3.3.1 spec section 3.4).</summary>
+public sealed class CreditsOptions
+{
+    public const string Section = "Credits";
+    [Range(1, 168)] public int RefreshHours { get; set; } = 24;
+    [Range(0, 1_000_000)] public double LowThresholdUsd { get; set; } = 5;
 }
 
 public sealed class FakeOptions
@@ -159,6 +173,30 @@ public sealed class ContextOptions
     [Range(0, 1000)] public int MessageOverheadTokens { get; set; } = ContextDefaults.MessageOverheadTokens;
 
     public int WindowFor(int? agentWindow) => agentWindow ?? DefaultWindowTokens;
+}
+
+/// <summary>
+/// Model ids a thread may switch to (3.3.1 spec section 3.3). Empty: no per-thread override, every
+/// thread uses its agent's model.
+/// </summary>
+public sealed class ModelsOptions
+{
+    public const string Section = "Models";
+    public const int MaxModelIdChars = 200;
+
+    public string[] Allowed { get; set; } = [];
+
+    /// <summary>Null when valid; otherwise the validation message.</summary>
+    public string? Problem()
+    {
+        if (Allowed.Any(string.IsNullOrWhiteSpace))
+            return "Models:Allowed must not contain empty entries.";
+        if (Allowed.Any(m => m.Length > MaxModelIdChars))
+            return $"Models:Allowed entries must be at most {MaxModelIdChars} characters.";
+        if (Allowed.Distinct(StringComparer.Ordinal).Count() != Allowed.Length)
+            return "Models:Allowed must not contain duplicates.";
+        return null;
+    }
 }
 
 public sealed class UiOptions

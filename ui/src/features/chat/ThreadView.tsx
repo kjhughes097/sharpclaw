@@ -1,9 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, call } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { keys } from '../../api/queryKeys';
-import type { TraceToolCallDto } from '../../api/types';
+import type { TraceLlmCallDto, TraceToolCallDto } from '../../api/types';
 import { useLiveTurns } from '../../app/services';
 import { Button, ErrorState, LoadingState, Spinner } from '../../components/ui';
 import { getExpandToolDetails, setExpandToolDetails } from '../../lib/prefs';
@@ -16,39 +16,34 @@ import { useThreadMessages } from './useThreadMessages';
 import { useThreadScroll } from './useThreadScroll';
 import { useReplyAnnouncement, useTurnFailureToasts } from './useThreadSignals';
 import { useTurnApprovals } from './useTurnApprovals';
+import { useThreadDetail, useThreadTrace } from './threadQueries';
 
 /** One chat: header, banners, the message list with live turns, and the composer. */
 export function ThreadView({
   threadId,
   onOpenTrace,
   highlightMessageId,
-  backLink,
 }: {
   threadId: string;
   onOpenTrace: () => void;
   highlightMessageId?: string | null;
-  backLink?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const detail = useQuery({
-    queryKey: keys.thread(threadId),
-    queryFn: () => call(() => api.GET('/api/threads/{id}', { params: { path: { id: threadId } } })),
-  });
+  const detail = useThreadDetail(threadId);
   const { latest, rows, hasMoreBefore, loadEarlier, loadingEarlier, earlierError, addOptimistic } =
     useThreadMessages(threadId);
   const liveTurns = useLiveTurns(threadId);
   const turns = useMemo(() => groupTurns(rows), [rows]);
-  const hasTools = turns.some((t) => t.tools.length > 0);
-  const trace = useQuery({
-    queryKey: keys.trace(threadId),
-    queryFn: () => call(() => api.GET('/api/threads/{id}/trace', { params: { path: { id: threadId } } })),
-    enabled: hasTools,
-  });
-  const traceByCall = useMemo(() => {
-    const map = new Map<string, TraceToolCallDto>();
-    for (const turn of trace.data?.turns ?? [])
-      for (const call of turn.toolCalls) map.set(call.toolCallId, call);
-    return map;
+  // Always loaded: tool rows and the status bar both read it.
+  const trace = useThreadTrace(threadId);
+  const { traceByCall, llmById } = useMemo(() => {
+    const byCall = new Map<string, TraceToolCallDto>();
+    const byId = new Map<string, TraceLlmCallDto>();
+    for (const turn of trace.data?.turns ?? []) {
+      for (const call of turn.toolCalls) byCall.set(call.toolCallId, call);
+      for (const call of turn.llmCalls) byId.set(call.id, call);
+    }
+    return { traceByCall: byCall, llmById: byId };
   }, [trace.data]);
   const approvals = useTurnApprovals(threadId, detail.data?.pendingApprovals);
   const [expandTools, setExpandTools] = useState(getExpandToolDetails);
@@ -115,8 +110,6 @@ export function ThreadView({
       <ThreadHeader
         threadId={threadId}
         thread={thread}
-        agent={agent}
-        backLink={backLink}
         onOpenTrace={onOpenTrace}
         expandTools={expandTools}
         onExpandToolsChange={(checked) => {
@@ -158,9 +151,11 @@ export function ThreadView({
               <TurnView
                 key={turn.correlationId}
                 turn={turn}
+                agentName={agent.name}
                 live={liveByCorrelation.get(turn.correlationId)}
                 approvals={turnApprovals(turn.correlationId)}
                 trace={traceByCall.size > 0 ? traceByCall : undefined}
+                llmCalls={llmById}
                 expandTools={expandTools}
                 claimedAt={
                   inFlight?.correlationId === turn.correlationId ? (inFlight.claimedAt ?? null) : null

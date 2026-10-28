@@ -5,7 +5,47 @@ import type { components } from '../src/api/schema';
 type S = components['schemas'];
 
 /** Builders for API payloads with sensible defaults. */
+export const NOW = '2026-10-25T12:00:00Z';
+
+export type Range = 'today' | '7d' | '30d';
+const BUCKETS: Record<Range, { count: number; seconds: number; from: string }> = {
+  today: { count: 13, seconds: 3600, from: '2026-10-25T00:00:00Z' },
+  '7d': { count: 28, seconds: 21600, from: '2026-10-18T18:00:00Z' },
+  '30d': { count: 30, seconds: 86400, from: '2026-09-26T00:00:00Z' },
+};
+
 export const fixtures = {
+  /** A zero-filled usage response for `range`; pass `over` to add usage. */
+  usage: (range: Range, over: Partial<S['UsageResponse']> = {}): S['UsageResponse'] => {
+    const b = BUCKETS[range];
+    const from = Date.parse(b.from);
+    return {
+      range,
+      from: b.from,
+      to: NOW,
+      bucketSeconds: b.seconds,
+      buckets: Array.from({ length: b.count }, (_, i) => ({
+        start: new Date(from + i * b.seconds * 1000).toISOString(),
+        calls: 0,
+        promptTokens: 0,
+        completionTokens: 0,
+        costUsd: 0,
+      })),
+      byModel: [],
+      byAgent: [
+        {
+          agentId: 'agent-1',
+          agentName: 'assistant',
+          calls: 0,
+          promptTokens: 0,
+          completionTokens: 0,
+          costUsd: 0,
+        },
+      ],
+      totals: { calls: 0, promptTokens: 0, completionTokens: 0, costUsd: 0, unknownUsageCalls: 0 },
+      ...over,
+    };
+  },
   agent: (over: Partial<S['AgentDto']> = {}): S['AgentDto'] => ({
     id: 'agent-1',
     name: 'assistant',
@@ -67,8 +107,6 @@ export const fixtures = {
   }),
 };
 
-export const NOW = '2026-10-25T12:00:00Z';
-
 /** Handlers every rendered app needs: a signed-in session, system info, no approvals. */
 export const defaultHandlers = [
   http.get('*/api/auth/session', () =>
@@ -86,11 +124,27 @@ export const defaultHandlers = [
       provider: 'Fake',
       utcNow: NOW,
       budgetResetAtUtc: '2026-10-26T00:00:00Z',
+      models: [],
     }),
   ),
   http.get('*/api/approvals', () => HttpResponse.json({ approvals: [] })),
   http.get('*/api/agents', () => HttpResponse.json({ agents: [fixtures.agent()] })),
   http.get('*/api/threads', () => HttpResponse.json({ threads: [], nextCursor: null })),
+  http.get('*/api/usage', ({ request }) =>
+    HttpResponse.json(fixtures.usage((new URL(request.url).searchParams.get('range') ?? 'today') as Range)),
+  ),
+  http.get('*/api/activity', () => HttpResponse.json({ items: [], nextCursor: null })),
+  http.get('*/api/credits', () =>
+    HttpResponse.json({
+      status: 'unsupported',
+      remainingUsd: null,
+      totalCreditsUsd: null,
+      totalUsageUsd: null,
+      asOf: null,
+      lastAttemptAt: null,
+      lowThresholdUsd: 5,
+    }),
+  ),
 ];
 
 export const server = setupServer(...defaultHandlers);
