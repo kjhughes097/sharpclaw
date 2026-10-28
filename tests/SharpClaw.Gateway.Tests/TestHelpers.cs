@@ -1,5 +1,7 @@
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SharpClaw.Contracts;
+using SharpClaw.Gateway.Services;
 
 namespace SharpClaw.Gateway.Tests;
 
@@ -127,5 +129,23 @@ public static class TestHelpers
                 Assert.Fail($"Condition not met in time{(because is null ? "" : $": {because}")}.");
             await Task.Delay(20);
         }
+    }
+
+    /// <summary>
+    /// Waits until a long poll (inbox or approval) is blocked on its signal, so whatever the test
+    /// does next exercises the wake-up path rather than the poll's first database read.
+    /// </summary>
+    public static Task WaitForLongPollAsync<TSignal>(GatewayFixture fx) where TSignal : notnull
+    {
+        var signal = (KeyedSignal)(object)fx.App.Services.GetRequiredService<TSignal>();
+        return EventuallyAsync(() => signal.Waiters > 0, because: $"a long poll waiting on {typeof(TSignal).Name}");
+    }
+
+    /// <summary>Waits until a streamed reply on the thread has produced some text (a turn in flight).</summary>
+    public static Task WaitForStreamedTextAsync(GatewayFixture fx, Guid threadId)
+    {
+        var buffers = fx.App.Services.GetRequiredService<ActiveTurnBuffers>();
+        return EventuallyAsync(() => buffers.Snapshots(threadId).Any(t => t.Content.Length > 0),
+            because: "streamed text for the in-flight turn");
     }
 }

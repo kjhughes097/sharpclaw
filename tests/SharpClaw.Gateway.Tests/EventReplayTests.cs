@@ -127,6 +127,7 @@ public class EventReplayTests
             for (var i = 0; i < messages; i++)
                 await s.Fx.PostUserMessageAsync(s.Thread, $"m{i}");
         });
+        // Deliberately overlap: some posts land before the connect, some during, some after.
         await Task.Delay(30);
         var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream", lastEventId: 0);
         using var __ = client;
@@ -154,7 +155,7 @@ public class EventReplayTests
         await s.Fx.ClaimAsync(s.Token);
 
         var chat = Task.Run(async () => await (await s.Fx.ChatAsync(s.Token, corr, s.Thread, "slow")).Content.ReadAsStringAsync());
-        await Task.Delay(700);
+        await TestHelpers.WaitForStreamedTextAsync(s.Fx, s.Thread);
         var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream");
         using var __ = client;
         var events = await TestHelpers.ReadSseAsync(stream, 10, TimeSpan.FromSeconds(4), skipReady: true);
@@ -182,7 +183,6 @@ public class EventReplayTests
         var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream");
         using var __ = client;
         var read = TestHelpers.ReadSseAsync(stream, 2, Wait, skipReady: true);
-        await Task.Delay(200);
         // Buffered before the snapshot but published after it (the race), then a genuinely new delta.
         publisher.PublishDelta(s.Thread, corr, "c", 3);
         publisher.PublishDelta(s.Thread, corr, "d", buffers.Append(s.Thread, corr, "d"));

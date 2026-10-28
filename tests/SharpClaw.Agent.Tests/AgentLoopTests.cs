@@ -27,7 +27,7 @@ public class AgentLoopTests
     {
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hello", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hello", TestClock.Now)),
             NextChat = ChatOutcome.Ok("the reply"),
         };
         var loop = NewLoop(client);
@@ -54,7 +54,7 @@ public class AgentLoopTests
         var msgId = Guid.NewGuid();
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", TestClock.Now)),
             NextChat = ChatOutcome.Fail("budget_exceeded"),
         };
         var loop = NewLoop(client);
@@ -72,7 +72,7 @@ public class AgentLoopTests
         var msgId = Guid.NewGuid();
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", TestClock.Now)),
             NextChat = ChatOutcome.Fail("provider_error"),
         };
         var loop = NewLoop(client);
@@ -112,7 +112,7 @@ public class AgentLoopTests
         var soul = new CountingSoul();
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hi", TestClock.Now)),
             NextChat = ChatOutcome.Ok("r"),
         };
         var loop = NewLoop(client, soul);
@@ -128,7 +128,7 @@ public class AgentLoopTests
     {
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hi", TestClock.Now)),
             History = new List<ChatMessage> { new(Roles.User, "hi") },
             NextChat = ChatOutcome.Ok("r"),
         };
@@ -148,7 +148,7 @@ public class AgentLoopTests
         var msgId = Guid.NewGuid();
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", TestClock.Now)),
             ContextFailCode = "context_too_large",
         };
 
@@ -164,7 +164,7 @@ public class AgentLoopTests
         var msgId = Guid.NewGuid();
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(msgId, Guid.NewGuid(), "hi", TestClock.Now)),
             NextChat = ChatOutcome.Fail("context_too_large"),
         };
 
@@ -178,7 +178,7 @@ public class AgentLoopTests
     {
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hi", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "hi", TestClock.Now)),
             NextChat = ChatOutcome.Ok("r"),
         };
 
@@ -195,7 +195,7 @@ public class AgentLoopTests
         var logger = new CapturingLogger<AgentLoop>(logs);
         var client = new FakeGatewayClient
         {
-            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "SENSITIVE", DateTime.UtcNow)),
+            NextInbox = InboxResult.Of(new InboxMessageDto(Guid.NewGuid(), Guid.NewGuid(), "SENSITIVE", TestClock.Now)),
             History = new List<ChatMessage> { new(Roles.User, "SENSITIVE") },
             NextChat = ChatOutcome.Ok("SECRET_REPLY"),
         };

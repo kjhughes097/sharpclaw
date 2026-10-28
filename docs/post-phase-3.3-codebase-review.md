@@ -370,5 +370,7 @@ Tracks the follow-up work. Each PR updates its rows.
 | R16 shared visibility | ✅ Done | `fix/gateway-hardening`: accepted by design (tech-debt register); `approvals.decided_by_user` records the user (or `admin_key`), shown in the UI card and trace. |
 | #6 fail messages | ✅ Done | `fix/gateway-hardening`: `FailReasons.Describe` in the SSE `error` event and the CLI. |
 | Found during the work | ✅ Fixed | UI `LastSeen`/`RelativeTime` didn't re-render when the server clock arrived (flaky `agents.test.tsx`), fixed with `useServerNow()`. A gauge test's global `MeterListener` raced other tests' disposal; now scoped to its own meter. |
-| R17, R18, focused unit tests | ⏳ Planned | `test/deterministic-and-focused` |
+| R17 sleeps and wall clock | ✅ Done | `test/deterministic-and-focused`: no fixed `Task.Delay` waits remain (one deliberate 30 ms overlap in a race test); `WaitForLongPollAsync` (via `KeyedSignal.Waiters`), `WaitForStreamedTextAsync`, `EventuallyAsync`; CLI fakes use a `TaskCompletionSource`; fakes use `TestClock.Now`. Gateway suite green on repeated runs, about 28 s (was 30 s). |
+| R18 large test files | ✅ Done | `test/deterministic-and-focused`: `ClientApiTests.cs` split one class per file; `AuthTests`, `ApprovalTests`, `CliTests` are partial classes split by theme (pure moves, test counts unchanged). |
+| Focused unit tests | ✅ Done | `InfrastructureTests` (cursor, turn buffers, signals, exception middleware, retention, approval race), plus `ThreadEventBusTests`, `ConfigurationValidationTests`, `MessageTurnsTests`, `EventAtomicityTests`, `ContextPagingTests` from earlier PRs. |
 | R19, R20, R21 | ⏳ Planned | `refactor/ui-structure-and-e2e` |

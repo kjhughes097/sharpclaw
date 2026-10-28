@@ -106,7 +106,6 @@ public class ToolCallingTests
         using var streamClient = fx.Admin();
         var streamResp = await streamClient.GetAsync($"/api/threads/{thread}/stream", HttpCompletionOption.ResponseHeadersRead);
         var readTask = TestHelpers.ReadSseEventsAsync(await streamResp.Content.ReadAsStreamAsync(), 2, TimeSpan.FromSeconds(5));
-        await Task.Delay(200);
 
         await fx.ChatRawAsync(token, corr, thread, new
         {
@@ -131,7 +130,6 @@ public class ToolCallingTests
         using var streamClient = fx.Admin();
         var streamResp = await streamClient.GetAsync($"/api/threads/{thread}/stream", HttpCompletionOption.ResponseHeadersRead);
         var readTask = TestHelpers.ReadSseEventsAsync(await streamResp.Content.ReadAsStreamAsync(), 1, TimeSpan.FromSeconds(2));
-        await Task.Delay(200);
 
         var resp = await fx.ChatRawAsync(token, corr, thread,
             new { stream = true, messages = new[] { new { role = "user", content = "classify this" } } },

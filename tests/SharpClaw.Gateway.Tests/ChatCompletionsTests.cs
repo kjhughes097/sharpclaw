@@ -170,7 +170,6 @@ public class ChatCompletionsTests
         var stream = await streamResp.Content.ReadAsStreamAsync();
         var readTask = TestHelpers.ReadSseEventsAsync(stream, 1, TimeSpan.FromSeconds(5));
 
-        await Task.Delay(200);
         var resp = await fx.ChatAsync(token, corr, thread);
         await resp.Content.ReadAsStringAsync();
 

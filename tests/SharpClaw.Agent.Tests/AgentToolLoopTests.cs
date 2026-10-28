@@ -8,7 +8,7 @@ namespace SharpClaw.Agent.Tests;
 /// <summary>The agent's tool loop (3.2 spec section 7) against a scripted gateway.</summary>
 public class AgentToolLoopTests
 {
-    private static readonly InboxMessageDto Message = new(Guid.NewGuid(), Guid.NewGuid(), "do the task", DateTime.UtcNow);
+    private static readonly InboxMessageDto Message = new(Guid.NewGuid(), Guid.NewGuid(), "do the task", TestClock.Now);
 
     /// <summary>Returns scripted chat outcomes in order and records every request.</summary>
     private sealed class ScriptedGateway : IGatewayClient

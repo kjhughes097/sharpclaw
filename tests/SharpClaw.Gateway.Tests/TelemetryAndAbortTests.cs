@@ -172,12 +172,12 @@ public class TelemetryAndAbortTests
 
         // The gateway records a cancelled call shortly after detecting the abort.
         LlmCall? call = null;
-        for (var i = 0; i < 40 && call is null; i++)
+        await TestHelpers.EventuallyAsync(async () =>
         {
-            await Task.Delay(100);
             using var db = fx.NewDb();
             call = await db.LlmCalls.AsNoTracking().FirstOrDefaultAsync();
-        }
+            return call is not null;
+        }, because: "the cancelled llm_calls row");
         Assert.NotNull(call);
         Assert.Equal(LlmCallStatus.Cancelled, call!.Status);
         Assert.False(call.UsageKnown);

@@ -45,7 +45,7 @@ internal sealed class RecordingGateway : IGatewayClient
     public bool FailApprovals { get; set; }
 
     public static ApprovalDto Approval(string status, string? decidedBy = null) =>
-        new(Guid.NewGuid(), status, decidedBy, DateTime.UtcNow.AddMinutes(5));
+        new(Guid.NewGuid(), status, decidedBy, TestClock.Now.AddMinutes(5));
 
     public Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct)
     {
@@ -87,4 +87,10 @@ internal sealed class ListLogger<T> : ILogger<T>
     public bool IsEnabled(LogLevel logLevel) => true;
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
         Func<TState, Exception?, string> formatter) => Lines.Add(formatter(state, exception));
+}
+
+/// <summary>A fixed instant for fake DTO timestamps; tests never read the real clock.</summary>
+internal static class TestClock
+{
+    public static readonly DateTime Now = new(2026, 10, 25, 12, 0, 0, DateTimeKind.Utc);
 }
