@@ -6,7 +6,7 @@ using SharpClaw.Contracts;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Services;
 
-namespace SharpClaw.Gateway.Endpoints;
+namespace SharpClaw.Gateway.Infrastructure.Sse;
 
 /// <summary>
 /// An SSE stream of one thread's events, or of every thread's (null thread id), with

@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace SharpClaw.Gateway.Endpoints;
+namespace SharpClaw.Gateway.Services.Chat;
 
 /// <summary>Builds OpenAI-style chat.completion.chunk SSE lines from scratch.</summary>
 public sealed class ChatChunkWriter

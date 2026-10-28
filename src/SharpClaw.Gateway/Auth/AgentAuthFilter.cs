@@ -60,11 +60,7 @@ public sealed class AgentAuthFilter : IEndpointFilter
 
         // Log attributes (not resource attributes) so ids stay searchable without becoming labels.
         var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("SharpClaw.Gateway.Agent");
-        using var scope = logger.BeginScope(new Dictionary<string, object>
-        {
-            ["agent"] = agent.Name,
-            ["agent_id"] = agent.Id.ToString(),
-        });
+        using var scope = LogScopes.ForAgent(logger, agent.Name, agent.Id);
         return await next(context);
     }
 }

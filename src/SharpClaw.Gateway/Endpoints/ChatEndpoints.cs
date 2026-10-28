@@ -10,6 +10,7 @@ using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Infrastructure;
 using SharpClaw.Gateway.Providers;
 using SharpClaw.Gateway.Services;
+using SharpClaw.Gateway.Services.Chat;
 using SharpClaw.Gateway.Telemetry;
 
 namespace SharpClaw.Gateway.Endpoints;
@@ -25,13 +26,17 @@ public static class ChatEndpoints
         v1.MapPost("/chat/completions", Completions);
     }
 
-    private static async Task<IResult> Completions(
-        HttpContext http, SharpClawDbContext db, TimeProvider time,
-        IChatProvider provider, IEventPublisher events, ActiveTurnBuffers buffers, GatewayMetrics metrics,
-        IOptions<ChatOptions> chatOptions, IOptions<ContextOptions> contextOptions, ILoggerFactory loggerFactory)
+    /// <summary>What a completion request needs from DI, grouped so the handler reads as its steps.</summary>
+    public sealed record ChatServices(
+        SharpClawDbContext Db, TimeProvider Time, IChatProvider Provider, IEventPublisher Events,
+        ActiveTurnBuffers Buffers, GatewayMetrics Metrics, IOptions<ChatOptions> Chat,
+        IOptions<ContextOptions> Context, ILoggerFactory LoggerFactory);
+
+    private static async Task<IResult> Completions(HttpContext http, [AsParameters] ChatServices svc)
     {
-        var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Chat");
+        var logger = svc.LoggerFactory.CreateLogger("SharpClaw.Gateway.Chat");
         var agent = AuthContext.Agent(http);
+        var db = svc.Db;
         var ct = http.RequestAborted;
 
         if (!TryHeaderGuid(http, "X-Correlation-Id", out var correlationId))
@@ -44,11 +49,7 @@ public static class ChatEndpoints
         if (purpose is not (LlmCallPurpose.Chat or LlmCallPurpose.RiskAssessment))
             return ApiResults.ValidationFailed("X-SharpClaw-Purpose must be 'chat' or 'risk_assessment'.");
 
-        using var scope = logger.BeginScope(new Dictionary<string, object>
-        {
-            ["thread_id"] = threadId.ToString(),
-            ["correlation_id"] = correlationId.ToString(),
-        });
+        using var scope = LogScopes.Turn(logger, threadId, correlationId);
 
         var ownershipError = await CheckOwnershipAsync(db, agent, threadId, correlationId, ct);
         if (ownershipError is not null)
@@ -70,65 +71,79 @@ public static class ChatEndpoints
             if (parseError is not null)
                 return parseError;
 
-            var now = time.GetUtcNow().UtcDateTime;
+            var now = svc.Time.GetUtcNow().UtcDateTime;
             // Claim heartbeat: a multi-round tool turn must not be requeued as if the agent had died.
             await InboxRepository.TouchClaimAsync(db, agent.Id, correlationId, now, ct);
-            var recorder = new LlmCallRecorder(db, metrics, logger, agent, threadId, correlationId, now, purpose)
+            var recorder = new LlmCallRecorder(db, svc.Metrics, logger, agent, threadId, correlationId, now, purpose)
             {
-                EstimatedPromptTokens = EstimatePrompt(parsed!, bodyDoc.RootElement, contextOptions.Value),
+                EstimatedPromptTokens = EstimatePrompt(parsed!, bodyDoc.RootElement, svc.Context.Value),
             };
 
-            var callsSoFar = await db.LlmCalls.CountAsync(c => c.CorrelationId == correlationId, ct);
-            if (callsSoFar >= chatOptions.Value.MaxLlmCallsPerMessage)
-            {
-                await recorder.RecordAsync(LlmCallOutcome.Rejected(ErrorCodes.LoopLimitExceeded), ct);
-                logger.LogWarning("llm call rejected: loop_limit_exceeded calls={Calls} max={Max}",
-                    callsSoFar, chatOptions.Value.MaxLlmCallsPerMessage);
-                return ApiResults.Error(429, ErrorCodes.LoopLimitExceeded,
-                    $"This message has reached the limit of {chatOptions.Value.MaxLlmCallsPerMessage} LLM calls.");
-            }
-
-            var spent = await AgentQueries.TodaySpendAsync(db, time, agent.Id, ct);
-            if (spent >= agent.DailyBudgetUsd)
-            {
-                await recorder.RecordAsync(LlmCallOutcome.Rejected(ErrorCodes.BudgetExceeded), ct);
-                logger.LogWarning("llm call rejected: budget_exceeded spent_usd={SpentUsd} budget_usd={BudgetUsd}",
-                    spent, agent.DailyBudgetUsd);
-                metrics.RecordBudgetExceeded(agent.Name);
-                return BudgetExceeded(now);
-            }
-
-            // Preflight: a request that can't fit the window would only fail (and cost) upstream.
-            var limit = contextOptions.Value.WindowFor(agent.ContextWindowTokens) - contextOptions.Value.ReplyReserveTokens;
-            if (recorder.EstimatedPromptTokens > limit)
-            {
-                await recorder.RecordAsync(LlmCallOutcome.Rejected(ErrorCodes.ContextTooLarge), ct);
-                metrics.RecordContextRejection(agent.Name);
-                logger.LogWarning("llm call rejected: context_too_large estimated_tokens={EstimatedTokens} limit_tokens={Limit}",
-                    recorder.EstimatedPromptTokens, limit);
-                return ContextTooLarge();
-            }
+            if (await CheckLimitsAsync(svc, agent, correlationId, recorder, logger, now, ct) is { } rejected)
+                return rejected;
 
             // Risk-assessment calls are internal to the agent: never show their output to the user.
             var teeToThread = purpose == LlmCallPurpose.Chat;
-            var stream = new ChatStream(http.Response, events, buffers, recorder, logger, agent.Model, threadId, correlationId, teeToThread);
-            return await stream.RunAsync(provider, parsed!.ToProviderRequest(agent.Model), ct);
+            var stream = new ChatStream(http.Response, svc.Events, svc.Buffers, recorder, logger, agent.Model,
+                threadId, correlationId, teeToThread);
+            return await stream.RunAsync(svc.Provider, parsed!.ToProviderRequest(agent.Model), ct);
         }
+    }
+
+    /// <summary>
+    /// The guards in front of the provider: calls per message, the daily budget, and the context
+    /// window. A rejected call is still recorded in <c>llm_calls</c>. Null means go ahead.
+    /// </summary>
+    private static async Task<IResult?> CheckLimitsAsync(
+        ChatServices svc, AuthenticatedAgent agent, Guid correlationId, LlmCallRecorder recorder, ILogger logger,
+        DateTime now, CancellationToken ct)
+    {
+        async Task<IResult> Reject(string code, IResult result)
+        {
+            await recorder.RecordAsync(LlmCallOutcome.Rejected(code), ct);
+            return result;
+        }
+
+        var maxCalls = svc.Chat.Value.MaxLlmCallsPerMessage;
+        var callsSoFar = await svc.Db.LlmCalls.CountAsync(c => c.CorrelationId == correlationId, ct);
+        if (callsSoFar >= maxCalls)
+        {
+            logger.LogWarning("llm call rejected: loop_limit_exceeded calls={Calls} max={Max}", callsSoFar, maxCalls);
+            return await Reject(ErrorCodes.LoopLimitExceeded, ApiResults.Error(429, ErrorCodes.LoopLimitExceeded,
+                $"This message has reached the limit of {maxCalls} LLM calls."));
+        }
+
+        var spent = await AgentQueries.TodaySpendAsync(svc.Db, svc.Time, agent.Id, ct);
+        if (spent >= agent.DailyBudgetUsd)
+        {
+            logger.LogWarning("llm call rejected: budget_exceeded spent_usd={SpentUsd} budget_usd={BudgetUsd}",
+                spent, agent.DailyBudgetUsd);
+            svc.Metrics.RecordBudgetExceeded(agent.Name);
+            return await Reject(ErrorCodes.BudgetExceeded, BudgetExceeded(now));
+        }
+
+        // Preflight: a request that can't fit the window would only fail (and cost) upstream.
+        var context = svc.Context.Value;
+        var limit = context.WindowFor(agent.ContextWindowTokens) - context.ReplyReserveTokens;
+        if (recorder.EstimatedPromptTokens > limit)
+        {
+            logger.LogWarning("llm call rejected: context_too_large estimated_tokens={EstimatedTokens} limit_tokens={Limit}",
+                recorder.EstimatedPromptTokens, limit);
+            svc.Metrics.RecordContextRejection(agent.Name);
+            return await Reject(ErrorCodes.ContextTooLarge, ContextTooLarge());
+        }
+
+        return null;
     }
 
     /// <summary>The thread and the claimed user message must both belong to this agent (else 404).</summary>
     private static async Task<IResult?> CheckOwnershipAsync(
         SharpClawDbContext db, AuthenticatedAgent agent, Guid threadId, Guid correlationId, CancellationToken ct)
     {
-        var thread = await db.Threads.AsNoTracking().FirstOrDefaultAsync(t => t.Id == threadId, ct);
-        if (thread is null || thread.AgentId != agent.Id)
+        if (!await TurnGuard.OwnsThreadAsync(db, agent.Id, threadId, ct))
             return ApiResults.NotFound("Thread not found.");
-
-        var userMsg = await db.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == correlationId, ct);
-        if (userMsg is null || userMsg.AgentId != agent.Id || userMsg.ThreadId != threadId ||
-            userMsg.Role != Roles.User || userMsg.Status != MessageStatus.Claimed)
+        if (await TurnGuard.FindClaimedAsync(db, agent.Id, correlationId, threadId, ct) is null)
             return ApiResults.NotFound("Correlation message not found.");
-
         return null;
     }
 

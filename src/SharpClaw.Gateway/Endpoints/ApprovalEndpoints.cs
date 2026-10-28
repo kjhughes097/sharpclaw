@@ -51,9 +51,8 @@ public static class ApprovalEndpoints
         if (body.Reason is null || body.Reason.Length > MaxReasonChars)
             return ApiResults.ValidationFailed($"reason is required and must be at most {MaxReasonChars} characters.");
 
-        var userMsg = await db.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == body.CorrelationId, ct);
-        if (userMsg is null || userMsg.AgentId != agent.Id || userMsg.ThreadId != body.ThreadId ||
-            userMsg.Role != Roles.User || userMsg.Status != MessageStatus.Claimed)
+        var userMsg = await TurnGuard.FindClaimedAsync(db, agent.Id, body.CorrelationId, body.ThreadId, ct);
+        if (userMsg is null)
             return ApiResults.NotFound("Correlation message not found.");
 
         var now = time.GetUtcNow().UtcDateTime;
@@ -82,11 +81,7 @@ public static class ApprovalEndpoints
         await db.SaveChangesAsync(ct);
 
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Approvals");
-        using (logger.BeginScope(new Dictionary<string, object>
-        {
-            ["thread_id"] = approval.ThreadId.ToString(),
-            ["correlation_id"] = approval.CorrelationId.ToString(),
-        }))
+        using (LogScopes.Turn(logger, approval.ThreadId, approval.CorrelationId))
             logger.LogInformation("approval requested: tool={Tool} risk={Risk} status={Status}",
                 approval.ToolName, approval.Risk, approval.Status);
 

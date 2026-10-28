@@ -15,6 +15,7 @@ public static class ServicesRegistration
         builder.Services.AddSingleton<IAgentInboxSignal, AgentInboxSignal>();
         builder.Services.AddSingleton<ApprovalSignal>();
         builder.Services.AddSingleton<ApprovalDecisions>();
+        builder.Services.AddScoped<MessageTurns>();
         // TryAdd: tests (and later phases) may register their own notifier or summariser first.
         builder.Services.TryAddSingleton<IApprovalNotifier, NoApprovalNotifier>();
         builder.Services.TryAddSingleton<IContextSummariser, NoSummariser>();

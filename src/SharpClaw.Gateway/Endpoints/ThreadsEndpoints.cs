@@ -5,6 +5,7 @@ using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Infrastructure;
 using SharpClaw.Gateway.Services;
+using SharpClaw.Gateway.Infrastructure.Sse;
 
 namespace SharpClaw.Gateway.Endpoints;
 
@@ -203,57 +204,16 @@ public static class ThreadsEndpoints
     }
 
     private static async Task<IResult> PostMessage(
-        Guid id, PostMessageRequest? body, SharpClawDbContext db, TimeProvider time,
-        IAgentInboxSignal signal, IEventPublisher events, IOptions<MessagesOptions> messages, ILoggerFactory loggerFactory,
-        CancellationToken ct)
+        Guid id, PostMessageRequest? body, MessageTurns turns, IOptions<MessagesOptions> messages, CancellationToken ct)
     {
-        if (!await db.Threads.AsNoTracking().AnyAsync(t => t.Id == id, ct))
-            return ApiResults.NotFound("Thread not found.");
-
         if (body is null || string.IsNullOrEmpty(body.Content))
             return ApiResults.ValidationFailed("content is required.");
         if (body.Content.Length > messages.Value.MaxContentChars)
             return ApiResults.ValidationFailed($"content exceeds {messages.Value.MaxContentChars} characters.");
 
-        var now = time.GetUtcNow().UtcDateTime;
-        Message message;
-        Guid agentId;
-        await using (var tx = await db.Database.BeginTransactionAsync(ct))
-        {
-            // Loaded inside the write transaction so the preview and auto-title can't race another post.
-            var thread = await db.Threads.FirstAsync(t => t.Id == id, ct);
-            agentId = thread.AgentId;
-            var isFirst = !await db.Messages.AnyAsync(m => m.ThreadId == id && m.Role == Roles.User, ct);
-            message = new Message
-            {
-                Id = Guid.CreateVersion7(),
-                ThreadId = thread.Id,
-                AgentId = thread.AgentId,
-                Role = Roles.User,
-                Content = body.Content,
-                Status = MessageStatus.Pending,
-                Unattended = body.Unattended,
-                CreatedAt = now,
-                Seq = await MessageQueries.NextSeqAsync(db, thread.Id, ct),
-            };
-            db.Messages.Add(message);
-            ThreadActivity.OnMessage(thread, body.Content, now, isFirst);
-            await db.SaveChangesAsync(ct);
-            await tx.CommitAsync(ct);
-        }
-
-        await events.PublishDurableAsync(id, SseEventNames.MessageCreated,
-            new MessageCreatedEvent(message.Id, id, message.Id), ct);
-        signal.Signal(agentId);
-
-        var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Messages");
-        using (logger.BeginScope(new Dictionary<string, object>
-        {
-            ["agent_id"] = agentId.ToString(),
-            ["thread_id"] = id.ToString(),
-            ["correlation_id"] = message.Id.ToString(),
-        }))
-            logger.LogInformation("message queued");
+        var message = await turns.PostAsync(id, body.Content, body.Unattended, ct);
+        if (message is null)
+            return ApiResults.NotFound("Thread not found.");
 
         var dto = new QueuedMessageDto(message.Id, message.Status, message.CreatedAt);
         return Results.Json(new QueuedMessageResponse(dto), SharpClawJson.Options, statusCode: 202);
