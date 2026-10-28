@@ -71,7 +71,7 @@ Section 13. Notably:
 | Activity feed | New `GET /api/activity` (recent user/assistant messages across threads, with a 120-character preview). It stays live by **invalidating the query on events**, as 3.3 does; event payloads are not enriched. |
 | Credits | The gateway fetches OpenRouter `GET /credits` with a separate **management key**. It fetches at startup, then every 24 h (hourly while failing), and caches the result **in memory**. `GET /api/credits` exposes it. |
 | Charts | Hand-rolled SVG (stacked bars, horizontal bars). No chart library. Each chart has a text alternative. |
-| Theme | Dark by default, matching the mockups. A light theme comes from the same CSS tokens and follows `prefers-color-scheme`. No manual toggle. |
+| Theme | Dark, matching the mockups, regardless of the system setting. A light theme from the same CSS tokens is opt-in from the user menu and remembered in `localStorage` (`lib/prefs.ts`). |
 | Phone | Supported. The tab bar becomes a horizontally scrolling strip, and the Prompts session list becomes a drawer. |
 | Unchanged | SQLite, EF Core, UTC `DateTime`, `TimeProvider`, the error shape, port-based listener separation, the CSP, one SSE stream per tab, shared visibility for every user. |
 
@@ -486,7 +486,7 @@ selected.
   | `--assistant` | blue `#7aa2f7` | assistant text |
   | `--ok` / `--warn` / `--danger` | green / amber / red `#f26d6d` | status |
 
-  Light-theme values are chosen to meet WCAG AA contrast.
+  Light-theme values (opt-in from the user menu) are chosen to meet WCAG AA contrast.
 - **Type:** the system UI font for prose; the system monospace stack
   (`ui-monospace, SFMono-Regular, Menlo, monospace`) for numbers, tables, timestamps, the tool rows
   and the status bar. No web fonts (CSP).
@@ -591,7 +591,7 @@ selected.
 - Fetching the model list from OpenRouter.
 - Persisting credits history, or alerts on low credits.
 - Usage beyond 30 days, custom date ranges, CSV export.
-- Chart libraries, user-configurable dashboards, tab reordering, a manual theme toggle.
+- Chart libraries, user-configurable dashboards, tab reordering.
 - A stop/cancel button, thread deletion, search (unchanged from 3.3).
 
 ## 14. Known gaps accepted in this phase (add to `docs/tech-debt.md`)

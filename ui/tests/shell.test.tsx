@@ -96,6 +96,19 @@ describe('header', () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
+  it('is dark by default and switches to a remembered light theme from the user menu', async () => {
+    const { user } = renderApp('/overview');
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    await user.click(await screen.findByRole('button', { name: 'Account menu (kevin)' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Light theme' }));
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(localStorage.getItem('sharpclaw.theme')).toBe('light');
+    await user.click(screen.getByRole('button', { name: 'Account menu (kevin)' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Dark theme' }));
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    localStorage.removeItem('sharpclaw.theme');
+  });
+
   it('has Account, system info and Sign out in the user menu', async () => {
     let loggedOut = false;
     server.use(

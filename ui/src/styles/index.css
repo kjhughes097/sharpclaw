@@ -1,7 +1,8 @@
 @import 'tailwindcss';
 
 /* Semantic colour tokens. Components use these (bg-surface, text-muted…), never raw colours. Dark
-   (from the 3.3.1 mockups) is the default; a light theme follows prefers-color-scheme. Both meet AA. */
+   (from the 3.3.1 mockups) is the theme; light is opt-in from the user menu (data-theme="light" on
+   <html>, set by lib/theme.ts). Both meet AA. */
 :root {
   color-scheme: dark;
   --sc-bg: #151517;
@@ -25,29 +26,27 @@
   --sc-chart-out: #f5b82e;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --sc-bg: #f6f7f9;
-    --sc-surface: #ffffff;
-    --sc-surface-2: #eef1f4;
-    --sc-text: #14181f;
-    --sc-muted: #4b5563;
-    --sc-border: #d4d9e0;
-    --sc-accent: #8a5a00;
-    --sc-accent-fg: #ffffff;
-    --sc-accent-soft: #fbefd5;
-    --sc-danger: #b42318;
-    --sc-danger-soft: #fdecea;
-    --sc-warn: #8a5300;
-    --sc-warn-soft: #fff4dc;
-    --sc-ok: #1d6b36;
-    --sc-ok-soft: #e3f4e8;
-    --sc-focus: #2563eb;
-    --sc-assistant: #1d4ed8;
-    --sc-chart-in: #2f5fd0;
-    --sc-chart-out: #b7791f;
-  }
+:root[data-theme='light'] {
+  color-scheme: light;
+  --sc-bg: #f6f7f9;
+  --sc-surface: #ffffff;
+  --sc-surface-2: #eef1f4;
+  --sc-text: #14181f;
+  --sc-muted: #4b5563;
+  --sc-border: #d4d9e0;
+  --sc-accent: #8a5a00;
+  --sc-accent-fg: #ffffff;
+  --sc-accent-soft: #fbefd5;
+  --sc-danger: #b42318;
+  --sc-danger-soft: #fdecea;
+  --sc-warn: #8a5300;
+  --sc-warn-soft: #fff4dc;
+  --sc-ok: #1d6b36;
+  --sc-ok-soft: #e3f4e8;
+  --sc-focus: #2563eb;
+  --sc-assistant: #1d4ed8;
+  --sc-chart-in: #2f5fd0;
+  --sc-chart-out: #b7791f;
 }
 
 @theme inline {
@@ -78,6 +77,14 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+/* Dense on desktop, like the mockups: everything is rem-sized, so a 14 px root shrinks text,
+   spacing and controls together. Touch screens keep 16 px and 44 px targets. */
+@media (min-width: 768px) and (pointer: fine) {
+  html {
+    font-size: 14px;
+  }
 }
 
 body {

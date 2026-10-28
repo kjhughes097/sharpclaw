@@ -46,7 +46,7 @@ export function ActivityList({
   if (items.length === 0) return <p className="py-2 text-sm text-muted">No messages yet.</p>;
 
   return (
-    <div className={`overflow-y-auto ${heightClass}`}>
+    <div className={`relative overflow-y-auto ${heightClass}`}>
       <ol aria-label="Messages" className="font-mono text-xs">
         {items.map((item) => {
           const kind = kindOf(item);

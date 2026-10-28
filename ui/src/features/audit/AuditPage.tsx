@@ -48,7 +48,7 @@ export function AuditPage() {
     );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-7xl p-4">
         <h1 className="text-xl font-semibold">Audit</h1>
         <p className="mt-1 text-sm text-muted">

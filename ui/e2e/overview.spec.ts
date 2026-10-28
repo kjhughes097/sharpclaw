@@ -29,3 +29,27 @@ test.describe('overview', () => {
     await expect(page).toHaveURL(new RegExp(`/prompts/${thread.id}$`));
   });
 });
+
+test.describe('layout', () => {
+  test('only the panes scroll, never the page itself', async ({ page, request }) => {
+    await login(page, '/overview');
+    const api = admin(request);
+    const { thread } = (await (
+      await api.post('/api/threads', { agentId: 'assistant', title: 'Scroll' })
+    ).json()) as {
+      thread: { id: string };
+    };
+    for (let i = 0; i < 8; i++)
+      await api.post(`/api/threads/${thread.id}/messages`, { content: `line ${i}` });
+
+    for (const path of ['/overview', `/prompts/${thread.id}`, '/agents/assistant', '/audit', '/agents']) {
+      await page.goto(path);
+      await expect(page.getByRole('navigation', { name: 'Main' })).toBeVisible();
+      await expect
+        .poll(() => page.evaluate(() => document.scrollingElement!.scrollHeight - window.innerHeight), {
+          message: `${path} scrolls the page`,
+        })
+        .toBeLessThanOrEqual(0);
+    }
+  });
+});

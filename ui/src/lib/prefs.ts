@@ -1,6 +1,6 @@
 /**
  * The only module allowed to use localStorage (enforced by ESLint). It stores non-sensitive UI
- * preferences (tool-details expansion, last agent picked); never credentials, tokens or content.
+ * preferences (tool-details expansion, last agent picked, theme); never credentials, tokens or content.
  * Storage can throw (private mode, quota), so every access is guarded.
  */
 const EXPAND_TOOLS_KEY = 'sharpclaw.expandToolDetails';
@@ -37,5 +37,25 @@ export function setLastAgent(name: string) {
     localStorage.setItem(LAST_AGENT_KEY, name);
   } catch {
     // Not persisted.
+  }
+}
+
+export type Theme = 'dark' | 'light';
+const THEME_KEY = 'sharpclaw.theme';
+
+/** Dark unless the user picked light in the user menu. */
+export function getTheme(): Theme {
+  try {
+    return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
+  } catch {
+    return 'dark';
+  }
+}
+
+export function setTheme(theme: Theme) {
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {
+    // Not persisted; the theme still applies for this page.
   }
 }

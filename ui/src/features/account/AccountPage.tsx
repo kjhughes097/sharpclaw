@@ -20,7 +20,7 @@ export function AccountPage() {
   const expiresAt = state.status === 'signed_in' ? state.expiresAt : null;
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="relative min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-2xl space-y-6 p-4">
         <h1 className="text-xl font-semibold">Account</h1>
         <section

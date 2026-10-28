@@ -63,7 +63,7 @@ export function TracePanel({
           </span>
         </Button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
+      <div className="relative min-h-0 flex-1 overflow-y-auto">{body}</div>
     </section>
   );
 }
