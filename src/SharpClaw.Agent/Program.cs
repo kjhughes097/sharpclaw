@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SharpClaw.Agent;
 using SharpClaw.Agent.Tools;
+using SharpClaw.Agent.Tools.Utility;
 using SharpClaw.Agent.Tools.Workspace;
 
 var config = AgentConfig.FromEnvironment();
@@ -23,10 +24,12 @@ var soul = new SoulProvider(config, loggerFactory.CreateLogger<SoulProvider>());
 
 // Tool policy is read once, from read-only config. A bad config stops the agent rather than
 // silently granting (or dropping) tools.
+// Every tool the agent knows; the config picks the subset this agent may offer.
+var knownTools = WorkspaceTools.Names.Concat(UtilityTools.Names).ToArray();
 AgentToolConfig? toolConfig;
 try
 {
-    toolConfig = AgentToolConfig.Load(config.ToolConfigPath, WorkspaceTools.Names);
+    toolConfig = AgentToolConfig.Load(config.ToolConfigPath, knownTools);
 }
 catch (AgentToolConfigException ex)
 {
@@ -41,7 +44,8 @@ if (toolConfig is null)
 }
 else
 {
-    var registry = new ToolRegistry(WorkspaceTools.All(config.WorkspacePath), toolConfig.Tools);
+    var available = WorkspaceTools.All(config.WorkspacePath).Concat(UtilityTools.All(TimeProvider.System));
+    var registry = new ToolRegistry(available, toolConfig.Tools);
     var dispatcher = new ToolDispatcher(registry, toolConfig, gateway, loggerFactory.CreateLogger<ToolDispatcher>());
     tools = new AgentTools(registry, dispatcher, toolConfig.MaxToolIterations);
     logger.LogInformation(

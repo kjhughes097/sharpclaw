@@ -1,10 +1,14 @@
+using System.Text.Json;
 using SharpClaw.Agent.Tools;
+using SharpClaw.Agent.Tools.Utility;
+using SharpClaw.Agent.Tools.Workspace;
 
 namespace SharpClaw.Agent.Tests;
 
 public class AgentToolConfigTests : IDisposable
 {
-    private static readonly string[] Known = { "workspace_list", "workspace_read", "workspace_write", "workspace_delete" };
+    // The same union Program.cs passes in.
+    private static readonly string[] Known = WorkspaceTools.Names.Concat(UtilityTools.Names).ToArray();
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"agent-config-{Guid.NewGuid():N}.json");
 
     public void Dispose() => File.Delete(_path);
@@ -53,4 +57,12 @@ public class AgentToolConfigTests : IDisposable
     [InlineData("""{ "tools": [ "run_shell" ] }""")]
     public void Invalid_config_throws(string json) =>
         Assert.Throws<AgentToolConfigException>(() => Load(json));
+
+    [Fact]
+    public void Every_known_tool_name_is_accepted()
+    {
+        var config = Load(JsonSerializer.Serialize(new { tools = Known }))!;
+        Assert.Equal(Known, config.Tools);
+        Assert.Contains("current_time", config.Tools);
+    }
 }
