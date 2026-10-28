@@ -64,6 +64,17 @@ describe('tab bar', () => {
 });
 
 describe('routes', () => {
+  it('shows not found inside the shell for a malformed agent name', async () => {
+    server.use(
+      http.get('*/api/agents/:name', () =>
+        HttpResponse.json({ error: { code: 'not_found', message: 'x' } }, { status: 404 }),
+      ),
+    );
+    renderApp('/agents/100%');
+    expect(await screen.findByText(/Not found\. It may have been removed\./)).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+  });
+
   it.each([
     ['/', '/overview'],
     ['/chats', '/prompts'],

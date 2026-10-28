@@ -1,6 +1,6 @@
 import { DropdownMenu } from 'radix-ui';
 import { useEffect, useRef } from 'react';
-import { Link, NavLink, useLocation } from 'react-router';
+import { Link, NavLink, useLocation, useMatch } from 'react-router';
 import { useAgents, usePendingApprovals } from '../api/hooks';
 import type { AgentDto } from '../api/types';
 
@@ -85,8 +85,8 @@ export function TabBar() {
   const pending = approvals.data?.length ?? 0;
   const location = useLocation();
   const { inline, more } = splitAgentTabs(agents.data ?? []);
-  const match = /^\/agents\/([^/]+)/.exec(location.pathname);
-  const activeAgent = match?.[1] ? decodeURIComponent(match[1]) : null;
+  // The router decodes the name safely (a malformed escape must not crash the shell).
+  const activeAgent = useMatch('/agents/:name')?.params.name ?? null;
   const navRef = useRef<HTMLElement>(null);
 
   useEffect(() => {

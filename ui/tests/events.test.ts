@@ -113,6 +113,14 @@ describe('applyEvent (event → UI state)', () => {
     );
   });
 
+  it('thread.updated leaves non-paged thread queries alone and still invalidates them', () => {
+    const h = harness();
+    const recent = [...keys.threads, 'recent', 'agent-1'];
+    h.queryClient.setQueryData(recent, { threads: [{ id: t, title: 'old' }], nextCursor: null });
+    expect(() => h.apply('thread.updated')).not.toThrow();
+    expect(h.invalidated).toContain(k(keys.threads));
+  });
+
   it('message.created invalidates messages, list and detail', () => {
     const h = harness();
     h.apply('message.created');

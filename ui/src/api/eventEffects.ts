@@ -30,8 +30,10 @@ export function applyEvent(event: StreamEvent, { queryClient, live, onTurnError 
       break;
     case 'thread.updated': {
       const { threadId, title, archived, model } = event.data;
+      // Only the paged lists have `pages`; other queries under the prefix (the agent tab's recent
+      // sessions) are refreshed by the invalidation below.
       queryClient.setQueriesData<InfiniteData<ThreadListResponse>>({ queryKey: keys.threads }, (data) =>
-        data
+        data && 'pages' in data
           ? {
               ...data,
               pages: data.pages.map((page) => ({
