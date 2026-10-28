@@ -7,27 +7,13 @@ namespace SharpClaw.Gateway.Services;
 
 public static class MessageQueries
 {
-    /// <summary>
-    /// A thread's rows in <c>seq</c> order. Without <paramref name="includeTools"/> only user
-    /// messages and final replies; <paramref name="after"/> is a message id to continue from.
-    /// </summary>
+    /// <summary>All of a thread's rows in <c>seq</c> order; without <paramref name="includeTools"/>, only user messages and final replies.</summary>
     public static async Task<List<MessageDto>> ListAsync(
-        SharpClawDbContext db, Guid threadId, Guid? after, bool includeTools, CancellationToken ct)
+        SharpClawDbContext db, Guid threadId, bool includeTools, CancellationToken ct)
     {
         var query = db.Messages.AsNoTracking().Where(m => m.ThreadId == threadId);
         if (!includeTools)
             query = query.Where(m => m.Kind == MessageKinds.Message);
-
-        if (after is { } afterId)
-        {
-            var anchor = await db.Messages.AsNoTracking()
-                .Where(m => m.Id == afterId && m.ThreadId == threadId)
-                .Select(m => (int?)m.Seq)
-                .FirstOrDefaultAsync(ct);
-            if (anchor is { } seq)
-                query = query.Where(m => m.Seq > seq);
-        }
-
         var rows = await query.OrderBy(m => m.Seq).ToListAsync(ct);
         return rows.Select(ToDto).ToList();
     }

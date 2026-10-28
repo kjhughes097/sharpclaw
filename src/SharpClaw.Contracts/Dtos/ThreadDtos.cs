@@ -1,0 +1,63 @@
+namespace SharpClaw.Contracts;
+
+// ----- Threads -----
+
+public sealed record CreateThreadRequest(string AgentId, string? Title);
+
+/// <summary>
+/// <c>Context</c>: how the thread fit the model's window the last time the agent built its context.
+/// <c>DroppedTurns</c> &gt; 0 means older messages are no longer seen by the model.
+/// </summary>
+public sealed record ThreadDto(
+    Guid Id,
+    Guid AgentId,
+    string? Title,
+    DateTime CreatedAt,
+    ThreadContextDto? Context = null,
+    bool Archived = false,
+    DateTime? LastMessageAt = null);
+
+public sealed record ThreadContextDto(int DroppedTurns, int EstimatedTokens, int WindowTokens);
+
+public sealed record CreatedThreadResponse(ThreadDto Thread);
+
+/// <summary>
+/// A thread-list row. <c>InFlight</c>: a user message is claimed; <c>Queued</c>: user messages still
+/// pending; <c>PendingApprovals</c>: approvals waiting for the human.
+/// </summary>
+public sealed record ThreadSummaryDto(
+    Guid Id,
+    Guid AgentId,
+    string AgentName,
+    string? Title,
+    bool Archived,
+    DateTime CreatedAt,
+    DateTime LastMessageAt,
+    string? Preview,
+    int PendingApprovals,
+    bool InFlight,
+    int Queued);
+
+/// <summary>Newest <c>LastMessageAt</c> first. <c>NextCursor</c> is opaque; null on the last page.</summary>
+public sealed record ThreadListResponse(IReadOnlyList<ThreadSummaryDto> Threads, string? NextCursor = null);
+
+/// <summary>Both fields optional; <c>Title</c> is trimmed and must be 1 to 120 characters.</summary>
+public sealed record UpdateThreadRequest(string? Title, bool? Archived);
+
+public sealed record ThreadResponse(ThreadDto Thread);
+
+/// <summary>The claimed user message of the turn in progress.</summary>
+public sealed record InFlightTurnDto(Guid CorrelationId, DateTime? ClaimedAt);
+
+/// <summary>A pending approval as shown in the thread view. Never carries tool arguments.</summary>
+public sealed record PendingApprovalDto(
+    Guid Id, Guid CorrelationId, string ToolName, string Risk, string Summary, string Reason, DateTime CreatedAt,
+    DateTime ExpiresAt);
+
+/// <summary>Everything the thread view needs besides the messages. <c>InFlight</c> is null when idle.</summary>
+public sealed record ThreadDetailResponse(
+    ThreadDto Thread,
+    AgentDto Agent,
+    InFlightTurnDto? InFlight,
+    int Queued,
+    IReadOnlyList<PendingApprovalDto> PendingApprovals);

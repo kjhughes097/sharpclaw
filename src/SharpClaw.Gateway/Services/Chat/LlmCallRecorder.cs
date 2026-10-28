@@ -4,7 +4,7 @@ using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Providers;
 using SharpClaw.Gateway.Telemetry;
 
-namespace SharpClaw.Gateway.Endpoints;
+namespace SharpClaw.Gateway.Services.Chat;
 
 /// <summary>How one LLM call ended. Replaces a long positional parameter list.</summary>
 public sealed record LlmCallOutcome

@@ -116,13 +116,15 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 
 | Folder | Contents |
 |---|---|
-| `GatewayBuilder.cs` | Options, JSON, DbContext, Kestrel listeners, middleware, endpoint mapping. |
+| `GatewayBuilder.cs` | Composition root: `AddSharpClawOptions()` (bound **and validated**; bad config stops startup), JSON (`SharpClawJson.Apply`), DbContext, Kestrel listeners, middleware, `MapSharpClawEndpoints()`. |
+| `Configuration/` | Options classes (DataAnnotations) and `OptionsRegistration` (source-generated validators plus cross-field rules, `IStartupCheck`). |
 | `Auth/` | Client and agent auth filters, sessions, login rate limiter, password hashing, auth/user endpoints. |
-| `Endpoints/` | Minimal-API endpoint classes per area, plus the chat streaming helpers. |
-| `Services/` | Inbox, message queries, context building, events (publisher, bus, turn buffers), approvals, background services. |
+| `Endpoints/` | Minimal-API endpoint classes per area: thin HTTP adapters (validate input, call a service, map the outcome to a result). |
+| `Services/` | `MessageTurns` (post/complete/fail/release of a turn) and `TurnGuard` (the one agent-ownership rule); inbox, message queries, context building, events (publisher, bus, turn buffers), approvals, background services. |
+| `Services/Chat/` | Chat-completion helpers: request parsing, OpenAI-style chunk writing, `llm_calls` recording. |
 | `Providers/` | `IChatProvider` with `OpenRouterProvider` and the scripted `FakeProvider`. |
 | `Telemetry/` | `GatewayMetrics` (meter `SharpClaw.Gateway`) and OTLP wiring. |
-| `Infrastructure/` | Listener filter, error results, exception middleware, OpenAPI, UI hosting, paging cursor. |
+| `Infrastructure/` | Listener filter, error results, exception middleware, OpenAPI, UI hosting, paging cursor, `LogScopes`; `Sse/EventStreamResult` (replay + live SSE). |
 
 ## 8. Invariants (each guarded by tests)
 

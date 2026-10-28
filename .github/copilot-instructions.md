@@ -78,8 +78,9 @@ to rewrite `docs/openapi/sharpclaw-client.v1.json` and `docs/api-fixtures/events
   `HttpContext.Connection.LocalPort` (`ListenerFilter`), **never** the `Host` header:
   client `/api/*` (admin key or session cookie + CSRF, port 8080) vs agent `/agent/*` + `/v1/*`
   (agent token, port 8081). `/api/users*` is admin-key only.
-  Wrong listener → `404`. Endpoint registration lives in `Endpoints/`, wired via
-  `Endpoints/EndpointMapping.cs`; service registration is split into `GatewayServices` partials.
+  Wrong listener → `404`. `GatewayBuilder` calls plain extension methods: `AddSharpClawOptions()`
+  (every options class is validated at startup), `AddSharpClawAuth/Providers/Services/Telemetry()`
+  and `MapSharpClawEndpoints()` (`Endpoints/EndpointMapping.cs`, the one list of route groups).
 - `src/SharpClaw.Agent` — console loop; HTTP and soul file behind `IGatewayClient` / `ISoulProvider`.
 - `src/SharpClaw.Cli` — assembly `sharpclaw`; gateway access behind `ICliGateway`. Chat opens the
   SSE stream **before** posting (a fresh connect replays nothing) and resumes with `Last-Event-ID`.
@@ -110,8 +111,11 @@ to rewrite `docs/openapi/sharpclaw-client.v1.json` and `docs/api-fixtures/events
   content, soul contents, tokens, keys or upstream response bodies. Tokens are stored only as
   SHA-256 hex + 8-char prefix; the value is returned once. Secrets come from env vars / `.env`
   (gitignored) — never commit them.
-- **Logging:** put `agent`, `agent_id`, `thread_id`, `correlation_id` in `ILogger.BeginScope`
-  (log attributes → Loki structured metadata), not resource attributes.
+- **Logging:** put `agent`, `agent_id`, `thread_id`, `correlation_id` in the log scope via
+  `LogScopes.Turn(...)` / `LogScopes.ForAgent(...)` (log attributes → Loki structured metadata), not
+  resource attributes. The agent uses the same `correlation_id` key.
+- **Turn state and ownership:** change a user turn's state only through `MessageTurns`, and check
+  agent ownership with `TurnGuard` (never re-implement the "claimed message belongs to this agent" rule).
 - **Metrics:** meter `SharpClaw.Gateway`; labels limited to agent, model, status, type, listener —
   never thread/message/correlation/token ids. Histograms are in seconds with explicit buckets.
   Landed names keep dots (no `_total`), so query them as `{__name__="sharpclaw.llm.calls"}`.

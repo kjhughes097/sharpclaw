@@ -4,7 +4,7 @@ using SharpClaw.Contracts;
 using SharpClaw.Gateway.Infrastructure;
 using SharpClaw.Gateway.Providers;
 
-namespace SharpClaw.Gateway.Endpoints;
+namespace SharpClaw.Gateway.Services.Chat;
 
 /// <summary>A validated <c>/v1/chat/completions</c> request body.</summary>
 public sealed record ParsedChatRequest(

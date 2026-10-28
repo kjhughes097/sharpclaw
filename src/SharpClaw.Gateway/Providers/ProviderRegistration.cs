@@ -4,9 +4,10 @@ using SharpClaw.Gateway.Providers;
 
 namespace SharpClaw.Gateway;
 
-public static partial class GatewayServices
+public static class ProviderRegistration
 {
-    static partial void RegisterProviders(WebApplicationBuilder builder)
+    /// <summary>Registers the configured <see cref="IChatProvider"/> (<c>Provider:Type</c>: OpenRouter or Fake).</summary>
+    public static WebApplicationBuilder AddSharpClawProviders(this WebApplicationBuilder builder)
     {
         var providerType = builder.Configuration.GetValue<string>("Provider:Type") ?? "OpenRouter";
 
@@ -17,24 +18,17 @@ public static partial class GatewayServices
         else
         {
             builder.Services.AddHttpClient<IChatProvider, OpenRouterProvider>();
-            builder.Services.AddSingleton<IStartupValidator, OpenRouterKeyValidator>();
+            builder.Services.AddSingleton<IStartupCheck, OpenRouterKeyValidator>();
         }
+        return builder;
     }
 }
 
-public interface IStartupValidator
+public sealed class OpenRouterKeyValidator(IOptions<OpenRouterOptions> options) : IStartupCheck
 {
-    void Validate();
-}
-
-public sealed class OpenRouterKeyValidator : IStartupValidator
-{
-    private readonly OpenRouterOptions _options;
-    public OpenRouterKeyValidator(IOptions<OpenRouterOptions> options) => _options = options.Value;
-
     public void Validate()
     {
-        if (string.IsNullOrWhiteSpace(_options.ApiKey))
+        if (string.IsNullOrWhiteSpace(options.Value.ApiKey))
             throw new InvalidOperationException("OpenRouter:ApiKey is required when Provider:Type=OpenRouter.");
     }
 }

@@ -206,7 +206,7 @@ public sealed class GatewayMetrics : IDisposable
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SharpClawDbContext>();
         var rows = db.Messages.AsNoTracking()
-            .Where(m => m.Role == "user" && m.Status == "pending")
+            .Where(m => m.Role == Roles.User && m.Status == MessageStatus.Pending)
             .GroupBy(m => m.AgentId)
             .Select(g => new { g.Key, Count = g.Count() })
             .ToList();

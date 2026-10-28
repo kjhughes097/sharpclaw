@@ -52,11 +52,7 @@ public static class ToolCallEndpoints
 
         metrics.RecordToolCall(agent.Name, row.ToolName, row.Status);
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Tools");
-        using (logger.BeginScope(new Dictionary<string, object>
-        {
-            ["thread_id"] = row.ThreadId.ToString(),
-            ["correlation_id"] = row.CorrelationId.ToString(),
-        }))
+        using (LogScopes.Turn(logger, row.ThreadId, row.CorrelationId))
             logger.LogInformation(
                 "tool call reported: tool={Tool} status={Status} decision={Decision} risk={Risk} tainted={Tainted} duration_ms={DurationMs}",
                 row.ToolName, row.Status, row.Decision, row.Risk, row.Tainted, row.DurationMs);

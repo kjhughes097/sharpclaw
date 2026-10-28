@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
-using SharpClaw.Gateway.Endpoints;
+using SharpClaw.Gateway.Services.Chat;
 
 namespace SharpClaw.Gateway.Tests;
 

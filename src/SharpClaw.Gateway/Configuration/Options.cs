@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
 
 namespace SharpClaw.Gateway.Configuration;
@@ -5,14 +7,14 @@ namespace SharpClaw.Gateway.Configuration;
 public sealed class ListenerOptions
 {
     public const string Section = "Listeners";
-    public int ClientPort { get; set; } = 8080;
-    public int AgentPort { get; set; } = 8081;
+    [Range(1, 65535)] public int ClientPort { get; set; } = 8080;
+    [Range(1, 65535)] public int AgentPort { get; set; } = 8081;
 }
 
 public sealed class DatabaseOptions
 {
     public const string Section = "Database";
-    public string Path { get; set; } = "/data/sharpclaw.db";
+    [Required] public string Path { get; set; } = "/data/sharpclaw.db";
 }
 
 public sealed class AuthOptions
@@ -20,10 +22,12 @@ public sealed class AuthOptions
     public const string Section = "Auth";
     public const int MinPbkdf2Iterations = 600_000;
 
+    [Required(ErrorMessage = "Auth:AdminKey is required (set Auth__AdminKey).")]
     public string AdminKey { get; set; } = "";
-    public SessionCookieOptions Session { get; set; } = new();
-    public PasswordOptions Password { get; set; } = new();
-    public LoginOptions Login { get; set; } = new();
+
+    [ValidateObjectMembers] public SessionCookieOptions Session { get; set; } = new();
+    [ValidateObjectMembers] public PasswordOptions Password { get; set; } = new();
+    [ValidateObjectMembers] public LoginOptions Login { get; set; } = new();
 
     /// <summary>
     /// Extra origins accepted for cookie-authenticated requests (a reverse proxy whose public origin
@@ -38,24 +42,26 @@ public enum CookieSecureMode { Auto, Always, Never }
 
 public sealed class SessionCookieOptions
 {
-    public string CookieName { get; set; } = "sharpclaw_session";
+    [Required] public string CookieName { get; set; } = "sharpclaw_session";
 
     /// <summary><c>Auto</c>: Secure when the request is HTTPS (after forwarded-header processing).</summary>
     public CookieSecureMode CookieSecure { get; set; } = CookieSecureMode.Auto;
 
-    public int IdleTimeoutHours { get; set; } = 168;
-    public int AbsoluteTimeoutDays { get; set; } = 30;
+    [Range(1, 24 * 365)] public int IdleTimeoutHours { get; set; } = 168;
+    [Range(1, 3650)] public int AbsoluteTimeoutDays { get; set; } = 30;
 }
 
 public sealed class PasswordOptions
 {
+    [Range(AuthOptions.MinPbkdf2Iterations, int.MaxValue,
+        ErrorMessage = "Auth:Password:Pbkdf2Iterations must be at least 600000.")]
     public int Pbkdf2Iterations { get; set; } = AuthOptions.MinPbkdf2Iterations;
 }
 
 public sealed class LoginOptions
 {
-    public int MaxFailures { get; set; } = 5;
-    public int WindowMinutes { get; set; } = 15;
+    [Range(1, 1000)] public int MaxFailures { get; set; } = 5;
+    [Range(1, 24 * 60)] public int WindowMinutes { get; set; } = 15;
 }
 
 public sealed class ForwardedHeadersSettings
@@ -69,15 +75,15 @@ public sealed class ForwardedHeadersSettings
 public sealed class ProviderOptions
 {
     public const string Section = "Provider";
-    public string Type { get; set; } = "OpenRouter";
-    public int ConnectTimeoutSeconds { get; set; } = 10;
-    public int IdleTimeoutSeconds { get; set; } = 60;
+    [Required] public string Type { get; set; } = "OpenRouter";
+    [Range(1, 600)] public int ConnectTimeoutSeconds { get; set; } = 10;
+    [Range(1, 3600)] public int IdleTimeoutSeconds { get; set; } = 60;
 }
 
 public sealed class OpenRouterOptions
 {
     public const string Section = "OpenRouter";
-    public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
+    [Required, Url] public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
     public string ApiKey { get; set; } = "";
 }
 
@@ -85,20 +91,20 @@ public sealed class FakeOptions
 {
     public const string Section = "Fake";
     public string? ScriptPath { get; set; }
-    public double CostPerTokenUsd { get; set; } = 0.000001;
+    [Range(0, 1)] public double CostPerTokenUsd { get; set; } = 0.000001;
 }
 
 public sealed class InboxOptions
 {
     public const string Section = "Inbox";
-    public int MaxWaitSeconds { get; set; } = 60;
-    public int ClaimTimeoutSeconds { get; set; } = 300;
+    [Range(0, 600)] public int MaxWaitSeconds { get; set; } = 60;
+    [Range(1, 86400)] public int ClaimTimeoutSeconds { get; set; } = 300;
 }
 
 public sealed class MessagesOptions
 {
     public const string Section = "Messages";
-    public int MaxContentChars { get; set; } = 32000;
+    [Range(1, 10_000_000)] public int MaxContentChars { get; set; } = 32000;
 }
 
 public sealed class ApprovalsOptions
@@ -106,10 +112,10 @@ public sealed class ApprovalsOptions
     public const string Section = "Approvals";
 
     /// <summary>A pending approval expires (counts as denied) after this many seconds.</summary>
-    public int TimeoutSeconds { get; set; } = 300;
+    [Range(1, 7 * 86400)] public int TimeoutSeconds { get; set; } = 300;
 
     /// <summary>How often the background sweeper expires overdue approvals.</summary>
-    public int SweepIntervalSeconds { get; set; } = 10;
+    [Range(1, 86400)] public int SweepIntervalSeconds { get; set; } = 10;
 }
 
 public sealed class EventsOptions
@@ -117,7 +123,7 @@ public sealed class EventsOptions
     public const string Section = "Events";
 
     /// <summary>Durable SSE events older than this are pruned (replay before that yields <c>reset</c>).</summary>
-    public int RetentionDays { get; set; } = 14;
+    [Range(1, 3650)] public int RetentionDays { get; set; } = 14;
 }
 
 public sealed class ToolsOptions
@@ -125,25 +131,26 @@ public sealed class ToolsOptions
     public const string Section = "Tools";
 
     /// <summary>Stored tool results are cut to this many characters.</summary>
-    public int MaxStoredResultChars { get; set; } = ToolHistoryLimits.DefaultMaxStoredResultChars;
+    [Range(1, int.MaxValue)] public int MaxStoredResultChars { get; set; } = ToolHistoryLimits.DefaultMaxStoredResultChars;
 
     /// <summary>Each JSON string value in stored tool arguments is cut to this many characters.</summary>
-    public int MaxStoredArgumentStringChars { get; set; } = ToolHistoryLimits.DefaultMaxStoredArgumentStringChars;
+    [Range(1, int.MaxValue)] public int MaxStoredArgumentStringChars { get; set; } = ToolHistoryLimits.DefaultMaxStoredArgumentStringChars;
 
-    public int MaxExchangesPerReply { get; set; } = 50;
+    [Range(1, 1000)] public int MaxExchangesPerReply { get; set; } = 50;
 }
 
 public sealed class ContextOptions
 {
     public const string Section = "Context";
 
+    [Range(ContextDefaults.MinWindowTokens, ContextDefaults.MaxWindowTokens)]
     public int DefaultWindowTokens { get; set; } = ContextDefaults.DefaultWindowTokens;
 
     /// <summary>Kept free for the model's reply.</summary>
-    public int ReplyReserveTokens { get; set; } = 2000;
+    [Range(0, ContextDefaults.MaxWindowTokens)] public int ReplyReserveTokens { get; set; } = 2000;
 
-    public int CharsPerToken { get; set; } = ContextDefaults.CharsPerToken;
-    public int MessageOverheadTokens { get; set; } = ContextDefaults.MessageOverheadTokens;
+    [Range(1, 100)] public int CharsPerToken { get; set; } = ContextDefaults.CharsPerToken;
+    [Range(0, 1000)] public int MessageOverheadTokens { get; set; } = ContextDefaults.MessageOverheadTokens;
 
     public int WindowFor(int? agentWindow) => agentWindow ?? DefaultWindowTokens;
 }
@@ -164,5 +171,5 @@ public sealed class ChatOptions
     /// Backstop against runaway tool loops: the most LLM calls one user message may make,
     /// whatever the agent's own limit says (3.2 spec section 8.1).
     /// </summary>
-    public int MaxLlmCallsPerMessage { get; set; } = 20;
+    [Range(1, 1000)] public int MaxLlmCallsPerMessage { get; set; } = 20;
 }

@@ -61,8 +61,7 @@ public sealed class AgentLoop
                     break;
                 case LoopOutcome.Transient:
                     await DelayAsync(Jitter(backoff), ct);
-                    backoff = backoff < MaxBackoff ? backoff * 2 : MaxBackoff;
-                    if (backoff > MaxBackoff) backoff = MaxBackoff;
+                    backoff = backoff * 2 > MaxBackoff ? MaxBackoff : backoff * 2;
                     break;
                 default:
                     backoff = MinBackoff;
@@ -97,7 +96,7 @@ public sealed class AgentLoop
         var start = _time.GetTimestamp();
         using var scope = _logger.BeginScope(new Dictionary<string, object>
         {
-            ["message_id"] = msg.Id,
+            ["correlation_id"] = msg.Id,
             ["thread_id"] = msg.ThreadId,
         });
 

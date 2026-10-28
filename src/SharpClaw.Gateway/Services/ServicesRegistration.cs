@@ -3,9 +3,9 @@ using SharpClaw.Gateway.Services;
 
 namespace SharpClaw.Gateway;
 
-public static partial class GatewayServices
+public static class ServicesRegistration
 {
-    static partial void RegisterServices(WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddSharpClawServices(this WebApplicationBuilder builder)
     {
         builder.Services.AddSingleton<IThreadEventBus, ThreadEventBus>();
         builder.Services.AddSingleton<IEventPublisher, EventPublisher>();
@@ -15,9 +15,12 @@ public static partial class GatewayServices
         builder.Services.AddSingleton<IAgentInboxSignal, AgentInboxSignal>();
         builder.Services.AddSingleton<ApprovalSignal>();
         builder.Services.AddSingleton<ApprovalDecisions>();
+        builder.Services.AddScoped<MessageTurns>();
+        // TryAdd: tests (and later phases) may register their own notifier or summariser first.
         builder.Services.TryAddSingleton<IApprovalNotifier, NoApprovalNotifier>();
         builder.Services.TryAddSingleton<IContextSummariser, NoSummariser>();
         builder.Services.AddSingleton<ApprovalExpirySweeper>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ApprovalExpirySweeper>());
+        return builder;
     }
 }

@@ -409,7 +409,7 @@ public class AuthTests
     [Fact]
     public async Task Iterations_below_the_minimum_refuse_to_start()
     {
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var ex = await Assert.ThrowsAsync<Microsoft.Extensions.Options.OptionsValidationException>(() =>
             StartAsync(new Dictionary<string, string?> { ["Auth:Password:Pbkdf2Iterations"] = "1000" }));
         Assert.Contains("Pbkdf2Iterations", ex.Message);
     }

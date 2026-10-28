@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Options;
+using SharpClaw.Contracts;
 using SharpClaw.Gateway.Configuration;
 
 namespace SharpClaw.Gateway.Providers;
@@ -35,7 +36,7 @@ public sealed class FakeProvider : IChatProvider
     public async IAsyncEnumerable<ChatStreamEvent> StreamAsync(
         ProviderChatRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
-        var lastUser = request.Messages.LastOrDefault(m => m.Role == "user")?.Content ?? "";
+        var lastUser = request.Messages.LastOrDefault(m => m.Role == Roles.User)?.Content ?? "";
         var last = request.Messages.LastOrDefault();
         var totalPromptChars = request.Messages.Sum(PromptChars);
         var rule = _script.Rules.FirstOrDefault(r =>
