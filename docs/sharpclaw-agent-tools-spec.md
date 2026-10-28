@@ -1,7 +1,7 @@
 # SharpClaw V3 — Agent Tools Spec
 
 **Audience:** an implementing coding agent (and the human reviewing its work).
-**Status:** draft. Ready to implement once the open questions in section 8 are answered.
+**Status:** implemented. Open questions resolved in section 0.1.
 **Scope:** only tools that run entirely **inside the agent**, against its own workspace or local
 state. No new gateway endpoints, no network access. Tools that need the gateway or an external
 service (fetch, web search, GitHub, budget status, memory, agent-to-agent, scheduling) are out of
@@ -12,12 +12,23 @@ change it, in particular the risk model (§3), agent configuration (§4) and the
 
 ## 0. How to use this document
 
-- Implement in the task order in section 10. Each task is one branch and one pull request, with
+- Implement in the task order in section 9. Each task is one branch and one pull request, with
   passing tests, before the next task starts.
 - "MUST" / "MUST NOT" are hard requirements.
 - If something is ambiguous or contradictory, stop and ask the human rather than guessing.
 - Never log or emit as a metric label any prompt, reply, tool argument, tool result, soul contents,
   token or key.
+
+### 0.1 Decisions
+
+- **Q1 — build `calculate`?** Yes. The grammar in section 5.2 is small and fixed, hand-parsed, and
+  can't reach code, files or the network.
+- **Search `glob`:** a pattern without `/` matches the file name (`*.md` finds Markdown files at any
+  depth); a pattern with `/` matches the path relative to the search directory, as `workspace_find`
+  does.
+- **Overwrite risk:** move/copy are raised to the overwrite level only when `overwrite` is `true`
+  **and** the destination exists, the same rule `workspace_write` uses for overwrites.
+- **Result sizes:** `workspace_append` reports `bytes` as the file's size after the append.
 
 ## 1. Goal
 
@@ -133,7 +144,7 @@ cautious** assessment wins: `Uncertain` over a score, and the higher score other
 | Tool | Arguments | Result | Risk | Untrusted result |
 |---|---|---|---|---|
 | `current_time` | `timezone` (optional IANA id, e.g. `Europe/London`) | `{ utc, local, timezone, dayOfWeek }` | `low` | no |
-| `calculate` *(pending decision Q1)* | `expression` (max 200 chars) | `{ expression, value }` | `low` | no |
+| `calculate` | `expression` (max 200 chars) | `{ expression, value }` | `low` | no |
 
 ### 5.1 `current_time`
 
@@ -194,13 +205,13 @@ Not to be built as agent tools, now or later, without a deliberate change to the
 
 | # | Task |
 |---|---|
-| 1 | This spec; answers to section 8; roadmap link |
+| 1 | This spec; answers to the open questions (section 0.1); roadmap link |
 | 2 | `current_time` (+ `UtilityTools` registration) |
 | 3 | `workspace_search` and `workspace_find` |
 | 4 | `workspace_edit` and `workspace_append` |
 | 5 | `workspace_move` and `workspace_copy` |
 | 6 | `workspace_read` paging |
-| 7 | `calculate` (if Q1 = yes); update `ade` / `cody` configs; README tool table |
+| 7 | `calculate`; update `ade` / `cody` configs; README tool table |
 
 ## 10. Out of scope
 
