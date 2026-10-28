@@ -226,16 +226,21 @@ public sealed class ToolDispatcher
             : (RiskLevel.High, $"{reason} (smart mode gave no usable answer)");
     }
 
-    /// <summary>The first risk word in the reply, or null.</summary>
+    /// <summary>
+    /// The risk level the reply names, or null. A reply naming more than one level ("not low —
+    /// critical") is ambiguous and yields null, so the caller fails closed (High) rather than
+    /// trusting whichever word came first.
+    /// </summary>
     public static RiskLevel? ParseClassification(string? reply)
     {
         if (string.IsNullOrWhiteSpace(reply))
             return null;
-        foreach (var word in reply.Split(new[] { ' ', '\n', '\r', '\t', '.', ',', ':', '"', '\'' },
+        var levels = new HashSet<RiskLevel>();
+        foreach (var word in reply.Split(new[] { ' ', '\n', '\r', '\t', '.', ',', ':', ';', '!', '-', '—', '"', '\'' },
                      StringSplitOptions.RemoveEmptyEntries))
             if (RiskLevelExtensions.TryParse(word, out var level))
-                return level;
-        return null;
+                levels.Add(level);
+        return levels.Count == 1 ? levels.Single() : null;
     }
 
     private static Outcome InvalidArguments(TurnContext turn) =>

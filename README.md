@@ -131,6 +131,7 @@ ASP.NET `__` syntax).
 | `Approvals:SweepIntervalSeconds` | `10` | How often overdue approvals are expired |
 | `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
 | `Events:RetentionDays` | `14` | Durable SSE events kept for replay |
+| `Events:SubscriberBufferSize` | `1000` | Live events buffered per SSE connection; a client that falls further behind is disconnected and catches up by reconnecting with `Last-Event-ID` |
 | `Tools:MaxStoredResultChars` | `4000` | Stored tool results are cut to this |
 | `Tools:MaxStoredArgumentStringChars` | `500` | Each string in stored tool arguments is cut to this |
 | `Tools:MaxExchangesPerReply` | `50` | Tool rounds accepted with one reply |

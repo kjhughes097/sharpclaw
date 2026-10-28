@@ -125,6 +125,7 @@ function useTurnApprovals(threadId: string, pending: ThreadDetailResponse['pendi
               ...current.get(id)!,
               status: approval.status,
               decidedBy: approval.decidedBy,
+              decidedByUser: approval.decidedByUser,
             }),
           ),
         )

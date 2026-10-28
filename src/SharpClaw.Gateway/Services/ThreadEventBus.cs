@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using Microsoft.Extensions.Options;
+using SharpClaw.Gateway.Configuration;
 
 namespace SharpClaw.Gateway.Services;
 
@@ -24,19 +26,33 @@ public interface IThreadEventBus
 
     /// <summary>Open subscriptions: (per-thread, global).</summary>
     (int Thread, int Global) SubscriberCounts();
+
+    /// <summary>Subscriptions closed because their reader fell too far behind (since start).</summary>
+    long Overflows { get; }
 }
 
-public sealed class ThreadEventBus : IThreadEventBus
+/// <remarks>
+/// Each subscription has a bounded buffer. A reader that falls behind (a stalled browser tab) would
+/// otherwise hold every event, deltas included, in memory. When its buffer is full the subscription
+/// is closed instead: the SSE response ends after the buffered events, and the client reconnects with
+/// <c>Last-Event-ID</c>, getting the missed durable events by replay and in-flight text by snapshot.
+/// </remarks>
+public sealed class ThreadEventBus(IOptions<EventsOptions> options, ILogger<ThreadEventBus> logger) : IThreadEventBus
 {
     private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<Guid, Channel<ThreadSseEvent>>> _subscribers = new();
     private readonly ConcurrentDictionary<Guid, Channel<ThreadSseEvent>> _global = new();
+    private long _overflows;
+
+    public long Overflows => Interlocked.Read(ref _overflows);
 
     public IDisposable Subscribe(Guid? threadId, out ChannelReader<ThreadSseEvent> reader)
     {
-        var channel = Channel.CreateUnbounded<ThreadSseEvent>(new UnboundedChannelOptions
+        var channel = Channel.CreateBounded<ThreadSseEvent>(new BoundedChannelOptions(options.Value.SubscriberBufferSize)
         {
             SingleReader = true,
             SingleWriter = false,
+            // TryWrite then fails when full, and we close the subscription (see the remarks).
+            FullMode = BoundedChannelFullMode.Wait,
         });
         var id = Guid.NewGuid();
         if (threadId is { } t)
@@ -50,10 +66,24 @@ public sealed class ThreadEventBus : IThreadEventBus
     public void Publish(Guid threadId, ThreadSseEvent evt)
     {
         if (_subscribers.TryGetValue(threadId, out var map))
-            foreach (var channel in map.Values)
-                channel.Writer.TryWrite(evt);
-        foreach (var channel in _global.Values)
-            channel.Writer.TryWrite(evt);
+            foreach (var (id, channel) in map)
+                Write(channel, evt, threadId, id);
+        foreach (var (id, channel) in _global)
+            Write(channel, evt, null, id);
+    }
+
+    private void Write(Channel<ThreadSseEvent> channel, ThreadSseEvent evt, Guid? threadId, Guid id)
+    {
+        if (channel.Writer.TryWrite(evt))
+            return;
+        // Full (or already closed). Complete it once; the reader drains what it has, then ends.
+        if (channel.Writer.TryComplete())
+        {
+            Interlocked.Increment(ref _overflows);
+            logger.LogWarning("sse subscriber too slow; closing it: scope={Scope} buffer={Buffer}",
+                threadId is null ? "global" : "thread", options.Value.SubscriberBufferSize);
+        }
+        Unsubscribe(threadId, id);
     }
 
     public (int Thread, int Global) SubscriberCounts() =>

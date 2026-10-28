@@ -120,12 +120,12 @@ public sealed class GatewayHttpClient : IGatewayClient
                 // 429 is either the daily budget or the gateway's loop backstop; the code says which.
                 return ChatOutcome.Fail(await ReadErrorCodeAsync(resp, ct) ?? ErrorCodes.BudgetExceeded);
             if (resp.StatusCode is HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout)
-                return ChatOutcome.Fail("provider_error");
+                return ChatOutcome.Fail(ErrorCodes.ProviderError);
             if (resp.StatusCode == HttpStatusCode.BadRequest &&
                 await ReadErrorCodeAsync(resp, ct) == ErrorCodes.ContextTooLarge)
                 return ChatOutcome.Fail(ErrorCodes.ContextTooLarge);
             if (!resp.IsSuccessStatusCode)
-                return ChatOutcome.Fail("agent_error");
+                return ChatOutcome.Fail(FailReasons.AgentError);
 
             await using var stream = await resp.Content.ReadAsStreamAsync(ct);
             using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -137,7 +137,7 @@ public sealed class GatewayHttpClient : IGatewayClient
         }
         catch
         {
-            return ChatOutcome.Fail("agent_error");
+            return ChatOutcome.Fail(FailReasons.AgentError);
         }
     }
 
@@ -160,7 +160,7 @@ public sealed class GatewayHttpClient : IGatewayClient
             using var doc = JsonDocument.Parse(data);
             var root = doc.RootElement;
             if (root.TryGetProperty("error", out _))
-                return ChatOutcome.Fail("provider_error");
+                return ChatOutcome.Fail(ErrorCodes.ProviderError);
             if (!root.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array)
                 continue;
 

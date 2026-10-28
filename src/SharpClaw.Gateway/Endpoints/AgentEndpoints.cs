@@ -88,16 +88,16 @@ public static class AgentEndpoints
         if (!await TurnGuard.OwnsThreadAsync(db, agent.Id, id, ct))
             return ApiResults.NotFound("Thread not found.");
 
-        var rows = await db.Messages.AsNoTracking().Where(m => m.ThreadId == id).OrderBy(m => m.Seq).ToListAsync(ct);
-        var users = rows.Where(r => r.Role == Roles.User && r.Kind == MessageKinds.Message).ToList();
         // The turn being processed: the agent's claimed message, else the latest one.
-        var current = users.LastOrDefault(r => r.Status == MessageStatus.Claimed) ?? users.LastOrDefault();
+        var users = db.Messages.AsNoTracking().Where(m => m.ThreadId == id && m.Role == Roles.User && m.Kind == MessageKinds.Message);
+        var current = await users.Where(m => m.Status == MessageStatus.Claimed).OrderByDescending(m => m.Seq).FirstOrDefaultAsync(ct)
+            ?? await users.OrderByDescending(m => m.Seq).FirstOrDefaultAsync(ct);
         var options = contextOptions.Value;
         var window = options.WindowFor(agent.ContextWindowTokens);
         if (current is null)
             return Results.Json(new ContextResponse(Array.Empty<ContextMessage>(), false, 0, 0, window), SharpClawJson.Options);
 
-        var result = await new ContextBuilder(options, summariser).BuildAsync(id, rows, current.Id, window, reserve, ct);
+        var result = await new ContextBuilder(options, summariser).BuildForThreadAsync(db, id, current, window, reserve, ct);
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Context");
         using var scope = LogScopes.Turn(logger, id, current.Id);
         if (result.TooLarge)

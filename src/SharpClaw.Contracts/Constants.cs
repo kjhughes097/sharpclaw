@@ -134,4 +134,7 @@ public static class ApprovalDecidedBy
 {
     public const string User = "user";
     public const string System = "system";
+
+    /// <summary><c>decided_by_user</c> when an admin-key client (the CLI) decided.</summary>
+    public const string AdminKeyUser = "admin_key";
 }

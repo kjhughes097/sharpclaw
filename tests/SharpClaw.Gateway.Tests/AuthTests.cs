@@ -407,6 +407,53 @@ public class AuthTests
     }
 
     [Fact]
+    public async Task Approval_decisions_record_which_user_or_the_admin_key_decided()
+    {
+        await using var fx = await StartAsync();
+        await CreateUserAsync(fx);
+        var (agent, token) = await fx.CreateAgentAsync();
+        var thread = await fx.CreateThreadAsync(agent.Id);
+
+        async Task<Guid> PendingApprovalAsync()
+        {
+            var corr = await fx.PostUserMessageAsync(thread, "go");
+            await fx.ClaimAsync(token);
+            return await fx.RequestApprovalAsync(token, thread, corr);
+        }
+
+        // A signed-in user decides in the browser.
+        var first = await PendingApprovalAsync();
+        using var browser = new Browser(fx);
+        await browser.LoginAsync();
+        (await browser.PostAsync($"/api/approvals/{first}", new DecideApprovalRequest(ApprovalStatuses.Approved)))
+            .EnsureSuccessStatusCode();
+        using (var c = fx.AgentClient(token))
+            (await c.PostAsJsonAsync($"/agent/threads/{thread}/messages",
+                new AgentReplyRequest("done", (await fx.NewDb().Approvals.SingleAsync(a => a.Id == first)).CorrelationId),
+                SharpClawJson.Options)).EnsureSuccessStatusCode();
+
+        // The CLI decides with the admin key.
+        var second = await PendingApprovalAsync();
+        using var admin = fx.Admin();
+        (await admin.PostAsJsonAsync($"/api/approvals/{second}", new DecideApprovalRequest(ApprovalStatuses.Denied),
+            SharpClawJson.Options)).EnsureSuccessStatusCode();
+
+        async Task<ApprovalDetailDto> GetAsync(Guid id) =>
+            (await admin.GetFromJsonAsync<ApprovalDetailResponse>($"/api/approvals/{id}", SharpClawJson.Options))!.Approval;
+        var byUser = await GetAsync(first);
+        Assert.Equal((ApprovalDecidedBy.User, "kevin"), (byUser.DecidedBy, byUser.DecidedByUser));
+        var byKey = await GetAsync(second);
+        Assert.Equal((ApprovalDecidedBy.User, ApprovalDecidedBy.AdminKeyUser), (byKey.DecidedBy, byKey.DecidedByUser));
+
+        using var db = fx.NewDb();
+        var decided = await db.ThreadEvents.AsNoTracking()
+            .Where(e => e.ThreadId == thread && e.Type == SseEventNames.ApprovalDecided).OrderBy(e => e.Id).ToListAsync();
+        Assert.Contains("\"decidedByUser\":\"kevin\"", decided[0].Data);
+        var trace = await admin.GetFromJsonAsync<TraceResponse>($"/api/threads/{thread}/trace", SharpClawJson.Options);
+        Assert.Equal("kevin", trace!.Turns[0].Approvals.Single().DecidedByUser);
+    }
+
+    [Fact]
     public async Task Iterations_below_the_minimum_refuse_to_start()
     {
         var ex = await Assert.ThrowsAsync<Microsoft.Extensions.Options.OptionsValidationException>(() =>

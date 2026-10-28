@@ -89,8 +89,10 @@ to rewrite `docs/openapi/sharpclaw-client.v1.json` and `docs/api-fixtures/events
   CSP). Browser auth is a session cookie plus an `X-CSRF-Token` header on unsafe methods. Each tab
   opens exactly **one** SSE connection (`/api/events`) owned by `ui/src/api/stream.ts`. See
   [docs/ui.md](../docs/ui.md) and `.github/instructions/ui.instructions.md`.
-- **Events:** durable client events go through `IEventPublisher.PublishDurableAsync` (stored in
-  `thread_events`, then published with an id); only `delta` is ephemeral. Never put tool arguments
+- **Events:** a state change that emits durable client events goes through
+  `IEventPublisher.WriteAsync(db, batch => …)`: the change and its `thread_events` rows commit in
+  one transaction, then publish. Don't nest it, and don't open other transactions that emit events.
+  `PublishDurableAsync` is only for an event with no state change. Only `delta` is ephemeral. Never put tool arguments
   or results in an event.
 
 ## Conventions

@@ -361,8 +361,14 @@ Tracks the follow-up work. Each PR updates its rows.
 |---|---|---|
 | R1 AI guidance | ✅ Done | `chore/agent-guidance-and-ci`: copilot-instructions refreshed, `ui.instructions.md` added, `docs/architecture.md` added, foundations spec renamed to `sharpclaw-pre-3.3-foundations-spec.md`. Test-instruction wording follows with the test helpers (R17). |
 | #16 CI | ✅ Done | `chore/agent-guidance-and-ci`: `.github/workflows/ci.yml` (.NET, UI checks, Playwright Chromium). |
-| #3, R8, R9 wiring, JSON, options | ⏳ Planned | `refactor/gateway-structure` |
-| R5 turn service, R10–R14, #4 | ⏳ Planned | `refactor/gateway-structure` |
-| R2, R3, R4, R6, R7, R15, R16, #6 | ⏳ Planned | `fix/gateway-hardening` |
+| #3, R8, R9 wiring, JSON, options | ✅ Done | `refactor/gateway-structure`: `AddSharpClaw*()`/`MapSharpClawEndpoints()`, validated options (source-generated + cross-field rules), `SharpClawJson.Apply`. |
+| R5 turn service, R10–R14, #4 | ✅ Done | `refactor/gateway-structure`: `MessageTurns` + `TurnGuard`, `[AsParameters]` chat services, `LogScopes`, agent logs `correlation_id`, constants in SQL/metrics, files moved, `Dtos.cs` split. |
+| R2, R3 memory | ✅ Done | `fix/gateway-hardening`: approval signals removed when decided; bounded SSE buffers (`Events:SubscriberBufferSize`) with disconnect-on-overflow and `sharpclaw.sse.overflows`. |
+| R6, R7 atomicity | ✅ Done | `fix/gateway-hardening`: `IEventPublisher.WriteAsync` commits state + events together (lock taken before the transaction; nesting rejected); fail is a conditional update; turn end expires approvals in the same batch. |
+| R4 context loading | ✅ Done | `fix/gateway-hardening`: `ContextBuilder.BuildForThreadAsync` reads the newest 50 turns, doubling only while all fit; equivalence-tested on a 130-turn thread. |
+| R15 classifier | ✅ Done | `fix/gateway-hardening`: a reply naming more than one risk level is ambiguous → High. |
+| R16 shared visibility | ✅ Done | `fix/gateway-hardening`: accepted by design (tech-debt register); `approvals.decided_by_user` records the user (or `admin_key`), shown in the UI card and trace. |
+| #6 fail messages | ✅ Done | `fix/gateway-hardening`: `FailReasons.Describe` in the SSE `error` event and the CLI. |
+| Found during the work | ✅ Fixed | UI `LastSeen`/`RelativeTime` didn't re-render when the server clock arrived (flaky `agents.test.tsx`), fixed with `useServerNow()`. A gauge test's global `MeterListener` raced other tests' disposal; now scoped to its own meter. |
 | R17, R18, focused unit tests | ⏳ Planned | `test/deterministic-and-focused` |
 | R19, R20, R21 | ⏳ Planned | `refactor/ui-structure-and-e2e` |

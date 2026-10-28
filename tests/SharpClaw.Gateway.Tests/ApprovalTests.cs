@@ -97,6 +97,25 @@ public class ApprovalTests
     }
 
     [Fact]
+    public async Task A_decided_approval_leaves_no_wake_up_signal_behind()
+    {
+        var s = await SetupAsync();
+        await using var _ = s.Fx;
+        var signals = s.Fx.App.Services.GetRequiredService<SharpClaw.Gateway.Services.ApprovalSignal>();
+        var (_, approval) = await CreateAsync(s, Request(s));
+
+        var poll = PollAsync(s, approval!.Id, wait: 5);
+        await TestHelpers.EventuallyAsync(() => signals.Count == 1);
+        Assert.Equal(HttpStatusCode.OK, (await DecideAsync(s, approval.Id, ApprovalStatuses.Approved)).StatusCode);
+
+        Assert.Equal(ApprovalStatuses.Approved, (await poll).Status);
+        Assert.Equal(0, signals.Count);
+        // A late poll of the decided approval answers at once and doesn't re-create the key.
+        Assert.Equal(ApprovalStatuses.Approved, (await PollAsync(s, approval.Id, wait: 5)).Status);
+        Assert.Equal(0, signals.Count);
+    }
+
+    [Fact]
     public async Task Queue_lists_and_gets_approvals_with_filters()
     {
         var s = await SetupAsync();

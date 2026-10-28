@@ -17,6 +17,9 @@ public sealed class GatewayMetrics : IDisposable
     public const string MeterName = "SharpClaw.Gateway";
 
     private readonly Meter _meter;
+
+    /// <summary>This instance's meter. Every gateway in a test process shares the meter name, so tests scope listeners by instance.</summary>
+    public Meter Meter => _meter;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TimeProvider _time;
     private readonly IThreadEventBus _bus;
@@ -77,6 +80,7 @@ public sealed class GatewayMetrics : IDisposable
         _meter.CreateObservableGauge("sharpclaw.inbox.depth", ObserveInboxDepth, "{message}");
         _meter.CreateObservableGauge("sharpclaw.agent.last_seen", ObserveLastSeen, "s");
         _meter.CreateObservableGauge("sharpclaw.sse.subscribers", ObserveSubscribers, "{subscriber}");
+        _meter.CreateObservableCounter("sharpclaw.sse.overflows", () => _bus.Overflows, "{subscriber}");
         _meter.CreateObservableGauge("sharpclaw.approvals.pending", ObservePendingApprovals, "{approval}");
         _meter.CreateObservableGauge("sharpclaw.tool.unreported", ObserveUnreportedToolCalls, "{call}");
     }

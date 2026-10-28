@@ -124,6 +124,12 @@ public sealed class EventsOptions
 
     /// <summary>Durable SSE events older than this are pruned (replay before that yields <c>reset</c>).</summary>
     [Range(1, 3650)] public int RetentionDays { get; set; } = 14;
+
+    /// <summary>
+    /// Live events buffered per SSE subscriber. A subscriber that falls this far behind is
+    /// disconnected and recovers by reconnecting with <c>Last-Event-ID</c>.
+    /// </summary>
+    [Range(16, 1_000_000)] public int SubscriberBufferSize { get; set; } = 1000;
 }
 
 public sealed class ToolsOptions

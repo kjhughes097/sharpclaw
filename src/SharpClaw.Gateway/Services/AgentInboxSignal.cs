@@ -21,6 +21,16 @@ public abstract class KeyedSignal
 
     public Task<bool> WaitAsync(Guid key, TimeSpan timeout, CancellationToken ct) =>
         For(key).WaitAsync(timeout, ct);
+
+    /// <summary>
+    /// Forgets a key that will never be signalled again (e.g. a decided approval), so the map
+    /// doesn't grow forever. A waiter already blocked on it still wakes from an earlier
+    /// <see cref="Signal"/>; one arriving later re-creates the entry and waits one poll slice at most.
+    /// </summary>
+    public void Remove(Guid key) => _signals.TryRemove(key, out _);
+
+    /// <summary>Keys currently tracked (for tests and diagnostics).</summary>
+    public int Count => _signals.Count;
 }
 
 /// <summary>Per-agent signal raised when a user message is queued.</summary>

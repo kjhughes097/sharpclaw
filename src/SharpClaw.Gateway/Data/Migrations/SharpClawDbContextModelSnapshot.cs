@@ -136,6 +136,11 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("decided_by");
 
+                    b.Property<string>("DecidedByUser")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("decided_by_user");
+
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("expires_at");

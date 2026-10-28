@@ -400,6 +400,7 @@ export interface components {
       /** Format: date-time */
       decidedAt: null | string;
       decidedBy: null | string;
+      decidedByUser?: null | string;
       /** Format: date-time */
       expiresAt: string;
       /** Format: uuid */
@@ -722,6 +723,7 @@ export interface components {
       /** Format: date-time */
       decidedAt: null | string;
       decidedBy: null | string;
+      decidedByUser?: null | string;
       /** Format: uuid */
       id: string;
       risk: string;

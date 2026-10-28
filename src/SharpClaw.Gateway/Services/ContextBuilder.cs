@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
@@ -43,11 +44,43 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
     public sealed record Result(
         IReadOnlyList<ContextMessage> Messages, int DroppedTurns, int EstimatedTokens, bool TooLarge);
 
-    /// <param name="rows">All of the thread's rows.</param>
+    /// <summary>Turns loaded on the first attempt by <see cref="BuildForThreadAsync"/>; doubled while they all fit.</summary>
+    public const int InitialTurnsToLoad = 50;
+
+    /// <summary>
+    /// Builds the context for <paramref name="current"/> without loading the whole thread: only the
+    /// newest turns are read, and more only while every loaded turn still fits. Earlier turns can't
+    /// be included once a newer one doesn't fit (whole turns, newest first), so they're just counted.
+    /// </summary>
+    public async Task<Result> BuildForThreadAsync(
+        SharpClawDbContext db, Guid threadId, Message current, int windowTokens, int reserveTokens, CancellationToken ct)
+    {
+        var turnStarts = db.Messages.AsNoTracking().Where(m =>
+            m.ThreadId == threadId && m.Role == Roles.User && m.Kind == MessageKinds.Message && m.Seq <= current.Seq);
+        for (var take = InitialTurnsToLoad; ; take *= 2)
+        {
+            var seqs = await turnStarts.OrderByDescending(m => m.Seq).Select(m => m.Seq).Take(take + 1).ToListAsync(ct);
+            var hasOlder = seqs.Count > take;
+            // A turn's rows all come after its user message, so "seq >= the oldest loaded user message"
+            // holds every loaded turn whole (plus rows of later turns, which grouping ignores).
+            var fromSeq = hasOlder ? seqs[take - 1] : 0;
+            var olderTurns = hasOlder ? await turnStarts.CountAsync(m => m.Seq < fromSeq, ct) : 0;
+            var rows = await db.Messages.AsNoTracking()
+                .Where(m => m.ThreadId == threadId && m.Seq >= fromSeq).OrderBy(m => m.Seq).ToListAsync(ct);
+
+            var result = await BuildAsync(threadId, rows, current.Id, windowTokens, reserveTokens, ct, olderTurns);
+            // Done unless every loaded turn fitted and there are older ones that might fit too.
+            if (!hasOlder || result.TooLarge || result.DroppedTurns > olderTurns)
+                return result;
+        }
+    }
+
+    /// <param name="rows">The thread's rows, from the oldest turn to consider onwards.</param>
     /// <param name="currentCorrelationId">The user message being processed.</param>
+    /// <param name="olderTurns">Turns before those in <paramref name="rows"/>; they count as dropped.</param>
     public async Task<Result> BuildAsync(
         Guid threadId, IReadOnlyList<Message> rows, Guid currentCorrelationId, int windowTokens, int reserveTokens,
-        CancellationToken ct)
+        CancellationToken ct, int olderTurns = 0)
     {
         var estimator = new TokenEstimator(options);
         var turns = GroupTurns(rows, currentCorrelationId, estimator);
@@ -69,26 +102,29 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
             firstIncluded = i;
         }
 
+        int Dropped() => olderTurns + firstIncluded;
+
         // The note about dropped turns must fit too, or the full prompt would overshoot the window.
-        while (firstIncluded > 0 && firstIncluded < currentIndex &&
-               total + estimator.Estimate(Note(firstIncluded, null)) > budget)
+        while (Dropped() > 0 && firstIncluded < currentIndex &&
+               total + estimator.Estimate(Note(Dropped(), null)) > budget)
         {
             total -= turns[firstIncluded].Tokens;
             firstIncluded++;
         }
-        if (firstIncluded > 0 && total + estimator.Estimate(Note(firstIncluded, null)) > budget)
+        if (Dropped() > 0 && total + estimator.Estimate(Note(Dropped(), null)) > budget)
             return new Result(Array.Empty<ContextMessage>(), 0, total, true);
 
         var messages = turns.Skip(firstIncluded).Take(currentIndex - firstIncluded + 1).SelectMany(t => t.Messages).ToList();
-        if (firstIncluded > 0)
+        if (Dropped() > 0)
         {
+            // The summariser sees the dropped turns that were loaded (older ones were never read).
             var dropped = turns.Take(firstIncluded).SelectMany(t => t.Messages).ToList();
-            var note = Note(firstIncluded, await summariser.SummariseAsync(threadId, dropped, ct));
+            var note = Note(Dropped(), await summariser.SummariseAsync(threadId, dropped, ct));
             messages.Insert(0, note);
             total += estimator.Estimate(note);
         }
 
-        return new Result(messages, firstIncluded, total, false);
+        return new Result(messages, Dropped(), total, false);
     }
 
     private static ContextMessage Note(int droppedTurns, string? summary) => new(Roles.System,

@@ -51,8 +51,16 @@ public static class GatewayBuilder
         var app = builder.Build();
 
         // Fail fast on bad configuration, before migrations or listening.
-        foreach (var validator in app.Services.GetServices<IStartupCheck>())
-            validator.Validate();
+        try
+        {
+            foreach (var validator in app.Services.GetServices<IStartupCheck>())
+                validator.Validate();
+        }
+        catch
+        {
+            ((IDisposable)app).Dispose();
+            throw;
+        }
         var auth = app.Services.GetRequiredService<IOptions<AuthOptions>>().Value;
 
         // Forwarded headers only from configured proxies, and only when enabled; never trusted otherwise.
