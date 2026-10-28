@@ -161,6 +161,7 @@ agent cannot override; the agent still owns the risk/approval decision.
 | `download_to_workspace(url, path)` | `POST /agent/fetch` + confined write | as `http_fetch`, plus the write rules | **yes** |
 | `web_search(query)` | `POST /agent/search` | `low` | **yes** |
 | `budget_status()` | `GET /agent/budget` | `low` | no |
+| `github_*` (section 6.1) | `/agent/github/*` | reads `low`; writes `high` | reads **yes** |
 
 - **Fetch / download:** as designed in 3.2 §6 "Deferred: network tools": host allow-list, no
   private or loopback addresses, redirects re-checked, size cap, timeout; audits host, status, bytes
@@ -171,6 +172,48 @@ agent cannot override; the agent still owns the risk/approval decision.
 - **`budget_status`:** returns `{ dailyBudgetUsd, spentTodayUsd, remainingUsd, resetsAt }` for the
   calling agent only, so an agent can wrap up before it hits the limit. Small enough that it could
   land before the rest of 3.4.
+
+### 6.1 GitHub tools (brokered, not the `gh` CLI)
+
+Wrapping the `gh` CLI is ruled out (section 8): it executes a binary (with extensions, aliases and
+an arbitrary `gh api` passthrough), it would need a token inside the agent, and it would need
+egress. Instead the **gateway** calls the GitHub REST API with a token only it holds, exposing a
+small set of typed operations.
+
+| Tool | Arguments | Gateway endpoint | Risk | Untrusted result |
+|---|---|---|---|---|
+| `github_search` | `type` (`issues` \| `prs` \| `code`), `query`, `repo` (optional) | `POST /agent/github/search` | `low` | **yes** |
+| `github_read_issue` | `repo`, `number` | `GET /agent/github/issue` | `low` | **yes** |
+| `github_read_pr` | `repo`, `number` | `GET /agent/github/pr` | `low` | **yes** |
+| `github_read_file` | `repo`, `path`, `ref` (optional) | `GET /agent/github/file` | `low` | **yes** |
+| `github_comment` | `repo`, `number`, `body` (max 16 KB) | `POST /agent/github/comment` | `high` | no |
+| `github_create_issue` | `repo`, `title`, `body` (max 16 KB) | `POST /agent/github/issues` | `high` | no |
+
+**Gateway rules (the agent cannot override):**
+- **Token:** a fine-grained PAT or GitHub App token from an env var (`GITHUB_TOKEN`), held only by the
+  gateway. Read operations need only read scopes; write tools are disabled unless
+  `GitHub:AllowWrites` is `true`.
+- **Repo allow-list per agent** (`GitHub:Agents:<name>:Repos`, entries `owner/repo` or `owner/*`).
+  An agent with no entry gets error `not_allowed` for every call; a repo outside
+  the list → `not_allowed`. `github_search` is scoped to the allowed repos by the gateway (it adds
+  `repo:` qualifiers), never across all of GitHub.
+- **No passthrough:** only the operations above. No merge, push, branch/tag, review approval,
+  label/assignee changes, workflow dispatch, settings, secrets or deletion.
+- **Caps:** search returns at most 20 results; `github_read_pr` returns metadata, body, comments
+  (at most 50) and per-file diff stats, not full diffs; `github_read_file` max 64 KB (truncated with
+  a marker); timeout 15 s.
+- **Audit:** operation, repo, number, HTTP status, bytes and duration. Never titles, bodies,
+  queries, file content or the token. Metrics use labels `agent`, `type` (operation), `status` only.
+- **Rate limits:** GitHub `403`/`429` rate-limit responses map to error `rate_limited`; no retries
+  (consistent with the rest of SharpClaw).
+
+**Agent rules:**
+- Every result from a read tool is untrusted (issue and PR text is the classic prompt-injection
+  vector), so a later `github_comment` / `github_create_issue` in the same turn is raised by taint
+  to `critical` and always needs approval.
+- Summaries: `search issues in kjhughes097/sharpclaw`, `read PR kjhughes097/sharpclaw#139`,
+  `comment on kjhughes097/sharpclaw#139 (1.2 KB)`, `create issue in kjhughes097/sharpclaw (title 42
+  chars, body 2.0 KB)` — never the query, title or body text.
 
 ## 7. Tools tied to later phases (design notes only)
 
@@ -187,7 +230,9 @@ agent cannot override; the agent still owns the risk/approval decision.
 Not to be built, now or later, without a deliberate change to the trust model:
 
 - shell or command execution, running scripts, code, tests or build tools;
-- `git` operations (hooks and config can execute code);
+- `git` operations (hooks and config can execute code), including cloning repositories;
+- the `gh` CLI or any other GitHub client in the agent (GitHub access is brokered, section 6.1), and
+  GitHub write operations beyond comment / create issue;
 - Docker or container management, the Docker socket;
 - reading or changing agent policy (`agent.json`, `soul.md`) from the workspace;
 - direct network access from the agent container (all network goes through the gateway, section 6).
@@ -209,6 +254,9 @@ Not to be built, now or later, without a deliberate change to the trust model:
    full rewrite)? Recommendation: `medium`, to stay consistent with overwrite.
 4. **Directory operations:** `workspace_move` / `workspace_delete` are files only. Is directory
    move/delete needed? Recommendation: not yet.
+5. **GitHub token type:** fine-grained PAT (simple, tied to Ken's account) or a GitHub App
+   installation token (separate bot identity, shows as an app on comments)? Recommendation: start
+   with a fine-grained PAT; move to an App if comments should not appear as Ken.
 
 ## 11. Tests
 
@@ -240,6 +288,7 @@ Not to be built, now or later, without a deliberate change to the trust model:
 | 6 | `workspace_read` paging |
 | 7 | `calculate` (if Q1 = yes); update `ade` / `cody` configs; README tool table |
 | 8 | Phase 3.4: `budget_status`, then fetch / download / search per a 3.4 spec |
+| 9 | Phase 3.4+: GitHub read tools, then approval-gated `github_comment` / `github_create_issue` |
 
 ## 13. Out of scope
 
