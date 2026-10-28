@@ -291,7 +291,7 @@ public static class ChatEndpoints
                     // Only the tool name is published: arguments may contain content.
                     if (_teeToThread)
                         await _events.PublishDurableAsync(_threadId, SseEventNames.ToolRequested,
-                            new ToolRequestedEvent(_correlationId, call.Id, call.Name), ct);
+                            new ToolRequestedEvent(_correlationId, call.Id, call.Name, _threadId), ct);
                     break;
                 case ChatStreamEvent.Usage u:
                     _promptTokens = u.PromptTokens;

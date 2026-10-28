@@ -2,7 +2,7 @@
 
 Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in detail; later phases are deliberately rough and will be refined when reached.
 
-**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`; pre-3.3 foundations: `sharpclaw-3.2-post-implementation-work.md`.
+**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`; pre-3.3 foundations: `sharpclaw-3.2-post-implementation-work.md`; Phase 3.3: `sharpclaw-3.3-implementation-spec.md`.
 
 ## 1. Architecture
 
@@ -129,7 +129,14 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 
 ---
 
-## Phase 3.3 — Client API and web UI
+## Phase 3.3 — Client API and web UI (built)
+
+> **Source of truth:** `sharpclaw-3.3-implementation-spec.md`; UI notes in `ui.md`. Built: thread
+> list/detail/rename/archive, message paging, a per-thread trace, audit cursor paging, system info
+> and agent last-seen on the client API; an OpenAPI snapshot and generated TypeScript client; the
+> React UI served by the gateway with a strict CSP (chat with streaming, tool cards, inline and
+> inbox approvals, agents and tokens, audit and trace, account), one global event stream per tab,
+> and a Playwright suite against an isolated fake-provider stack.
 
 **Goal:** replace the CLI with a proper interface.
 

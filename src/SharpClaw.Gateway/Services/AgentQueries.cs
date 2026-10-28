@@ -32,7 +32,7 @@ public static class AgentQueries
     {
         var remaining = Math.Max(0, a.DailyBudgetUsd - todaySpend);
         return new AgentDto(a.Id, a.Name, a.Model, a.DailyBudgetUsd, a.Enabled, a.CreatedAt, todaySpend, remaining,
-            a.ContextWindowTokens);
+            a.ContextWindowTokens, a.LastSeenAt);
     }
 
     /// <summary>Null when valid; otherwise the validation message.</summary>

@@ -65,6 +65,7 @@ public class SharpClawDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentId);
             e.HasIndex(x => x.AgentId);
+            e.HasIndex(x => new { x.Archived, x.LastMessageAt });
         });
 
         b.Entity<Message>(e =>

@@ -6,19 +6,27 @@ using SharpClaw.Gateway.Services;
 
 namespace SharpClaw.Gateway.Endpoints;
 
+/// <summary>
+/// The two audit tables, newest first with the same filters and keyset paging: pass the
+/// response's <c>nextCursor</c> as <c>before</c> to get the next page.
+/// </summary>
 public static class AuditEndpoints
 {
+    private const int DefaultLimit = 100;
+    private const int MaxLimit = 500;
+
     public static void Map(RouteGroupBuilder client)
     {
-        client.MapGet("/audit/llm-calls", ListCalls);
-        client.MapGet("/audit/tool-calls", ListToolCalls);
+        var audit = client.MapGroup("/audit").WithTags("audit");
+        audit.MapGet("/llm-calls", ListCalls).WithName("listLlmCalls").Produces<AuditResponse>();
+        audit.MapGet("/tool-calls", ListToolCalls).WithName("listToolCalls").Produces<ToolCallAuditResponse>();
     }
 
     private static async Task<IResult> ListCalls(
-        string? agent, Guid? threadId, DateTime? since, int? limit,
+        string? agent, Guid? threadId, string? status, DateTime? since, int? limit, string? before,
         SharpClawDbContext db, CancellationToken ct)
     {
-        var take = Math.Clamp(limit ?? 100, 1, 500);
+        var take = Math.Clamp(limit ?? DefaultLimit, 1, MaxLimit);
         IQueryable<LlmCall> q = db.LlmCalls.AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(agent))
@@ -30,26 +38,36 @@ public static class AuditEndpoints
         }
         if (threadId is { } tid)
             q = q.Where(c => c.ThreadId == tid);
+        if (!string.IsNullOrWhiteSpace(status))
+            q = q.Where(c => c.Status == status);
         if (since is { } s)
         {
             var sinceUtc = s.ToUniversalTime();
             q = q.Where(c => c.CreatedAt >= sinceUtc);
         }
+        if (before is not null)
+        {
+            if (!PageCursor.TryDecode(before, out var cur))
+                return ApiResults.ValidationFailed("before is not a valid cursor.");
+            q = q.Where(c => c.CreatedAt < cur.At || (c.CreatedAt == cur.At && c.Id.CompareTo(cur.Id) < 0));
+        }
 
-        var calls = await q.OrderByDescending(c => c.CreatedAt).Take(take)
+        var calls = await q.OrderByDescending(c => c.CreatedAt).ThenByDescending(c => c.Id).Take(take + 1)
             .Select(c => new LlmCallDto(
                 c.Id, c.AgentId, c.ThreadId, c.CorrelationId, c.Model, c.Status,
                 c.PromptTokens, c.CompletionTokens, c.CostUsd, c.UsageKnown,
-                c.LatencyMs, c.TtftMs, c.ErrorCode, c.ErrorDetail, c.CreatedAt))
+                c.LatencyMs, c.TtftMs, c.ErrorCode, c.ErrorDetail, c.CreatedAt, c.EstimatedPromptTokens, c.Purpose))
             .ToListAsync(ct);
 
-        return Results.Json(new AuditResponse(calls), SharpClawJson.Options);
+        var next = NextCursor(calls, take, c => new PageCursor(c.CreatedAt, c.Id));
+        return Results.Json(new AuditResponse(calls, next), SharpClawJson.Options);
     }
 
     private static async Task<IResult> ListToolCalls(
-        string? agent, Guid? threadId, int? limit, SharpClawDbContext db, CancellationToken ct)
+        string? agent, Guid? threadId, string? status, DateTime? since, int? limit, string? before,
+        SharpClawDbContext db, CancellationToken ct)
     {
-        var take = Math.Clamp(limit ?? 100, 1, 500);
+        var take = Math.Clamp(limit ?? DefaultLimit, 1, MaxLimit);
         IQueryable<ToolCallRecord> q = db.ToolCalls.AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(agent))
@@ -61,14 +79,37 @@ public static class AuditEndpoints
         }
         if (threadId is { } tid)
             q = q.Where(c => c.ThreadId == tid);
+        if (!string.IsNullOrWhiteSpace(status))
+            q = q.Where(c => c.Status == status);
+        if (since is { } s)
+        {
+            var sinceUtc = s.ToUniversalTime();
+            q = q.Where(c => c.CreatedAt >= sinceUtc);
+        }
+        if (before is not null)
+        {
+            if (!PageCursor.TryDecode(before, out var cur))
+                return ApiResults.ValidationFailed("before is not a valid cursor.");
+            q = q.Where(c => c.CreatedAt < cur.At || (c.CreatedAt == cur.At && c.Id.CompareTo(cur.Id) < 0));
+        }
 
-        var calls = await q.OrderByDescending(c => c.CreatedAt).ThenByDescending(c => c.Id).Take(take)
+        var calls = await q.OrderByDescending(c => c.CreatedAt).ThenByDescending(c => c.Id).Take(take + 1)
             .Select(c => new ToolCallDto(
                 c.Id, c.AgentId, c.ThreadId, c.CorrelationId, c.LlmCallId, c.ToolCallId, c.ToolName, c.Arguments,
                 c.Status, c.Decision, c.Risk, c.Tainted, c.ApprovalId, c.ErrorCode, c.DurationMs,
                 c.CreatedAt, c.ReportedAt))
             .ToListAsync(ct);
 
-        return Results.Json(new ToolCallAuditResponse(calls), SharpClawJson.Options);
+        var next = NextCursor(calls, take, c => new PageCursor(c.CreatedAt, c.Id));
+        return Results.Json(new ToolCallAuditResponse(calls, next), SharpClawJson.Options);
+    }
+
+    /// <summary>Queries fetch one extra row to learn whether another page exists; this drops it.</summary>
+    private static string? NextCursor<T>(List<T> rows, int take, Func<T, PageCursor> cursorOf)
+    {
+        if (rows.Count <= take)
+            return null;
+        rows.RemoveAt(rows.Count - 1);
+        return cursorOf(rows[^1]).Encode();
     }
 }

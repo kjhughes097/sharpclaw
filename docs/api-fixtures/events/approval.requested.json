@@ -1,0 +1,10 @@
+{
+  "approvalId": "0199f0a0-0000-7000-8000-000000000004",
+  "correlationId": "0199f0a0-0000-7000-8000-000000000002",
+  "expiresAt": "2026-10-25T12:05:00Z",
+  "reason": "Deletes a file",
+  "risk": "high",
+  "summary": "Delete notes/a.md",
+  "threadId": "0199f0a0-0000-7000-8000-000000000001",
+  "toolName": "workspace_delete"
+}

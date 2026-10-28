@@ -1,0 +1,14 @@
+# Build context is the repo root (docker/compose.yml uses context: ..).
+.git
+.env
+**/bin
+**/obj
+ui/node_modules
+ui/dist
+ui/playwright-report
+ui/test-results
+ui/blob-report
+docker/agents/*/workspace
+*.db
+*.db-shm
+*.db-wal

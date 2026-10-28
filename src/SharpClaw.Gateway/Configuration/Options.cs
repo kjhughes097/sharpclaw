@@ -148,6 +148,14 @@ public sealed class ContextOptions
     public int WindowFor(int? agentWindow) => agentWindow ?? DefaultWindowTokens;
 }
 
+public sealed class UiOptions
+{
+    public const string Section = "Ui";
+
+    /// <summary>Folder holding the built web UI; null means <c>wwwroot</c> next to the gateway binaries.</summary>
+    public string? RootPath { get; set; }
+}
+
 public sealed class ChatOptions
 {
     public const string Section = "Chat";

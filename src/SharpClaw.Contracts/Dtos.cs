@@ -8,7 +8,10 @@ public sealed record CreateAgentRequest(string Name, string Model, double DailyB
 
 public sealed record UpdateAgentRequest(string? Model, double? DailyBudgetUsd, bool? Enabled, int? ContextWindowTokens = null);
 
-/// <summary><c>ContextWindowTokens</c> is the agent's override; null means the gateway default.</summary>
+/// <summary>
+/// <c>ContextWindowTokens</c> is the agent's override; null means the gateway default.
+/// <c>LastSeenAt</c>: the agent's last authenticated request (null if never), accurate to a minute.
+/// </summary>
 public sealed record AgentDto(
     Guid Id,
     string Name,
@@ -18,7 +21,8 @@ public sealed record AgentDto(
     DateTime CreatedAt,
     double TodaySpendUsd,
     double RemainingUsd,
-    int? ContextWindowTokens = null);
+    int? ContextWindowTokens = null,
+    DateTime? LastSeenAt = null);
 
 public sealed record AgentListResponse(IReadOnlyList<AgentDto> Agents);
 
@@ -52,13 +56,59 @@ public sealed record CreateThreadRequest(string AgentId, string? Title);
 /// <c>Context</c>: how the thread fit the model's window the last time the agent built its context.
 /// <c>DroppedTurns</c> &gt; 0 means older messages are no longer seen by the model.
 /// </summary>
-public sealed record ThreadDto(Guid Id, Guid AgentId, string? Title, DateTime CreatedAt, ThreadContextDto? Context = null);
+public sealed record ThreadDto(
+    Guid Id,
+    Guid AgentId,
+    string? Title,
+    DateTime CreatedAt,
+    ThreadContextDto? Context = null,
+    bool Archived = false,
+    DateTime? LastMessageAt = null);
 
 public sealed record ThreadContextDto(int DroppedTurns, int EstimatedTokens, int WindowTokens);
 
 public sealed record CreatedThreadResponse(ThreadDto Thread);
 
-public sealed record ThreadListResponse(IReadOnlyList<ThreadDto> Threads);
+/// <summary>
+/// A thread-list row. <c>InFlight</c>: a user message is claimed; <c>Queued</c>: user messages still
+/// pending; <c>PendingApprovals</c>: approvals waiting for the human.
+/// </summary>
+public sealed record ThreadSummaryDto(
+    Guid Id,
+    Guid AgentId,
+    string AgentName,
+    string? Title,
+    bool Archived,
+    DateTime CreatedAt,
+    DateTime LastMessageAt,
+    string? Preview,
+    int PendingApprovals,
+    bool InFlight,
+    int Queued);
+
+/// <summary>Newest <c>LastMessageAt</c> first. <c>NextCursor</c> is opaque; null on the last page.</summary>
+public sealed record ThreadListResponse(IReadOnlyList<ThreadSummaryDto> Threads, string? NextCursor = null);
+
+/// <summary>Both fields optional; <c>Title</c> is trimmed and must be 1 to 120 characters.</summary>
+public sealed record UpdateThreadRequest(string? Title, bool? Archived);
+
+public sealed record ThreadResponse(ThreadDto Thread);
+
+/// <summary>The claimed user message of the turn in progress.</summary>
+public sealed record InFlightTurnDto(Guid CorrelationId, DateTime? ClaimedAt);
+
+/// <summary>A pending approval as shown in the thread view. Never carries tool arguments.</summary>
+public sealed record PendingApprovalDto(
+    Guid Id, Guid CorrelationId, string ToolName, string Risk, string Summary, string Reason, DateTime CreatedAt,
+    DateTime ExpiresAt);
+
+/// <summary>Everything the thread view needs besides the messages. <c>InFlight</c> is null when idle.</summary>
+public sealed record ThreadDetailResponse(
+    ThreadDto Thread,
+    AgentDto Agent,
+    InFlightTurnDto? InFlight,
+    int Queued,
+    IReadOnlyList<PendingApprovalDto> PendingApprovals);
 
 // ----- Messages -----
 
@@ -68,7 +118,7 @@ public sealed record PostMessageRequest(string Content, bool Unattended = false)
 /// <summary>
 /// A thread row. <c>Kind</c> is <c>message</c> (user messages and final replies), <c>tool_request</c>
 /// (role assistant, <c>ToolCalls</c> set) or <c>tool_result</c> (role tool, <c>ToolCallId</c> set).
-/// Rows are ordered by <c>Seq</c>.
+/// Rows are ordered by <c>Seq</c>. <c>FailReason</c> is the reason code on a failed user message.
 /// </summary>
 public sealed record MessageDto(
     Guid Id,
@@ -83,9 +133,11 @@ public sealed record MessageDto(
     string? ToolCallId = null,
     bool? ToolOk = null,
     bool Untrusted = false,
-    bool Truncated = false);
+    bool Truncated = false,
+    string? FailReason = null);
 
-public sealed record MessageListResponse(IReadOnlyList<MessageDto> Messages);
+/// <summary><c>HasMoreBefore</c>: older rows exist before the first one returned.</summary>
+public sealed record MessageListResponse(IReadOnlyList<MessageDto> Messages, bool HasMoreBefore = false);
 
 /// <summary>202 response when a client queues a user message.</summary>
 public sealed record QueuedMessageDto(Guid Id, string Status, DateTime CreatedAt);
@@ -134,9 +186,12 @@ public sealed record LlmCallDto(
     int? TtftMs,
     string? ErrorCode,
     string? ErrorDetail,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    int? EstimatedPromptTokens = null,
+    string Purpose = LlmCallPurpose.Chat);
 
-public sealed record AuditResponse(IReadOnlyList<LlmCallDto> Calls);
+/// <summary>Newest first. Pass <c>NextCursor</c> as <c>before</c> for the next page; null on the last page.</summary>
+public sealed record AuditResponse(IReadOnlyList<LlmCallDto> Calls, string? NextCursor = null);
 
 // ----- Tool calls (3.2) -----
 
@@ -171,7 +226,8 @@ public sealed record ToolCallDto(
     DateTime CreatedAt,
     DateTime? ReportedAt);
 
-public sealed record ToolCallAuditResponse(IReadOnlyList<ToolCallDto> Calls);
+/// <summary>Newest first. Pass <c>NextCursor</c> as <c>before</c> for the next page; null on the last page.</summary>
+public sealed record ToolCallAuditResponse(IReadOnlyList<ToolCallDto> Calls, string? NextCursor = null);
 
 // ----- Approvals (3.2) -----
 
@@ -242,3 +298,67 @@ public sealed record ApprovalDetailDto(
 public sealed record ApprovalListResponse(IReadOnlyList<ApprovalDetailDto> Approvals);
 
 public sealed record ApprovalDetailResponse(ApprovalDetailDto Approval);
+
+
+// ----- Thread trace (3.3 spec section 5.3). Metadata only: never prompts, replies, arguments or results. -----
+
+public sealed record TraceResponse(IReadOnlyList<TraceTurnDto> Turns);
+
+/// <summary>One user turn, joined by correlation id (the user message id).</summary>
+public sealed record TraceTurnDto(
+    Guid CorrelationId,
+    Guid UserMessageId,
+    string Status,
+    string? FailReason,
+    DateTime CreatedAt,
+    DateTime? ClaimedAt,
+    DateTime? CompletedAt,
+    IReadOnlyList<TraceLlmCallDto> LlmCalls,
+    IReadOnlyList<TraceToolCallDto> ToolCalls,
+    IReadOnlyList<TraceApprovalDto> Approvals,
+    TraceTotalsDto Totals);
+
+public sealed record TraceLlmCallDto(
+    Guid Id,
+    string Model,
+    string Status,
+    string Purpose,
+    int PromptTokens,
+    int CompletionTokens,
+    int? EstimatedPromptTokens,
+    double CostUsd,
+    bool UsageKnown,
+    int LatencyMs,
+    int? TtftMs,
+    string? ErrorCode,
+    DateTime CreatedAt);
+
+/// <summary><c>ToolCallId</c> is the provider's id, matching <c>MessageDto.ToolCallId</c>; <c>Outcome</c> is the row status.</summary>
+public sealed record TraceToolCallDto(
+    Guid Id,
+    string ToolCallId,
+    string ToolName,
+    string? Risk,
+    string? Decision,
+    string Outcome,
+    Guid? ApprovalId,
+    int? DurationMs,
+    DateTime CreatedAt,
+    DateTime? ReportedAt);
+
+public sealed record TraceApprovalDto(
+    Guid Id,
+    string ToolCallId,
+    string ToolName,
+    string Risk,
+    string Status,
+    DateTime CreatedAt,
+    DateTime? DecidedAt,
+    string? DecidedBy);
+
+public sealed record TraceTotalsDto(double CostUsd, int PromptTokens, int CompletionTokens, int LlmCalls, int ToolCalls);
+
+// ----- System info (3.3 spec section 5.5) -----
+
+/// <summary><c>Provider</c> is <c>OpenRouter</c> or <c>Fake</c>; <c>BudgetResetAtUtc</c> is the next UTC midnight.</summary>
+public sealed record SystemInfoResponse(string Version, string Provider, DateTime UtcNow, DateTime BudgetResetAtUtc);

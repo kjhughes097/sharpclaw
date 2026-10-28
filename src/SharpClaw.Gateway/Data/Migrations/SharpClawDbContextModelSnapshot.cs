@@ -40,6 +40,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("INTEGER")
                         .HasColumnName("enabled");
 
+                    b.Property<DateTime?>("LastSeenAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("last_seen_at");
+
                     b.Property<string>("Model")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -190,6 +194,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("agent_id");
 
+                    b.Property<bool>("Archived")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("archived");
+
                     b.Property<int>("ContextDroppedTurns")
                         .HasColumnType("INTEGER")
                         .HasColumnName("context_dropped_turns");
@@ -202,6 +210,14 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("created_at");
 
+                    b.Property<DateTime>("LastMessageAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("last_message_at");
+
+                    b.Property<string>("LastPreview")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("last_preview");
+
                     b.Property<string>("Title")
                         .HasColumnType("TEXT")
                         .HasColumnName("title");
@@ -209,6 +225,8 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AgentId");
+
+                    b.HasIndex("Archived", "LastMessageAt");
 
                     b.ToTable("threads", (string)null);
                 });

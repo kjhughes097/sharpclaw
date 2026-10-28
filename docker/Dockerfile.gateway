@@ -1,16 +1,29 @@
 # Gateway image: multi-stage build, non-root, no secrets baked in.
+
+# 1. The web UI (3.3). Node LTS matches ui/.nvmrc; output becomes the gateway's wwwroot.
+FROM node:24-bookworm-slim AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY ui/ ./
+RUN npm run build
+
+# 2. The gateway.
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+# Shown by GET /api/system; pass the git short sha (compose sets it from GIT_SHA).
+ARG GIT_SHA=dev
 
 COPY Directory.Build.props ./
 COPY src/SharpClaw.Contracts/ src/SharpClaw.Contracts/
 COPY src/SharpClaw.Gateway/ src/SharpClaw.Gateway/
 RUN dotnet restore src/SharpClaw.Gateway/SharpClaw.Gateway.csproj
-RUN dotnet publish src/SharpClaw.Gateway/SharpClaw.Gateway.csproj -c Release -o /app
+RUN dotnet publish src/SharpClaw.Gateway/SharpClaw.Gateway.csproj -c Release -o /app -p:InformationalVersion=$GIT_SHA
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
+COPY --from=ui /ui/dist ./wwwroot
 
 # Kestrel endpoints are configured in code (8080 client, 8081 agent); disable the
 # image default so we do not double-bind a port.
