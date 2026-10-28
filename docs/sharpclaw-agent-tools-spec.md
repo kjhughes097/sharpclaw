@@ -1,15 +1,18 @@
 # SharpClaw V3 — Agent Tools Spec
 
 **Audience:** an implementing coding agent (and the human reviewing its work).
-**Status:** draft. Sections 4 and 5 are ready to implement once the open questions in section 10
-are answered. Sections 6 and 7 are designs to be detailed when their phase starts. The
+**Status:** draft. Ready to implement once the open questions in section 8 are answered.
+**Scope:** only tools that run entirely **inside the agent**, against its own workspace or local
+state. No new gateway endpoints, no network access. Tools that need the gateway or an external
+service (fetch, web search, GitHub, budget status, memory, agent-to-agent, scheduling) are out of
+scope here and belong in their own phase specs. The
 [3.2 spec](sharpclaw-3.2-implementation-spec.md) still applies wherever this document does not
 change it, in particular the risk model (§3), agent configuration (§4) and the single dispatch path
 (§7).
 
 ## 0. How to use this document
 
-- Implement in the task order in section 12. Each task is one branch and one pull request, with
+- Implement in the task order in section 10. Each task is one branch and one pull request, with
   passing tests, before the next task starts.
 - "MUST" / "MUST NOT" are hard requirements.
 - If something is ambiguous or contradictory, stop and ask the human rather than guessing.
@@ -27,9 +30,9 @@ Agents today have four tools: `workspace_list`, `workspace_read`, `workspace_wri
 - the model does not know the current date or time;
 - files larger than 64 KB can only be read in part.
 
-This spec adds tools that close those gaps **without** changing the trust model: every tool goes
-through `ToolDispatcher` (hardline rules → risk → approval → execute → report), and none executes
-code.
+This spec adds tools that close those gaps **without** changing the trust model or the gateway:
+every tool runs in the agent process, goes through `ToolDispatcher` (hardline rules → risk →
+approval → execute → report), and none executes code or touches the network.
 
 ## 2. Hard rules (unchanged, restated)
 
@@ -150,101 +153,26 @@ cautious** assessment wins: `Uncertain` over a score, and the higher score other
   `math_error`.
 - Summary: `calculate (42 chars)`.
 
-## 6. Gateway-backed tools (Phase 3.4, design only)
+## 6. Ruled out
 
-These need new `/agent/*` endpoints on the agent listener. The gateway enforces fixed rules the
-agent cannot override; the agent still owns the risk/approval decision.
-
-| Tool | Gateway endpoint | Risk | Untrusted result |
-|---|---|---|---|
-| `http_fetch(url)` | `POST /agent/fetch` | by host: allow-listed `low`, otherwise `high` | **yes** |
-| `download_to_workspace(url, path)` | `POST /agent/fetch` + confined write | as `http_fetch`, plus the write rules | **yes** |
-| `web_search(query)` | `POST /agent/search` | `low` | **yes** |
-| `budget_status()` | `GET /agent/budget` | `low` | no |
-| `github_*` (section 6.1) | `/agent/github/*` | reads `low`; writes `high` | reads **yes** |
-
-- **Fetch / download:** as designed in 3.2 §6 "Deferred: network tools": host allow-list, no
-  private or loopback addresses, redirects re-checked, size cap, timeout; audits host, status, bytes
-  and content type, never content. The model receives a short summary for downloads, not the body.
-- **`web_search`:** the gateway holds the search provider key (agents hold no keys). Returns at most
-  10 `{ title, url, snippet }`. The query is never logged; audit records the provider, result count
-  and duration. Search spend counts against the agent's daily budget if the provider charges.
-- **`budget_status`:** returns `{ dailyBudgetUsd, spentTodayUsd, remainingUsd, resetsAt }` for the
-  calling agent only, so an agent can wrap up before it hits the limit. Small enough that it could
-  land before the rest of 3.4.
-
-### 6.1 GitHub tools (brokered, not the `gh` CLI)
-
-Wrapping the `gh` CLI is ruled out (section 8): it executes a binary (with extensions, aliases and
-an arbitrary `gh api` passthrough), it would need a token inside the agent, and it would need
-egress. Instead the **gateway** calls the GitHub REST API with a token only it holds, exposing a
-small set of typed operations.
-
-| Tool | Arguments | Gateway endpoint | Risk | Untrusted result |
-|---|---|---|---|---|
-| `github_search` | `type` (`issues` \| `prs` \| `code`), `query`, `repo` (optional) | `POST /agent/github/search` | `low` | **yes** |
-| `github_read_issue` | `repo`, `number` | `GET /agent/github/issue` | `low` | **yes** |
-| `github_read_pr` | `repo`, `number` | `GET /agent/github/pr` | `low` | **yes** |
-| `github_read_file` | `repo`, `path`, `ref` (optional) | `GET /agent/github/file` | `low` | **yes** |
-| `github_comment` | `repo`, `number`, `body` (max 16 KB) | `POST /agent/github/comment` | `high` | no |
-| `github_create_issue` | `repo`, `title`, `body` (max 16 KB) | `POST /agent/github/issues` | `high` | no |
-
-**Gateway rules (the agent cannot override):**
-- **Token:** a fine-grained PAT or GitHub App token from an env var (`GITHUB_TOKEN`), held only by the
-  gateway. Read operations need only read scopes; write tools are disabled unless
-  `GitHub:AllowWrites` is `true`.
-- **Repo allow-list per agent** (`GitHub:Agents:<name>:Repos`, entries `owner/repo` or `owner/*`).
-  An agent with no entry gets error `not_allowed` for every call; a repo outside
-  the list → `not_allowed`. `github_search` is scoped to the allowed repos by the gateway (it adds
-  `repo:` qualifiers), never across all of GitHub.
-- **No passthrough:** only the operations above. No merge, push, branch/tag, review approval,
-  label/assignee changes, workflow dispatch, settings, secrets or deletion.
-- **Caps:** search returns at most 20 results; `github_read_pr` returns metadata, body, comments
-  (at most 50) and per-file diff stats, not full diffs; `github_read_file` max 64 KB (truncated with
-  a marker); timeout 15 s.
-- **Audit:** operation, repo, number, HTTP status, bytes and duration. Never titles, bodies,
-  queries, file content or the token. Metrics use labels `agent`, `type` (operation), `status` only.
-- **Rate limits:** GitHub `403`/`429` rate-limit responses map to error `rate_limited`; no retries
-  (consistent with the rest of SharpClaw).
-
-**Agent rules:**
-- Every result from a read tool is untrusted (issue and PR text is the classic prompt-injection
-  vector), so a later `github_comment` / `github_create_issue` in the same turn is raised by taint
-  to `critical` and always needs approval.
-- Summaries: `search issues in kjhughes097/sharpclaw`, `read PR kjhughes097/sharpclaw#139`,
-  `comment on kjhughes097/sharpclaw#139 (1.2 KB)`, `create issue in kjhughes097/sharpclaw (title 42
-  chars, body 2.0 KB)` — never the query, title or body text.
-
-## 7. Tools tied to later phases (design notes only)
-
-- **Memory (3.7):** `memory_save(topic, text)` / `memory_recall(query)`. Start as a convention over
-  `memory/*.md` in the workspace using `workspace_append` and `workspace_search`; only promote to
-  dedicated tools (or gateway storage) once the memory model in the v3 plan is decided.
-- **Agent-to-agent (3.5):** `send_to_agent(agent, text)` posting to the mailbox; replies arrive as
-  inbox messages. Subject to the sender → recipient policy and hop limits in that phase.
-- **Autonomy (3.6):** `schedule_wake(at | interval, note)` / `set_reminder`. The gateway owns the
-  schedule; the agent only requests it.
-
-## 8. Ruled out
-
-Not to be built, now or later, without a deliberate change to the trust model:
+Not to be built as agent tools, now or later, without a deliberate change to the trust model:
 
 - shell or command execution, running scripts, code, tests or build tools;
 - `git` operations (hooks and config can execute code), including cloning repositories;
-- the `gh` CLI or any other GitHub client in the agent (GitHub access is brokered, section 6.1), and
-  GitHub write operations beyond comment / create issue;
+- the `gh` CLI or any other external-service client inside the agent;
 - Docker or container management, the Docker socket;
 - reading or changing agent policy (`agent.json`, `soul.md`) from the workspace;
-- direct network access from the agent container (all network goes through the gateway, section 6).
+- direct network access from the agent container (any network capability goes through the
+  gateway, specified elsewhere).
 
-## 9. Agent configuration and rollout
+## 7. Agent configuration and rollout
 
 - New tool names are added to `WorkspaceTools.Names` (or a new `UtilityTools.Names`) so
   `AgentToolConfig.Load` accepts them; the registry is built from the union.
 - Nothing is enabled by default. Each agent's `docker/agents/<name>/config/agent.json` lists the
   tools it gets; updating the shipped `ade` and `cody` configs is part of task 7.
 
-## 10. Open questions
+## 8. Open questions
 
 1. **`calculate`:** include it? It does not execute code (fixed grammar, no `eval`), but it is the
    closest thing to the line in section 2. Recommendation: include, with the constraints in §5.2.
@@ -254,11 +182,8 @@ Not to be built, now or later, without a deliberate change to the trust model:
    full rewrite)? Recommendation: `medium`, to stay consistent with overwrite.
 4. **Directory operations:** `workspace_move` / `workspace_delete` are files only. Is directory
    move/delete needed? Recommendation: not yet.
-5. **GitHub token type:** fine-grained PAT (simple, tied to Ken's account) or a GitHub App
-   installation token (separate bot identity, shows as an app on comments)? Recommendation: start
-   with a fine-grained PAT; move to an App if comments should not appear as Ken.
 
-## 11. Tests
+## 9. Tests
 
 - **Unit, per tool:** schema parses; `Assess` returns the expected `Scored` / `Uncertain` /
   `Blocked` for normal, overwrite, sensitive and every hardline case (absolute, `..`, symlink
@@ -276,21 +201,21 @@ Not to be built, now or later, without a deliberate change to the trust model:
   `ExecuteUncheckedAsync`).
 - **Dispatcher integration:** taint from `workspace_search` raises later calls in the same turn.
 
-## 12. Task order
+## 10. Task order
 
 | # | Task |
 |---|---|
-| 1 | This spec; answers to section 10; roadmap link |
+| 1 | This spec; answers to section 8; roadmap link |
 | 2 | `current_time` (+ `UtilityTools` registration) |
 | 3 | `workspace_search` and `workspace_find` |
 | 4 | `workspace_edit` and `workspace_append` |
 | 5 | `workspace_move` and `workspace_copy` |
 | 6 | `workspace_read` paging |
 | 7 | `calculate` (if Q1 = yes); update `ade` / `cody` configs; README tool table |
-| 8 | Phase 3.4: `budget_status`, then fetch / download / search per a 3.4 spec |
-| 9 | Phase 3.4+: GitHub read tools, then approval-gated `github_comment` / `github_create_issue` |
 
-## 13. Out of scope
+## 11. Out of scope
 
-Everything in section 8; sections 6 and 7 until their phase specs are written; regex search;
-directory move/delete; per-tool approval memory ("always allow"); policy hot reload; MCP.
+Everything in section 6; any tool needing a gateway endpoint or network access (`http_fetch`,
+`download_to_workspace`, web search, GitHub, budget status, memory beyond workspace files,
+agent-to-agent, scheduling, MCP); regex search; directory move/delete; per-tool approval memory
+("always allow"); policy hot reload.
