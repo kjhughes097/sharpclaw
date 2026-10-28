@@ -48,16 +48,18 @@ else
 fi
 
 echo "== 4. Agent container root filesystem is read-only and /config is not writable =="
-if docker compose exec -T agent-assistant sh -c 'touch /rootfs-write-test' 2>/dev/null; then
-  fail "agent root filesystem is writable"
-else
-  pass "agent root filesystem is read-only"
-fi
-if docker compose exec -T agent-assistant sh -c 'touch /config/write-test' 2>/dev/null; then
-  fail "/config is writable"
-else
-  pass "/config is not writable"
-fi
+for SVC in $(docker compose config --services | grep '^agent-'); do
+  if docker compose exec -T "$SVC" sh -c 'touch /rootfs-write-test' 2>/dev/null; then
+    fail "$SVC root filesystem is writable"
+  else
+    pass "$SVC root filesystem is read-only"
+  fi
+  if docker compose exec -T "$SVC" sh -c 'touch /config/write-test' 2>/dev/null; then
+    fail "$SVC /config is writable"
+  else
+    pass "$SVC /config is not writable"
+  fi
+done
 
 echo
 if [ "$FAILURES" -eq 0 ]; then
