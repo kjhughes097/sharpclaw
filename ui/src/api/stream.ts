@@ -31,6 +31,12 @@ export const HIDDEN_REOPEN_MS = 10_000;
 const MAX_REMEMBERED_IDS = 500;
 
 /**
+ * Events sent without an `id:` line. Browsers keep the connection's last event id and report it
+ * on every later event, so for these `MessageEvent.lastEventId` is stale and must be ignored.
+ */
+const EPHEMERAL = new Set<EventType>(['delta', 'snapshot', 'reset']);
+
+/**
  * Owns the tab's single connection to the global `/api/events` stream (3.3 spec section 8.2).
  * Over plain HTTP/1.1 browsers allow six connections per host, so there is never more than one.
  *
@@ -154,7 +160,7 @@ export class EventStreamManager {
 
   private dispatch(source: EventSourceLike, type: EventType, ev: MessageEvent) {
     if (this.source !== source) return;
-    const id = ev.lastEventId ? ev.lastEventId : null;
+    const id = !EPHEMERAL.has(type) && ev.lastEventId ? ev.lastEventId : null;
     // Durable events (and ready) carry an id; replays after a reopen are dropped by id.
     if (id !== null && type !== 'ready') {
       if (this.seenIds.has(id)) return;

@@ -122,7 +122,7 @@ as expected with no pending messages or rejections in that window.
 
 ## Phase 3.3 (2026-10-28)
 
-**Automated:** gateway 202, agent 77, CLI 25 tests pass; Release build 0 warnings. UI: 154 Vitest
+**Automated:** gateway 202, agent 77, CLI 25 tests pass; Release build 0 warnings. UI: 155 Vitest
 tests (unit, integration, jest-axe on each main view, run with `navigator.clipboard` and
 `crypto.randomUUID` undefined), `lint`, `typecheck`, `check:api` and `build` pass; initial JS
 193.7 KB gzipped, `index.html` has no inline script or style.
@@ -134,7 +134,7 @@ requests are same-origin and the console shows no CSP violation.
 | Area | Checks |
 |---|---|
 | Auth | Wrong password → generic error; login → `/chats`; sign-out → `/login`; disabling the user (revokes sessions) → next action lands on `/login?next=…` with nothing left on screen |
-| Chat | Reply streams progressively; reload mid-reply resumes from the snapshot with no duplicated text; offline 1.5 s then online, text complete and not duplicated; markdown: `<script>` inert, remote image shown as a text link and never fetched, `javascript:` link dropped |
+| Chat | Reply streams progressively (partial text seen before the end); reload mid-reply resumes from the snapshot with no duplicated text; offline 1.5 s then online, text complete and not duplicated; markdown: `<script>` inert, remote image shown as a text link and never fetched, `javascript:` link dropped |
 | Banners | Disabled agent, budget used up, dropped-turns banner and `/ 1.0k tokens` meter with a 1,000-token window |
 | Tools and approvals | Pending card in the thread and the Approvals page, tab title `(1) SharpClaw`; approve → turn continues and the tool card expands to plain-text arguments and result; deny → `denied`; approval decided in a second tab clears the first; unanswered approval expires (25 s) and the turn finishes |
 | Agents, audit, trace | Create agent → token shown once, gone after "I've saved it"; revoke a token; trace panel shows the turn; audit tabs list the LLM and tool calls |

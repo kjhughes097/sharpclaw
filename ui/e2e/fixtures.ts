@@ -48,7 +48,12 @@ export async function login(page: Page, next = '/chats') {
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).not.toHaveURL(/\/login/);
-  await expect(page.getByText(/Live|Reconnecting/).filter({ visible: true }).first()).toBeVisible();
+  await expect(
+    page
+      .getByText(/Live|Reconnecting/)
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible();
 }
 
 export function admin(request: APIRequestContext) {

@@ -78,6 +78,19 @@ describe('EventStreamManager', () => {
     expect(t.events).toHaveLength(2);
   });
 
+  it('deltas and snapshots after a durable event are delivered (browsers repeat the last id on them)', () => {
+    const t = setup();
+    t.manager.start();
+    t.last().open();
+    t.last().emit('message.created', { messageId: 'm', threadId: thread, correlationId: 'm' }, 11);
+    t.last().emit('delta', { correlationId: 'm', content: 'a', threadId: thread });
+    t.last().emit('delta', { correlationId: 'm', content: 'b', threadId: thread });
+    t.last().emit('snapshot', { correlationId: 'm', content: 'ab', threadId: thread });
+    t.last().emit('reset', { reason: 'history_pruned', threadId: null });
+    expect(t.events.map((e) => e.type)).toEqual(['message.created', 'delta', 'delta', 'snapshot', 'reset']);
+    expect(t.events.filter((e) => e.type === 'delta').every((e) => e.id === null)).toBe(true);
+  });
+
   it('a transient drop is left to the browser (no new EventSource)', () => {
     const t = setup();
     t.manager.start();

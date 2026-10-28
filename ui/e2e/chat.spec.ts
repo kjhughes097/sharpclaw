@@ -42,7 +42,8 @@ test.describe('chat', () => {
     await expect(bubble).toBeVisible();
     const partial = (await bubble.textContent()) ?? '';
     await expect(messages(page).getByText(/The end\./)).toBeVisible({ timeout: 30_000 });
-    expect(partial.length).toBeLessThan(140);
+    // Seen before the reply finished: it really streamed.
+    expect(partial).not.toContain('The end.');
   });
 
   test('a reload in the middle of a reply resumes it without duplication', async ({ page, request }) => {

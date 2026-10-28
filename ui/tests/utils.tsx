@@ -17,6 +17,8 @@ export class FakeEventSource implements EventSourceLike {
   onopen: ((ev: Event) => unknown) | null = null;
   onerror: ((ev: Event) => unknown) | null = null;
   closed = false;
+  /** Like a browser, the last id sticks and is reported on later events that carry none. */
+  private lastEventId = '';
   private readonly listeners = new Map<string, ((ev: MessageEvent) => void)[]>();
 
   constructor(readonly url: string) {}
@@ -38,9 +40,10 @@ export class FakeEventSource implements EventSourceLike {
 
   /** Sends one SSE event; `id` makes it durable. */
   emit(type: string, data: unknown, id?: string | number) {
+    if (id !== undefined) this.lastEventId = String(id);
     const ev = new MessageEvent(type, {
       data: typeof data === 'string' ? data : JSON.stringify(data),
-      lastEventId: id === undefined ? '' : String(id),
+      lastEventId: this.lastEventId,
     });
     for (const listener of this.listeners.get(type) ?? []) listener(ev);
   }
