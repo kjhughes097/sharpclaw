@@ -6,9 +6,9 @@ using SharpClaw.Gateway.Telemetry;
 
 namespace SharpClaw.Gateway;
 
-public static partial class GatewayServices
+public static class TelemetryRegistration
 {
-    static partial void RegisterTelemetry(WebApplicationBuilder builder)
+    public static WebApplicationBuilder AddSharpClawTelemetry(this WebApplicationBuilder builder)
     {
         builder.Services.AddSingleton<GatewayMetrics>();
 
@@ -48,5 +48,6 @@ public static partial class GatewayServices
                     e.Protocol = OtlpExportProtocol.HttpProtobuf;
                 });
         });
+        return builder;
     }
 }

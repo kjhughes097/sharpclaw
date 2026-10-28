@@ -78,8 +78,9 @@ to rewrite `docs/openapi/sharpclaw-client.v1.json` and `docs/api-fixtures/events
   `HttpContext.Connection.LocalPort` (`ListenerFilter`), **never** the `Host` header:
   client `/api/*` (admin key or session cookie + CSRF, port 8080) vs agent `/agent/*` + `/v1/*`
   (agent token, port 8081). `/api/users*` is admin-key only.
-  Wrong listener → `404`. Endpoint registration lives in `Endpoints/`, wired via
-  `Endpoints/EndpointMapping.cs`; service registration is split into `GatewayServices` partials.
+  Wrong listener → `404`. `GatewayBuilder` calls plain extension methods: `AddSharpClawOptions()`
+  (every options class is validated at startup), `AddSharpClawAuth/Providers/Services/Telemetry()`
+  and `MapSharpClawEndpoints()` (`Endpoints/EndpointMapping.cs`, the one list of route groups).
 - `src/SharpClaw.Agent` — console loop; HTTP and soul file behind `IGatewayClient` / `ISoulProvider`.
 - `src/SharpClaw.Cli` — assembly `sharpclaw`; gateway access behind `ICliGateway`. Chat opens the
   SSE stream **before** posting (a fresh connect replays nothing) and resumes with `Last-Event-ID`.

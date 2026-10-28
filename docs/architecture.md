@@ -116,7 +116,8 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 
 | Folder | Contents |
 |---|---|
-| `GatewayBuilder.cs` | Options, JSON, DbContext, Kestrel listeners, middleware, endpoint mapping. |
+| `GatewayBuilder.cs` | Composition root: `AddSharpClawOptions()` (bound **and validated**; bad config stops startup), JSON (`SharpClawJson.Apply`), DbContext, Kestrel listeners, middleware, `MapSharpClawEndpoints()`. |
+| `Configuration/` | Options classes (DataAnnotations) and `OptionsRegistration` (source-generated validators plus cross-field rules, `IStartupCheck`). |
 | `Auth/` | Client and agent auth filters, sessions, login rate limiter, password hashing, auth/user endpoints. |
 | `Endpoints/` | Minimal-API endpoint classes per area, plus the chat streaming helpers. |
 | `Services/` | Inbox, message queries, context building, events (publisher, bus, turn buffers), approvals, background services. |

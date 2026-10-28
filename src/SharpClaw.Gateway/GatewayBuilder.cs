@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
+using SharpClaw.Gateway.Endpoints;
 using SharpClaw.Gateway.Infrastructure;
 
 namespace SharpClaw.Gateway;
@@ -15,31 +16,9 @@ public static class GatewayBuilder
     {
         var builder = WebApplication.CreateBuilder(args);
 
-        builder.Services.Configure<ListenerOptions>(builder.Configuration.GetSection(ListenerOptions.Section));
-        builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.Section));
-        builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.Section));
-        builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection(ProviderOptions.Section));
-        builder.Services.Configure<OpenRouterOptions>(builder.Configuration.GetSection(OpenRouterOptions.Section));
-        builder.Services.Configure<FakeOptions>(builder.Configuration.GetSection(FakeOptions.Section));
-        builder.Services.Configure<InboxOptions>(builder.Configuration.GetSection(InboxOptions.Section));
-        builder.Services.Configure<MessagesOptions>(builder.Configuration.GetSection(MessagesOptions.Section));
-        builder.Services.Configure<ApprovalsOptions>(builder.Configuration.GetSection(ApprovalsOptions.Section));
-        builder.Services.Configure<ChatOptions>(builder.Configuration.GetSection(ChatOptions.Section));
-        builder.Services.Configure<EventsOptions>(builder.Configuration.GetSection(EventsOptions.Section));
-        builder.Services.Configure<ToolsOptions>(builder.Configuration.GetSection(ToolsOptions.Section));
-        builder.Services.Configure<ContextOptions>(builder.Configuration.GetSection(ContextOptions.Section));
-        builder.Services.Configure<UiOptions>(builder.Configuration.GetSection(UiOptions.Section));
-
+        builder.AddSharpClawOptions();
         builder.Services.AddSingleton(TimeProvider.System);
-
-        builder.Services.ConfigureHttpJsonOptions(o =>
-        {
-            o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-            // Numbers are numbers: keeps request parsing strict and the OpenAPI schemas plain integers.
-            o.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict;
-            o.SerializerOptions.Converters.Add(
-                new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase));
-        });
+        builder.Services.ConfigureHttpJsonOptions(o => SharpClawJson.Apply(o.SerializerOptions));
 
         builder.Services.AddSingleton<SqlitePragmaInterceptor>();
         builder.Services.AddSharpClawOpenApi();
@@ -49,7 +28,10 @@ public static class GatewayBuilder
         // provider/listener/database settings and register providers, Kestrel and the DbContext.
         configure?.Invoke(builder);
 
-        GatewayServices.Register(builder);
+        builder.AddSharpClawAuth()
+            .AddSharpClawProviders()
+            .AddSharpClawServices()
+            .AddSharpClawTelemetry();
 
         var listeners = builder.Configuration.GetSection(ListenerOptions.Section).Get<ListenerOptions>() ?? new ListenerOptions();
         var dbOptions = builder.Configuration.GetSection(DatabaseOptions.Section).Get<DatabaseOptions>() ?? new DatabaseOptions();
@@ -68,14 +50,10 @@ public static class GatewayBuilder
 
         var app = builder.Build();
 
-        var auth = app.Services.GetRequiredService<IOptions<AuthOptions>>().Value;
-        if (string.IsNullOrWhiteSpace(auth.AdminKey))
-            throw new InvalidOperationException("Auth:AdminKey is required (set Auth__AdminKey).");
-        if (auth.Password.Pbkdf2Iterations < AuthOptions.MinPbkdf2Iterations)
-            throw new InvalidOperationException($"Auth:Password:Pbkdf2Iterations must be at least {AuthOptions.MinPbkdf2Iterations}.");
-
-        foreach (var validator in app.Services.GetServices<IStartupValidator>())
+        // Fail fast on bad configuration, before migrations or listening.
+        foreach (var validator in app.Services.GetServices<IStartupCheck>())
             validator.Validate();
+        var auth = app.Services.GetRequiredService<IOptions<AuthOptions>>().Value;
 
         // Forwarded headers only from configured proxies, and only when enabled; never trusted otherwise.
         if (auth.ForwardedHeaders.Enabled)
@@ -97,7 +75,7 @@ public static class GatewayBuilder
         // Health check: unauthenticated, available on both listeners.
         app.MapGet("/healthz", () => Results.Json(new { status = "ok" }, SharpClawJson.Options)).ExcludeFromDescription();
 
-        GatewayEndpoints.Map(app);
+        app.MapSharpClawEndpoints();
         app.MapSharpClawOpenApi();
 
         return app;
