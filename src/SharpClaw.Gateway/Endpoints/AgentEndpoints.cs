@@ -72,7 +72,7 @@ public static class AgentEndpoints
         if (!await TurnGuard.OwnsThreadAsync(db, AuthContext.Agent(http).Id, id, ct))
             return ApiResults.NotFound("Thread not found.");
 
-        var messages = await MessageQueries.ListAsync(db, id, null, includeTools: true, ct);
+        var messages = await MessageQueries.ListAsync(db, id, includeTools: true, ct);
         return Results.Json(new MessageListResponse(messages), SharpClawJson.Options);
     }
 

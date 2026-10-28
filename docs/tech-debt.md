@@ -58,7 +58,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 
 | # | Item | Severity | Why accepted | Fix when / how |
 |---|---|---|---|---|
-| 4 | **String literals instead of constants in `GatewayMetrics.ObserveInboxDepth`** (`"user"`, `"pending"`). | Low | Oversight. | Use `Roles.User` / `MessageStatus.Pending`. |
 | 5 | **Observable gauges query the database on every collection.** `budget.remaining_usd` loads all agents and runs one spend query per agent; `approvals.pending` and `tool.unreported` run a grouped query each. | Low | Cheap at personal scale (a handful of agents, 60 s export interval). | If agent count grows, replace with a single grouped query or an in-memory cache. |
 | 6 | **`fail` publishes the reason code as both `code` and `message`** in the SSE `error` event, so the CLI shows `Error: budget_exceeded` rather than friendly text. | Low | The spec gives the fail endpoint only a short code. | Map known codes to human-readable messages in the gateway or the CLI. |
 | 7 | **Hand-rolled CLI argument parser** (`ParsedArgs`) instead of `System.CommandLine`. | Low | `System.CommandLine` was only available as a pre-release; the parser is about 60 lines and tested. | Switch if the CLI grows (subcommand help, validation) or a stable release lands. |

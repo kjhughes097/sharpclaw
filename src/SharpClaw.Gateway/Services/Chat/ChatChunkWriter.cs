@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using SharpClaw.Contracts;
 
 namespace SharpClaw.Gateway.Services.Chat;
 
@@ -23,7 +24,7 @@ public sealed class ChatChunkWriter
             choices.WriteNumber("index", 0);
             choices.WritePropertyName("delta");
             choices.WriteStartObject();
-            choices.WriteString("role", "assistant");
+            choices.WriteString("role", Roles.Assistant);
             choices.WriteEndObject();
             choices.WriteNull("finish_reason");
             choices.WriteEndObject();

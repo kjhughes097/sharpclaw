@@ -111,8 +111,11 @@ to rewrite `docs/openapi/sharpclaw-client.v1.json` and `docs/api-fixtures/events
   content, soul contents, tokens, keys or upstream response bodies. Tokens are stored only as
   SHA-256 hex + 8-char prefix; the value is returned once. Secrets come from env vars / `.env`
   (gitignored) — never commit them.
-- **Logging:** put `agent`, `agent_id`, `thread_id`, `correlation_id` in `ILogger.BeginScope`
-  (log attributes → Loki structured metadata), not resource attributes.
+- **Logging:** put `agent`, `agent_id`, `thread_id`, `correlation_id` in the log scope via
+  `LogScopes.Turn(...)` / `LogScopes.ForAgent(...)` (log attributes → Loki structured metadata), not
+  resource attributes. The agent uses the same `correlation_id` key.
+- **Turn state and ownership:** change a user turn's state only through `MessageTurns`, and check
+  agent ownership with `TurnGuard` (never re-implement the "claimed message belongs to this agent" rule).
 - **Metrics:** meter `SharpClaw.Gateway`; labels limited to agent, model, status, type, listener —
   never thread/message/correlation/token ids. Histograms are in seconds with explicit buckets.
   Landed names keep dots (no `_total`), so query them as `{__name__="sharpclaw.llm.calls"}`.

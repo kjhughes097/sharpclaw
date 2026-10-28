@@ -17,12 +17,13 @@ public static class InboxRepository
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            UPDATE messages SET status = 'pending', claimed_at = NULL
-            WHERE agent_id = $agent AND role = 'user' AND status = 'claimed'
+            UPDATE messages SET status = $pending, claimed_at = NULL
+            WHERE agent_id = $agent AND role = $user AND status = $claimed
               AND claimed_at IS NOT NULL AND claimed_at < $threshold
             RETURNING id;";
         cmd.Parameters.AddWithValue("$agent", agentId);
         cmd.Parameters.AddWithValue("$threshold", thresholdUtc);
+        AddStateParameters(cmd);
 
         var ids = new List<Guid>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
@@ -38,7 +39,7 @@ public static class InboxRepository
     public static Task TouchClaimAsync(SharpClawDbContext db, Guid agentId, Guid messageId, DateTime nowUtc, CancellationToken ct) =>
         db.Database.ExecuteSqlInterpolatedAsync($@"
             UPDATE messages SET claimed_at = {nowUtc}
-            WHERE id = {messageId} AND agent_id = {agentId} AND role = 'user' AND status = 'claimed'", ct);
+            WHERE id = {messageId} AND agent_id = {agentId} AND role = {Roles.User} AND status = {MessageStatus.Claimed}", ct);
 
     /// <summary>Atomically claims the oldest pending user message for the agent (single statement).</summary>
     public static async Task<InboxMessageDto?> ClaimNextAsync(
@@ -50,15 +51,16 @@ public static class InboxRepository
 
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
-            UPDATE messages SET status = 'claimed', claimed_at = $now
+            UPDATE messages SET status = $claimed, claimed_at = $now
             WHERE id = (
                 SELECT id FROM messages
-                WHERE agent_id = $agent AND role = 'user' AND status = 'pending'
+                WHERE agent_id = $agent AND role = $user AND status = $pending
                 ORDER BY created_at, id LIMIT 1)
-              AND status = 'pending'
+              AND status = $pending
             RETURNING id, thread_id, content, created_at;";
         cmd.Parameters.AddWithValue("$now", nowUtc);
         cmd.Parameters.AddWithValue("$agent", agentId);
+        AddStateParameters(cmd);
 
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct))
@@ -70,5 +72,13 @@ public static class InboxRepository
             return new InboxMessageDto(id, threadId, content, createdAt);
         }
         return null;
+    }
+
+    /// <summary>The role and status values used by the raw SQL above, from the shared constants.</summary>
+    private static void AddStateParameters(SqliteCommand cmd)
+    {
+        cmd.Parameters.AddWithValue("$user", Roles.User);
+        cmd.Parameters.AddWithValue("$pending", MessageStatus.Pending);
+        cmd.Parameters.AddWithValue("$claimed", MessageStatus.Claimed);
     }
 }
