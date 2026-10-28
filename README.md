@@ -163,20 +163,21 @@ Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
    ```bash
    cd docker && docker compose up -d gateway
    ```
-3. Create the first agent and copy its token into `docker/.env` as `AGENT_ASSISTANT_TOKEN`
-   (also set `AGENT_UID`/`AGENT_GID` to the owner of `docker/agents/assistant/workspace` if it
-   isn't 1000:1000, so workspace tools can write):
+3. Create the agents and copy each token into `docker/.env` as `AGENT_ADE_TOKEN` /
+   `AGENT_CODY_TOKEN` (also set `AGENT_UID`/`AGENT_GID` to the owner of
+   `docker/agents/<name>/workspace` if it isn't 1000:1000, so workspace tools can write):
    ```bash
    export SHARPCLAW_URL=http://localhost:8080 SHARPCLAW_ADMIN_KEY=<your admin key>
-   dotnet run --project src/SharpClaw.Cli -- agents create assistant --model <id> --daily-budget 1
+   dotnet run --project src/SharpClaw.Cli -- agents create ade --model <id> --daily-budget 1
+   dotnet run --project src/SharpClaw.Cli -- agents create cody --model <id> --daily-budget 1
    ```
-4. Start the agent:
+4. Start the agents:
    ```bash
-   cd docker && docker compose up -d agent-assistant
+   cd docker && docker compose up -d agent-ade agent-cody
    ```
 5. Chat:
    ```bash
-   dotnet run --project src/SharpClaw.Cli -- chat assistant
+   dotnet run --project src/SharpClaw.Cli -- chat ade
    ```
 
 Containers are started and stopped manually. The gateway never touches the Docker socket. Only the
@@ -268,7 +269,7 @@ approval, shows the request and asks `Allow? [y/N]` (anything but `y`/`yes` deni
 ## Agent tools (Phase 3.2)
 
 Each agent reads its tool policy once at startup from a read-only file (`/config/agent.json`,
-e.g. [docker/agents/assistant/config/agent.json](docker/agents/assistant/config/agent.json)):
+e.g. [docker/agents/ade/config/agent.json](docker/agents/ade/config/agent.json)):
 
 ```json
 {

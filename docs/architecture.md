@@ -10,7 +10,7 @@ behaviour, with later specs winning. Keep this page in step with the code when s
 
 ```
                   LAN / loopback                      internal network (no egress)
- browser ──┐                                        ┌── agent-assistant (SharpClaw.Agent)
+ browser ──┐                                        ┌── agent-ade, agent-cody (SharpClaw.Agent)
  CLI ──────┼──► :8080 client listener ┐             │     soul.md (ro) · agent.json (ro) · workspace (rw)
            │                          ├─ Gateway ◄──┘ :8081 agent listener
            │                          │   SQLite (one file) · OTLP metrics/logs

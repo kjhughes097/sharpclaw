@@ -16,8 +16,9 @@ applyTo: ["docker/**", "scripts/verify-isolation.sh"]
 - The runtime images have no `curl`; the gateway healthcheck is `dotnet SharpClaw.Gateway.dll --healthcheck`.
 - Secrets live in the repo-root `.env` (gitignored). Run compose from `docker/` with
   `docker compose --env-file ../.env …`. Never commit `.env` or tokens.
-- New agents follow the `agent-assistant` pattern: `docker/agents/<name>/config/soul.md` (ro) and
-  `docker/agents/<name>/workspace/` (contents gitignored).
+- New agents follow the `agent-ade` pattern: a `agent-<name>` service with its own
+  `AGENT_<NAME>_TOKEN`, `docker/agents/<name>/config/{soul.md,agent.json}` (ro) and
+  `docker/agents/<name>/workspace/` (contents gitignored, `.gitkeep` tracked).
 - After changing compose or networking, bring the stack up and run
   `cd docker && bash ../scripts/verify-isolation.sh` — it must report all checks passed.
 - Dashboard JSON (`docker/grafana/sharpclaw-dashboard.json`): select metrics with the landed dotted

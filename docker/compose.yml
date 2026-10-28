@@ -2,7 +2,7 @@ name: sharpclaw
 
 networks:
   internal:
-    internal: true        # no route to the outside world
+    internal: true # no route to the outside world
   external: {}
 
 volumes:
@@ -41,21 +41,40 @@ services:
       retries: 5
       start_period: 15s
 
-  agent-assistant:
+  agent-ade:
     build: { context: .., dockerfile: docker/Dockerfile.agent }
-    # Run as the host user that owns ./agents/assistant/workspace so workspace tools can write
+    # Run as the host user that owns ./agents/<name>/workspace so workspace tools can write
     # there (the image's default 'app' user has a different uid). Still non-root.
     user: "${AGENT_UID:-1000}:${AGENT_GID:-1000}"
     depends_on:
       gateway: { condition: service_healthy }
     environment:
       GATEWAY_URL: http://gateway:8081
-      AGENT_TOKEN: ${AGENT_ASSISTANT_TOKEN}
-      AGENT_CONFIG_PATH: /config/agent.json   # tool policy, read-only mount (3.2)
-    networks: [internal]            # internal only
+      AGENT_TOKEN: ${AGENT_ADE_TOKEN}
+      AGENT_CONFIG_PATH: /config/agent.json # tool policy, read-only mount (3.2)
+    networks: [internal] # internal only
     volumes:
-      - ./agents/assistant/config:/config:ro
-      - ./agents/assistant/workspace:/workspace
+      - ./agents/ade/config:/config:ro
+      - ./agents/ade/workspace:/workspace
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  agent-cody:
+    build: { context: .., dockerfile: docker/Dockerfile.agent }
+    user: "${AGENT_UID:-1000}:${AGENT_GID:-1000}"
+    depends_on:
+      gateway: { condition: service_healthy }
+    environment:
+      GATEWAY_URL: http://gateway:8081
+      AGENT_TOKEN: ${AGENT_CODY_TOKEN}
+      AGENT_CONFIG_PATH: /config/agent.json
+    networks: [internal] # internal only
+    volumes:
+      - ./agents/cody/config:/config:ro
+      - ./agents/cody/workspace:/workspace
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
