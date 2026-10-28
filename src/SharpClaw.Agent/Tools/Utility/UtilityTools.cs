@@ -9,9 +9,9 @@ namespace SharpClaw.Agent.Tools.Utility;
 /// </summary>
 public static class UtilityTools
 {
-    public static IAgentTool[] All(TimeProvider time) => new IAgentTool[] { new CurrentTimeTool(time) };
+    public static IAgentTool[] All(TimeProvider time) => new IAgentTool[] { new CurrentTimeTool(time), new CalculateTool() };
 
-    public static IReadOnlyCollection<string> Names { get; } = new[] { "current_time" };
+    public static IReadOnlyCollection<string> Names { get; } = new[] { "current_time", "calculate" };
 
     /// <summary>The current date and time, optionally in a named IANA time zone.</summary>
     private sealed class CurrentTimeTool(TimeProvider time) : IAgentTool
@@ -63,6 +63,42 @@ public static class UtilityTools
                 timezone = zone.Id,
                 dayOfWeek = local.DayOfWeek.ToString(),
             }));
+        }
+    }
+
+    /// <summary>Evaluates arithmetic with <see cref="Calculator"/>; never an eval-like API.</summary>
+    private sealed class CalculateTool : IAgentTool
+    {
+        public string Name => "calculate";
+        public string Description =>
+            "Evaluate an arithmetic expression: numbers, + - * / % ^, parentheses and abs, round, floor, ceil, sqrt, min, max. " +
+            "round(x, digits) rounds to 0-15 decimal places.";
+        public string ParametersJson => """
+            {"type":"object","properties":{"expression":{"type":"string","description":"Arithmetic expression (at most 200 characters), e.g. round((12.5 * 3 + 4) / 7, 2)"}},"required":["expression"]}
+            """;
+        public bool ReturnsUntrustedContent => false;
+
+        public ToolAssessment Assess(JsonElement args) => Args.String(args, "expression") switch
+        {
+            null or { Length: 0 } => new ToolAssessment.Blocked("expression (a string) is required"),
+            { Length: > Calculator.MaxLength } => new ToolAssessment.Blocked($"expression is longer than {Calculator.MaxLength} characters"),
+            _ => new ToolAssessment.Scored(RiskLevel.Low, "evaluates arithmetic"),
+        };
+
+        // Never the expression itself: it's model-supplied free text.
+        public string Summarize(JsonElement args) => $"calculate ({(Args.String(args, "expression") ?? "").Length} chars)";
+
+        public Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
+        {
+            var expression = Args.String(args, "expression")!;
+            try
+            {
+                return Task.FromResult(ToolResult.Success(new { expression, value = Calculator.Evaluate(expression) }));
+            }
+            catch (CalculatorException ex)
+            {
+                return Task.FromResult(ToolResult.Error(ex.Code, ex.Message));
+            }
         }
     }
 }

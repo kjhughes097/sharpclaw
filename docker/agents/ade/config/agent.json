@@ -2,5 +2,18 @@
   "allowedRiskLevel": "low",
   "smartMode": true,
   "maxToolIterations": 10,
-  "tools": ["workspace_list", "workspace_read", "workspace_write", "workspace_delete"]
+  "tools": [
+    "workspace_list",
+    "workspace_read",
+    "workspace_search",
+    "workspace_find",
+    "workspace_write",
+    "workspace_edit",
+    "workspace_append",
+    "workspace_move",
+    "workspace_copy",
+    "workspace_delete",
+    "current_time",
+    "calculate"
+  ]
 }

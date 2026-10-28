@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using SharpClaw.Agent.Tools;
 using SharpClaw.Agent.Tools.Utility;
@@ -65,4 +66,18 @@ public class AgentToolConfigTests : IDisposable
         Assert.Equal(Known, config.Tools);
         Assert.Contains("current_time", config.Tools);
     }
+
+    [Theory]
+    [InlineData("ade")]
+    [InlineData("cody")]
+    public void Shipped_agent_configs_load(string agent)
+    {
+        var path = Path.Combine(RepoRoot(), "docker", "agents", agent, "config", "agent.json");
+        var config = AgentToolConfig.Load(path, Known);
+        Assert.NotNull(config);
+        Assert.NotEmpty(config.Tools);
+    }
+
+    private static string RepoRoot([CallerFilePath] string thisFile = "") =>
+        Path.GetFullPath(Path.Combine(Path.GetDirectoryName(thisFile)!, "..", ".."));
 }
