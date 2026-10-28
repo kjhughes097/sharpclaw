@@ -3,7 +3,7 @@
 **Audience:** an implementing coding agent (and the human reviewing its work).
 **Status:** ready to implement. Everything below is decided unless listed under "Inputs needed from the human" (section 19).
 
-> **Superseded in part** by the [pre-3.3 foundations spec](sharpclaw-3.2-post-implementation-work.md)
+> **Superseded in part** by the [pre-3.3 foundations spec](sharpclaw-pre-3.3-foundations-spec.md)
 > (built): message ordering is by a per-thread `seq` and the unique reply index covers final replies
 > only (§5 there); SSE has durable events and `Last-Event-ID` replay (§8); the client API also
 > accepts a browser session cookie (§4); the full thread is no longer sent on every call (context

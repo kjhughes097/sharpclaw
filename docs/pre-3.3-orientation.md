@@ -1,6 +1,6 @@
 # Pre-3.3 Foundations — Orientation (task T0)
 
-Maps [the pre-3.3 spec](sharpclaw-3.2-post-implementation-work.md) onto the code as it stood at
+Maps [the pre-3.3 spec](sharpclaw-pre-3.3-foundations-spec.md) onto the code as it stood at
 the start of the work (`main` after Phase 3.2, plus the CLI install docs). Open questions were
 resolved by the human's instruction to implement the whole spec without pausing; the decisions
 taken are listed in section 4 so they can be reviewed.

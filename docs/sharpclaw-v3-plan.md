@@ -2,7 +2,7 @@
 
 Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in detail; later phases are deliberately rough and will be refined when reached.
 
-**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`; pre-3.3 foundations: `sharpclaw-3.2-post-implementation-work.md`; Phase 3.3: `sharpclaw-3.3-implementation-spec.md`.
+**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`; pre-3.3 foundations: `sharpclaw-pre-3.3-foundations-spec.md`; Phase 3.3: `sharpclaw-3.3-implementation-spec.md`.
 
 ## 1. Architecture
 
@@ -109,7 +109,7 @@ built in a later phase, with the gateway performing fetches under fixed rules.
 
 ## Pre-3.3 foundations (built)
 
-> **Source of truth:** `sharpclaw-3.2-post-implementation-work.md`. This section is a summary only.
+> **Source of truth:** `sharpclaw-pre-3.3-foundations-spec.md`. This section is a summary only.
 
 Five things the web UI needs, built before it so the UI doesn't have to work around them:
 
