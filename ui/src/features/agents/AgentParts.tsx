@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Badge, RelativeTime } from '../../components/ui';
-import { serverNow } from '../../lib/time';
+import { useServerNow } from '../../lib/time';
 
 /** An on/off switch with a visible state label (never colour alone). */
 export function EnabledSwitch({
@@ -41,8 +41,9 @@ const STALE_MS = 3 * 60_000;
 
 /** Last seen: "never", a relative time, or a warning badge when older than 3 minutes. */
 export function LastSeen({ iso }: { iso: string | null | undefined }) {
+  const now = useServerNow();
   if (!iso) return <Badge tone="neutral">never</Badge>;
-  const stale = serverNow() - Date.parse(iso) > STALE_MS;
+  const stale = now - Date.parse(iso) > STALE_MS;
   if (!stale) return <RelativeTime iso={iso} />;
   return (
     <Badge tone="warn" title="Not seen in the last 3 minutes">

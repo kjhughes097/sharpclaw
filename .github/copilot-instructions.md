@@ -3,13 +3,19 @@
 Personal multi-agent system. The **gateway is the single trust boundary**; agents are untrusted,
 network-isolated workloads that hold no provider keys and reach the world only via the gateway.
 
-- Source of truth for behaviour: the phase specs, [docs/sharpclaw-3.1-implementation-spec.md](../docs/sharpclaw-3.1-implementation-spec.md)
-  and [docs/sharpclaw-3.2-implementation-spec.md](../docs/sharpclaw-3.2-implementation-spec.md) (3.2 wins where they differ).
-  Build only what they describe; anything in an "Out of scope" list (web UI, agent-to-agent,
-  retries, tracing, non-streaming completions, Postgres, Docker socket access, network or
-  code-execution tools…) must not be added. If the spec is ambiguous, ask rather than guess.
-- Setup, configuration and CLI usage: [README.md](../README.md). Telemetry backends and landed
-  metric names: [docs/telemetry-notes.md](../docs/telemetry-notes.md).
+- **Start here:** [docs/architecture.md](../docs/architecture.md) describes the system as it is
+  now (components, listeners, auth, endpoints, events, tables, invariants). Read it before the specs.
+- Source of truth for behaviour: the phase specs, applied in order, with later ones winning where
+  they differ: [3.1](../docs/sharpclaw-3.1-implementation-spec.md) →
+  [3.2](../docs/sharpclaw-3.2-implementation-spec.md) →
+  [pre-3.3 foundations](../docs/sharpclaw-pre-3.3-foundations-spec.md) →
+  [3.3 (web UI)](../docs/sharpclaw-3.3-implementation-spec.md). Build only what they describe;
+  anything still in an "Out of scope" list (agent-to-agent, retries, non-streaming completions,
+  Postgres, Docker socket access, network or code-execution tools, stop/cancel turn, message
+  editing, attachments, thread deletion, search, multi-user features, push/PWA, TLS, frontend
+  telemetry…) must not be added. If the spec is ambiguous, ask rather than guess.
+- Setup, configuration and CLI usage: [README.md](../README.md). Web UI: [docs/ui.md](../docs/ui.md).
+  Telemetry backends and landed metric names: [docs/telemetry-notes.md](../docs/telemetry-notes.md).
 
 ## Engineering Principles
 
@@ -47,6 +53,23 @@ dotnet build -c Release      # warnings are errors in Release — keep it at 0 w
 
 Run a focused suite with `dotnet test tests/SharpClaw.Gateway.Tests --filter "FullyQualifiedName~ClassName"`.
 
+Web UI (in `ui/`, Node 24):
+
+```bash
+npm ci
+npm run lint && npm run typecheck && npm test   # ESLint, strict tsc, Vitest + MSW
+npm run check:api                                # generated API types match the OpenAPI snapshot
+npm run build                                    # typecheck + Vite build + dist/CSP checks
+npm run test:e2e -- --project=chromium           # Playwright; starts an isolated stack via e2e/stack.sh
+```
+
+CI (`.github/workflows/ci.yml`) runs all of the above on every pull request; keep it green.
+
+**Contract changes** (DTOs, endpoints, SSE events) are snapshot-guarded. After changing one:
+`UPDATE_OPENAPI=1 dotnet test tests/SharpClaw.Gateway.Tests --filter "FullyQualifiedName~SnapshotTests"`
+to rewrite `docs/openapi/sharpclaw-client.v1.json` and `docs/api-fixtures/events/`, then
+`npm run gen:api` in `ui/`, review the diff, and commit all three together.
+
 ## Architecture
 
 - `src/SharpClaw.Contracts` — DTOs, `ErrorCodes`, `Roles`, `MessageStatus`, `LlmCallStatus`,
@@ -60,6 +83,11 @@ Run a focused suite with `dotnet test tests/SharpClaw.Gateway.Tests --filter "Fu
 - `src/SharpClaw.Agent` — console loop; HTTP and soul file behind `IGatewayClient` / `ISoulProvider`.
 - `src/SharpClaw.Cli` — assembly `sharpclaw`; gateway access behind `ICliGateway`. Chat opens the
   SSE stream **before** posting (a fresh connect replays nothing) and resumes with `Last-Event-ID`.
+- `ui/` — the web UI (React + TypeScript + Vite, TanStack Query, Radix, Tailwind), built into the
+  gateway image and served same-origin from the client listener (`Infrastructure/UiHosting.cs`, strict
+  CSP). Browser auth is a session cookie plus an `X-CSRF-Token` header on unsafe methods. Each tab
+  opens exactly **one** SSE connection (`/api/events`) owned by `ui/src/api/stream.ts`. See
+  [docs/ui.md](../docs/ui.md) and `.github/instructions/ui.instructions.md`.
 - **Events:** durable client events go through `IEventPublisher.PublishDurableAsync` (stored in
   `thread_events`, then published with an id); only `delta` is ephemeral. Never put tool arguments
   or results in an event.

@@ -18,9 +18,14 @@ The **pre-3.3 foundations** prepare for the web UI: browser login with session c
 exchanges kept in thread history, per-agent context windows, replayable SSE events, and an
 approval queue that works with nobody watching.
 
+Phase 3.3 adds the **web UI**: login, streamed chat, inline tool activity and approvals,
+agents and tokens, audit and per-thread traces (see [Using the web UI](#using-the-web-ui)).
+
+How the system fits together today: [docs/architecture.md](docs/architecture.md).
 Specifications: [Phase 3.1](docs/sharpclaw-3.1-implementation-spec.md),
 [Phase 3.2](docs/sharpclaw-3.2-implementation-spec.md),
-[pre-3.3 foundations](docs/sharpclaw-3.2-post-implementation-work.md). Roadmap: [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md).
+[pre-3.3 foundations](docs/sharpclaw-pre-3.3-foundations-spec.md),
+[Phase 3.3](docs/sharpclaw-3.3-implementation-spec.md). Roadmap: [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md).
 
 ## Projects
 
@@ -46,6 +51,8 @@ The gateway tests start the real gateway on two ephemeral localhost ports, back 
 temporary SQLite file and the `FakeProvider`, and drive time with a `FakeTimeProvider` — no
 secrets or network required. The web UI has its own checks (`cd ui && npm ci && npm run lint &&
 npm run typecheck && npm test && npm run check:api`); see [docs/ui.md](docs/ui.md).
+GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the .NET build and
+tests, the UI checks and the Playwright suite (Chromium) on every pull request.
 
 ## Architecture overview
 

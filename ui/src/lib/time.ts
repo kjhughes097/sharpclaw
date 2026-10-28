@@ -1,3 +1,5 @@
+import { useEffect, useState, useSyncExternalStore } from 'react';
+
 /** Locale for dates and numbers: the browser's, defaulting to en-GB. */
 export function locale(): string {
   return (typeof navigator !== 'undefined' && navigator.language) || 'en-GB';
@@ -6,11 +8,18 @@ export function locale(): string {
 // ----- Server clock -----
 
 let serverOffsetMs = 0;
+const offsetListeners = new Set<() => void>();
+
+function notifyOffset() {
+  offsetListeners.forEach((listener) => listener());
+}
 
 /** Records the server clock offset from `GET /api/system`'s `utcNow`, used for countdowns. */
 export function setServerTime(utcNow: string, receivedAt = Date.now()) {
   const server = Date.parse(utcNow);
-  if (!Number.isNaN(server)) serverOffsetMs = server - receivedAt;
+  if (Number.isNaN(server)) return;
+  serverOffsetMs = server - receivedAt;
+  notifyOffset();
 }
 
 /** Milliseconds since the epoch on the server's clock. */
@@ -20,6 +29,29 @@ export function serverNow(): number {
 
 export function resetServerTime() {
   serverOffsetMs = 0;
+  notifyOffset();
+}
+
+function subscribeOffset(listener: () => void) {
+  offsetListeners.add(listener);
+  return () => {
+    offsetListeners.delete(listener);
+  };
+}
+
+/**
+ * The server's "now" for rendering. Re-renders when the clock offset is learned or changes (the
+ * first `/api/system` response may arrive after the component's first render) and every
+ * `tickMs`, so relative times and staleness never stay computed from the browser's clock.
+ */
+export function useServerNow(tickMs = 30_000): number {
+  useSyncExternalStore(subscribeOffset, () => serverOffsetMs);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => tick((n) => n + 1), tickMs);
+    return () => clearInterval(timer);
+  }, [tickMs]);
+  return serverNow();
 }
 
 // ----- Formatting -----
