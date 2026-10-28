@@ -10,7 +10,11 @@ volumes:
 
 services:
   gateway:
-    build: { context: .., dockerfile: docker/Dockerfile.gateway }
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.gateway
+      args:
+        GIT_SHA: ${GIT_SHA:-dev}
     environment:
       Auth__AdminKey: ${ADMIN_KEY}
       OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
@@ -23,7 +27,9 @@ services:
       OTEL_SERVICE_NAME: sharpclaw-gateway
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=home
     ports:
-      - "127.0.0.1:8080:8080"     # client API only; 8081 is never published
+      # Client API and web UI only; 8081 is never published. Set CLIENT_BIND to the host's LAN
+      # address (or 0.0.0.0) to reach the UI from other devices. Never port-forward 8080.
+      - "${CLIENT_BIND:-127.0.0.1}:8080:8080"
     networks: [internal, external]
     volumes:
       - gateway-data:/data

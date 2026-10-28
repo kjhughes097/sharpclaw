@@ -39,7 +39,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
   if (state.status === 'loading') return <LoadingState label="Checking your session" />;
   if (state.status === 'signed_out')
-    return <Navigate to={loginPath(location.pathname + location.search)} replace />;
+    return <Navigate to={state.redirect ?? loginPath(location.pathname + location.search)} replace />;
   return (
     <>
       <LiveEvents />

@@ -7,7 +7,8 @@ import { useServices } from './services';
 
 export type AuthState =
   | { status: 'loading' }
-  | { status: 'signed_out' }
+  /** `redirect`: where an explicit sign-out sends the user (the auth gate uses it instead of `next`). */
+  | { status: 'signed_out'; redirect?: string }
   | { status: 'signed_in'; user: UserDto | null; method: string; expiresAt: string | null };
 
 interface AuthApi {
@@ -63,9 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       notices.clear();
       queryClient.clear();
       const here = returnTo ?? locationRef.current.pathname + locationRef.current.search;
-      // Navigate first so the auth gate doesn't add its own `next` for an explicit sign-out.
-      navigate(here.startsWith('/login') ? '/login' : loginPath(here), { replace: true });
-      setState({ status: 'signed_out' });
+      const target = here.startsWith('/login') ? '/login' : loginPath(here);
+      setState({ status: 'signed_out', redirect: target });
+      navigate(target, { replace: true });
     },
     [navigate, queryClient, stream, live, notices],
   );

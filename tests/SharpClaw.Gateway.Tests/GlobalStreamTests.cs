@@ -121,6 +121,13 @@ public class GlobalStreamTests
         Assert.Equal(new[] { SseEventNames.ApprovalRequested, SseEventNames.ApprovalDecided, SseEventNames.Error },
             events.Select(e => e.Event));
         Assert.All(events, e => Assert.Equal(thread, (Guid?)JsonNode.Parse(e.Data)!["threadId"]));
+
+        // The failed message carries its reason, for the UI's failure notice.
+        using var admin = fx.Admin();
+        var list = await admin.GetFromJsonAsync<MessageListResponse>($"/api/threads/{thread}/messages", SharpClawJson.Options);
+        var failed = Assert.Single(list!.Messages);
+        Assert.Equal(MessageStatus.Failed, failed.Status);
+        Assert.Equal("agent_error", failed.FailReason);
     }
 }
 
