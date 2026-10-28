@@ -178,6 +178,8 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 - Per-thread budgets, rate limits, global kill switch
 - Richer policy rules
 - Network tools mediated by the gateway (design agreed in the 3.2 spec)
+- More agent tools — workspace search/edit/append/move, `current_time`, then gateway-backed fetch,
+  search and budget status: see the [agent tools spec](sharpclaw-agent-tools-spec.md)
 
 ## Phase 3.5 — Agent-to-agent messaging *(outline)*
 
