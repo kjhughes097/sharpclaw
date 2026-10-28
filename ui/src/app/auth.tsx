@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (returnTo?: string) => {
       setCsrfToken(null);
       stream.stop();
-      live.clearAll();
+      live.reset();
       notices.clear();
       queryClient.clear();
       const here = returnTo ?? locationRef.current.pathname + locationRef.current.search;
