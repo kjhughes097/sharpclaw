@@ -4,7 +4,7 @@ import { useAgents } from '../../api/hooks';
 import { budgetResetLocalTime, errorMessage } from '../../api/errors';
 import type { AgentDto } from '../../api/types';
 import { useToast } from '../../app/toast';
-import { Button, EmptyState, ErrorState, LoadingState, Meter } from '../../components/ui';
+import { Button, EmptyState, ErrorState, LoadingState, Meter, RelativeTime } from '../../components/ui';
 import { formatUsd } from '../../lib/time';
 import { ConfigNote, EnabledSwitch, LastSeen } from './AgentParts';
 import { useUpdateAgent } from './agentQueries';
@@ -34,11 +34,30 @@ export function AgentsPage() {
         ) : agents.data.length === 0 ? (
           <EmptyState title="No agents yet. Create one to get a token for its container." />
         ) : (
-          <ul className="grid gap-3 md:grid-cols-2">
-            {agents.data.map((agent) => (
-              <AgentCard key={agent.id} agent={agent} />
-            ))}
-          </ul>
+          <>
+            <div className="overflow-x-auto rounded-md border border-border bg-surface">
+              <table className="w-full min-w-[48rem] text-left text-sm">
+                <caption className="sr-only">Agents</caption>
+                <thead className="text-xs text-muted">
+                  <tr>
+                    {['Name', 'Model', 'Enabled', 'Today', 'Context window', 'Last seen', 'Created'].map(
+                      (h) => (
+                        <th key={h} scope="col" className="px-3 py-2 font-medium">
+                          {h}
+                        </th>
+                      ),
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {agents.data.map((agent) => (
+                    <AgentRow key={agent.id} agent={agent} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted">Budgets reset at 00:00 UTC ({budgetResetLocalTime()} local).</p>
+          </>
         )}
       </div>
       <CreateAgentDialog
@@ -54,21 +73,23 @@ export function AgentsPage() {
   );
 }
 
-function AgentCard({ agent }: { agent: AgentDto }) {
+/** One row of the admin table (3.3.1 spec section 8.3); the name opens the agent's tab. */
+function AgentRow({ agent }: { agent: AgentDto }) {
   const update = useUpdateAgent();
   const toast = useToast();
 
   return (
-    <li className="space-y-3 rounded-lg border border-border bg-surface p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="min-w-0 text-base font-semibold break-all">
-          <Link
-            to={`/agents/${encodeURIComponent(agent.name)}`}
-            className="text-accent underline-offset-2 hover:underline"
-          >
-            {agent.name}
-          </Link>
-        </h2>
+    <tr className="border-t border-border align-top">
+      <th scope="row" className="px-3 py-2 font-semibold break-all">
+        <Link
+          to={`/agents/${encodeURIComponent(agent.name)}`}
+          className="text-accent underline-offset-2 hover:underline"
+        >
+          {agent.name}
+        </Link>
+      </th>
+      <td className="px-3 py-2 break-all">{agent.model}</td>
+      <td className="px-3 py-1">
         <EnabledSwitch
           checked={agent.enabled}
           label={`Enabled: ${agent.name}`}
@@ -80,20 +101,9 @@ function AgentCard({ agent }: { agent: AgentDto }) {
             )
           }
         />
-      </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-        <dt className="text-muted">Model</dt>
-        <dd className="break-all">{agent.model}</dd>
-        <dt className="text-muted">Context window</dt>
-        <dd>{agent.contextWindowTokens ?? 'default'}</dd>
-        <dt className="text-muted">Last seen</dt>
-        <dd>
-          <LastSeen iso={agent.lastSeenAt} />
-        </dd>
-      </dl>
-      <div className="space-y-1">
-        <p className="text-sm">
-          <span className="text-muted">Today: </span>
+      </td>
+      <td className="min-w-40 px-3 py-2">
+        <p>
           {formatUsd(agent.todaySpendUsd)} of {formatUsd(agent.dailyBudgetUsd)}
         </p>
         <Meter
@@ -101,8 +111,14 @@ function AgentCard({ agent }: { agent: AgentDto }) {
           max={agent.dailyBudgetUsd}
           label={`Today's spend for ${agent.name}`}
         />
-        <p className="text-xs text-muted">resets at 00:00 UTC ({budgetResetLocalTime()} local)</p>
-      </div>
-    </li>
+      </td>
+      <td className="px-3 py-2">{agent.contextWindowTokens ?? 'default'}</td>
+      <td className="px-3 py-2">
+        <LastSeen iso={agent.lastSeenAt} />
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">
+        <RelativeTime iso={agent.createdAt} />
+      </td>
+    </tr>
   );
 }

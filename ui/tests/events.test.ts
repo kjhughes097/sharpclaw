@@ -107,6 +107,10 @@ describe('applyEvent (event → UI state)', () => {
     expect(h.queryClient.getQueryData<{ thread: { title: string } }>(keys.thread(t))?.thread.title).toBe(
       'Trip plan',
     );
+    // The model override travels too, so other tabs' pickers and status bars follow.
+    expect(h.queryClient.getQueryData<{ thread: { model: string } }>(keys.thread(t))?.thread.model).toBe(
+      'openai/gpt-4o-mini',
+    );
   });
 
   it('message.created invalidates messages, list and detail', () => {

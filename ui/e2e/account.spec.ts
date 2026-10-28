@@ -15,7 +15,7 @@ test.describe('account', () => {
     // Another browser signed in as the same user: its session should end with the change.
     const other = await browser.newContext();
     const otherPage = await other.newPage();
-    await login(otherPage, '/chats', user, first);
+    await login(otherPage, '/prompts', user, first);
 
     await login(page, '/account', user, first);
     await page.getByLabel('Current password').fill('not my password 0000');
@@ -31,12 +31,12 @@ test.describe('account', () => {
     await page.getByRole('button', { name: 'Change password' }).click();
     await expect(page.getByText('Password changed.').first()).toBeVisible();
 
-    await otherPage.goto('/chats');
+    await otherPage.goto('/prompts');
     await expect(otherPage).toHaveURL(/\/login/);
     await other.close();
 
     await page.getByRole('button', { name: 'Sign out' }).first().click();
     await expect(page).toHaveURL(/\/login/);
-    await login(page, '/chats', user, second);
+    await login(page, '/prompts', user, second);
   });
 });

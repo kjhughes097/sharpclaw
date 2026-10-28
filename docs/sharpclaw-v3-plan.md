@@ -153,10 +153,10 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 
 ---
 
-## Phase 3.3.1 — Tabbed UI redesign *(specified)*
+## Phase 3.3.1 — Tabbed UI redesign (built)
 
 > **Source of truth:** `sharpclaw-3.3.1-ui-redesign-spec.md` (mockups: `sample-overview-tab.png`,
-> `sample-prompts-tab.png`).
+> `sample-prompts-tab.png`). UI notes in `ui.md`.
 
 **Goal:** replace the 3.3 sidebar shell with a tabbed, dashboard-style UI.
 

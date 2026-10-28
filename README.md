@@ -185,6 +185,9 @@ client port is published (to `${CLIENT_BIND:-127.0.0.1}:8080`); the agent port 8
 ## Using the web UI
 
 The gateway image builds and serves the web UI on the client port: open `http://<host>:8080`.
+It is tabbed: **Overview** (token and cost charts, cost by model, OpenRouter credits, a live card
+per agent), **Prompts** (pick an agent and model, sessions, chat), one tab per agent, then
+**Approvals**, **Audit** and **Agents**; your account is in the menu under your name.
 
 - **Reach it from your LAN:** set `CLIENT_BIND` in `.env` to the host's LAN address (or `0.0.0.0`)
   and recreate the gateway. It defaults to `127.0.0.1` (this machine only).
@@ -194,6 +197,9 @@ The gateway image builds and serves the web UI on the client port: open `http://
   future fix (see [docs/tech-debt.md](docs/tech-debt.md)).
 - Each browser tab holds one live connection; over plain HTTP about four tabs per browser is the
   practical limit.
+- **Optional:** set `OPENROUTER_MANAGEMENT_KEY` in `.env` to show remaining credits. To let a
+  session switch models, add the allowed ids to the gateway's environment in
+  `docker/compose.yml` (`Models__Allowed__0: openai/gpt-4o-mini`, `Models__Allowed__1: …`).
 
 UI development, the event stream and the CSP are described in [docs/ui.md](docs/ui.md).
 

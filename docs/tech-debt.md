@@ -55,6 +55,19 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | No list virtualisation | Very long threads rely on paging. |
 | No frontend error reporting | UI crashes are visible only in the browser console. |
 
+## Accepted by design (Phase 3.3.1 spec, section 14)
+
+| Item | Notes |
+|---|---|
+| Usage is aggregated in memory per request | `GET /api/usage` loads the window's `llm_calls` rows and sums them in C#. Fine at household volume. Fix: SQL `GROUP BY` or rollup tables if it slows down. |
+| Credits are cached in memory | After a restart the card is empty until the first fetch succeeds; no history. |
+| A model override doesn't change the context window | The window is per agent; a much smaller model may fail with `context_window_exceeded`. |
+| A model override can be silently ignored | When an id leaves `Models:Allowed`, the thread uses the agent's model (a warning is logged) but the UI still shows the stored override until the thread is updated. |
+| Activity previews duplicate content | The same 120-character slice already shown in the thread list. |
+| The Overview refetches on events | A few queries per completed turn (debounced to 1 s). Revisit with richer event payloads if it becomes chatty. |
+| Chart bars are hover-only for sighted users | Keyboard and screen-reader users get the same figures from a visually hidden table per chart, not a focusable tooltip. |
+| Live tool rows need the live stream | After a page load mid-turn, rows for tools requested earlier in that turn appear only once the turn finishes (a fresh stream doesn't replay `tool.requested`); the approval card still shows. Unchanged from 3.3. |
+
 ## Code-level debt
 
 | # | Item | Severity | Why accepted | Fix when / how |

@@ -25,8 +25,9 @@ test.describe('tools and approvals', () => {
       .click();
     await expect(messages(page).getByText('The tool step is finished.')).toBeVisible({ timeout: 20_000 });
     await expect(page).toHaveTitle('SharpClaw');
-    await page.getByRole('button', { name: /Used 1 tool/ }).click();
-    await page.getByRole('button', { name: /workspace_delete/ }).click();
+    await messages(page)
+      .getByRole('button', { name: /workspace_delete/ })
+      .click();
     await expect(page.getByText('"path": "notes/old.md"').first()).toBeVisible();
     await expect(page.getByText('"ok": true')).toBeVisible();
   });
@@ -118,7 +119,8 @@ test.describe('agents, audit and trace', () => {
     await reveal.getByRole('button', { name: /Close|Done/ }).click();
     await expect(page.getByText(token)).toHaveCount(0);
 
-    await page.getByRole('link', { name }).click();
+    // Exact: the new agent's tab shows the name capitalised.
+    await page.getByRole('link', { name, exact: true }).click();
     await page.getByRole('button', { name: 'Revoke' }).first().click();
     await page
       .getByRole('dialog')

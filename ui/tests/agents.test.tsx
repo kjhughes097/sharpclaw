@@ -110,13 +110,13 @@ describe('agents list', () => {
     );
     expect(screen.getAllByText(/\$0\.25 of \$1\.00/)).toHaveLength(2);
     expect(screen.getByText(/\$0\.00 of \$2\.00/)).toBeInTheDocument();
-    expect(screen.getAllByText(/resets at 00:00 UTC \(\d\d:\d\d.*local\)/)).toHaveLength(3);
+    expect(screen.getAllByText(/reset at 00:00 UTC \(\d\d:\d\d.*local\)/)).toHaveLength(1);
     expect(screen.getByText('64000')).toBeInTheDocument();
     expect(screen.getAllByText('default')).toHaveLength(2);
     expect(screen.getByText('never')).toBeInTheDocument();
     // Only the agent last seen 10 minutes before the server's "now" is flagged.
     await waitFor(() => expect(screen.getAllByText(/Not seen recently/)).toHaveLength(1));
-    const stale = screen.getByText(/Not seen recently/).closest('li')!;
+    const stale = screen.getByText(/Not seen recently/).closest('tr')!;
     expect(within(stale).getByRole('link', { name: 'stale-bot' })).toBeInTheDocument();
     expect(
       screen.getByText("Persona and tool policy are managed in the agent's config files."),

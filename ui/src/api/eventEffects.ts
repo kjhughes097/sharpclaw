@@ -29,20 +29,20 @@ export function applyEvent(event: StreamEvent, { queryClient, live, onTurnError 
       invalidate(keys.threads);
       break;
     case 'thread.updated': {
-      const { threadId, title, archived } = event.data;
+      const { threadId, title, archived, model } = event.data;
       queryClient.setQueriesData<InfiniteData<ThreadListResponse>>({ queryKey: keys.threads }, (data) =>
         data
           ? {
               ...data,
               pages: data.pages.map((page) => ({
                 ...page,
-                threads: page.threads.map((t) => (t.id === threadId ? { ...t, title, archived } : t)),
+                threads: page.threads.map((t) => (t.id === threadId ? { ...t, title, archived, model } : t)),
               })),
             }
           : data,
       );
       queryClient.setQueryData<ThreadDetailResponse>(keys.thread(threadId), (data) =>
-        data ? { ...data, thread: { ...data.thread, title, archived } } : data,
+        data ? { ...data, thread: { ...data.thread, title, archived, model } } : data,
       );
       // Archiving moves the thread between the active and archived lists.
       invalidate(keys.threads);
