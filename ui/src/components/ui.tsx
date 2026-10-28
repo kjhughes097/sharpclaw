@@ -1,7 +1,7 @@
 import { Dialog as RadixDialog } from 'radix-ui';
-import { forwardRef, useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { forwardRef, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { copyText, selectContents } from '../lib/clipboard';
-import { formatAbsolute, formatRelative } from '../lib/time';
+import { formatAbsolute, formatRelative, useServerNow } from '../lib/time';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
@@ -117,16 +117,12 @@ export function RiskBadge({ risk }: { risk: string | null | undefined }) {
 
 /** A relative time with the absolute time available without hover (title + visually hidden text). */
 export function RelativeTime({ iso }: { iso: string | null | undefined }) {
-  const [, tick] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => tick((n) => n + 1), 30_000);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useServerNow();
   if (!iso) return <span>—</span>;
   const absolute = formatAbsolute(iso);
   return (
     <time dateTime={iso} title={absolute}>
-      {formatRelative(iso)}
+      {formatRelative(iso, now)}
       <span className="sr-only"> ({absolute})</span>
     </time>
   );
