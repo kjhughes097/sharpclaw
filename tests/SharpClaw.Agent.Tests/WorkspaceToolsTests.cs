@@ -4,7 +4,7 @@ using SharpClaw.Agent.Tools.Workspace;
 
 namespace SharpClaw.Agent.Tests;
 
-public class WorkspaceToolsTests : IDisposable
+public partial class WorkspaceToolsTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"ws-{Guid.NewGuid():N}");
     private readonly string _outside = Path.Combine(Path.GetTempPath(), $"outside-{Guid.NewGuid():N}");
@@ -33,6 +33,19 @@ public class WorkspaceToolsTests : IDisposable
         var result = await _tools[tool].ExecuteUncheckedAsync(Args(args), CancellationToken.None);
         return JsonDocument.Parse(result.Json).RootElement;
     }
+
+    private string Summarize(string tool, object args) => _tools[tool].Summarize(Args(args));
+
+    /// <summary>Creates a file (and its folders) under the workspace root.</summary>
+    private string Put(string relative, string content)
+    {
+        var full = Path.Combine(_root, relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+        File.WriteAllText(full, content);
+        return full;
+    }
+
+    private static RiskLevel Level(ToolAssessment assessment) => Assert.IsType<ToolAssessment.Scored>(assessment).Level;
 
     [Fact]
     public void Names_match_the_tools() =>

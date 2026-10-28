@@ -3,7 +3,9 @@ using System.Text.Json;
 
 namespace SharpClaw.Agent.Tools.Workspace;
 
-/// <summary>The four workspace tools (3.2 spec section 6). No tool here executes anything.</summary>
+/// <summary>
+/// The workspace tools (3.2 spec section 6, agent tools spec section 4). No tool here executes anything.
+/// </summary>
 public static class WorkspaceTools
 {
     public const int MaxListEntries = 200;
@@ -13,11 +15,18 @@ public static class WorkspaceTools
     public static IAgentTool[] All(string workspacePath)
     {
         var root = new WorkspaceRoot(workspacePath);
-        return new IAgentTool[] { new ListTool(root), new ReadTool(root), new WriteTool(root), new DeleteTool(root) };
+        return new IAgentTool[]
+        {
+            new ListTool(root), new ReadTool(root), new WriteTool(root), new DeleteTool(root),
+            new SearchTool(root), new FindTool(root),
+        };
     }
 
-    public static IReadOnlyCollection<string> Names { get; } =
-        new[] { "workspace_list", "workspace_read", "workspace_write", "workspace_delete" };
+    public static IReadOnlyCollection<string> Names { get; } = new[]
+    {
+        "workspace_list", "workspace_read", "workspace_write", "workspace_delete",
+        "workspace_search", "workspace_find",
+    };
 
     private const string PathOnlySchema = """
         {"type":"object","properties":{"path":{"type":"string","description":"Path relative to the workspace root"}},"required":["path"]}
@@ -91,13 +100,6 @@ public static class WorkspaceTools
     /// <summary>Creates or overwrites a text file, atomically (temp file then rename).</summary>
     private sealed class WriteTool(WorkspaceRoot root) : IAgentTool
     {
-        // Script and executable types (and dotfiles such as .bashrc): nothing here runs them, but
-        // something else could later, so the rules don't score them confidently.
-        private static readonly HashSet<string> SensitiveExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".sh", ".bash", ".ps1", ".bat", ".cmd", ".exe", ".dll", ".so", ".py", ".js",
-        };
-
         public string Name => "workspace_write";
         public string Description => $"Create or overwrite a text file in the workspace (at most {MaxWriteBytes / 1024} KB).";
         public string ParametersJson => """
@@ -117,7 +119,7 @@ public static class WorkspaceTools
             if (Directory.Exists(path!.FullPath))
                 return new ToolAssessment.Blocked("path is a directory");
 
-            if (IsSensitive(path.Relative))
+            if (WorkspaceFiles.IsSensitive(path.Relative))
                 return new ToolAssessment.Uncertain("writes a script, executable or dotfile");
             return File.Exists(path.FullPath)
                 ? new ToolAssessment.Scored(RiskLevel.Medium, "overwrites an existing file")
@@ -138,26 +140,9 @@ public static class WorkspaceTools
             var content = Args.String(args, "content")!;
             var created = !File.Exists(path!.FullPath);
 
-            var dir = System.IO.Path.GetDirectoryName(path.FullPath)!;
-            Directory.CreateDirectory(dir);
-            var temp = System.IO.Path.Combine(dir, $".{System.IO.Path.GetFileName(path.FullPath)}.{Guid.NewGuid():N}.tmp");
-            try
-            {
-                await File.WriteAllTextAsync(temp, content, new UTF8Encoding(false), ct);
-                File.Move(temp, path.FullPath, overwrite: true);
-            }
-            finally
-            {
-                if (File.Exists(temp))
-                    File.Delete(temp);
-            }
-
+            await WorkspaceFiles.WriteAtomicAsync(path.FullPath, content, ct);
             return ToolResult.Success(new { path = path.Relative, bytes = Encoding.UTF8.GetByteCount(content), created });
         }
-
-        private static bool IsSensitive(string relative) =>
-            relative.Split('/').Any(segment => segment.StartsWith('.')) ||
-            SensitiveExtensions.Contains(System.IO.Path.GetExtension(relative));
     }
 
     /// <summary>Deletes a single file (never a directory). Always high risk.</summary>
