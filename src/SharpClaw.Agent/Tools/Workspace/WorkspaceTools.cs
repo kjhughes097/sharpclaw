@@ -19,6 +19,7 @@ public static class WorkspaceTools
         {
             new ListTool(root), new ReadTool(root), new WriteTool(root), new DeleteTool(root),
             new SearchTool(root), new FindTool(root), new EditTool(root), new AppendTool(root),
+            new MoveTool(root), new CopyTool(root),
         };
     }
 
@@ -26,6 +27,7 @@ public static class WorkspaceTools
     {
         "workspace_list", "workspace_read", "workspace_write", "workspace_delete",
         "workspace_search", "workspace_find", "workspace_edit", "workspace_append",
+        "workspace_move", "workspace_copy",
     };
 
     private const string PathOnlySchema = """
