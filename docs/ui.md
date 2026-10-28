@@ -20,9 +20,12 @@ bar (`components/AppShell.tsx`, `components/TabBar.tsx`). Every tab is a link:
 
 `/chats` and `/chats/:threadId` redirect to `/prompts…` for old bookmarks.
 
-- **Theme:** dark by default (the mockups' palette), light under `prefers-color-scheme: light`.
+- **Theme:** dark (the mockups' palette) whatever the system setting; "Light theme" in the user
+  menu sets `data-theme="light"` on `<html>` (`lib/theme.ts`) and remembers it (`lib/prefs.ts`).
   Tokens live in `styles/index.css`; components use them (`bg-surface`, `text-assistant`,
   `fill-chart-in`…), never raw colours.
+- **Density:** on desktop (`pointer: fine`, ≥ 768 px) the root font size is 14 px, and every
+  rem-based size shrinks with it, as in the mockups. Touch screens keep 16 px and 44 px targets.
 - **Charts** (`features/overview/charts.tsx`) are plain SVG with sizes in attributes and colours from
   classes, never inline `style` attributes (CSP). Each has an `aria-label` summary and a visually
   hidden table of its buckets; hover shows a tooltip.
@@ -152,7 +155,7 @@ tool results are always plain text. Messages over 200,000 characters render as p
 `document.execCommand('copy')`, and values are always shown selectable; client ids come from
 `src/lib/ids.ts`. ESLint forbids `navigator.clipboard`, `crypto.randomUUID`, `sessionStorage`,
 `localStorage` outside `src/lib/prefs.ts` (non-sensitive preferences only: tool-details expansion
-and the last agent picked) and
+the last agent picked and the theme) and
 `dangerouslySetInnerHTML`; the unit tests run with the first two undefined.
 
 **Tokens.** A new agent token is shown once in a dialog that needs an explicit "I've saved it";

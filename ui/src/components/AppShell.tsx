@@ -5,6 +5,7 @@ import { usePendingApprovals, useSystem } from '../api/hooks';
 import { budgetResetLocalTime } from '../api/errors';
 import { useAuth } from '../app/auth';
 import { useConnectionState } from '../app/services';
+import { useTheme } from '../lib/theme';
 import { formatAbsolute } from '../lib/time';
 import { TabBar } from './TabBar';
 import { Badge } from './ui';
@@ -50,6 +51,7 @@ export function ConnectionIndicator() {
 function UserMenu() {
   const { state, logout } = useAuth();
   const system = useSystem();
+  const { theme, toggle } = useTheme();
   const name = state.status === 'signed_in' ? (state.user?.name ?? 'admin key') : '';
   return (
     <DropdownMenu.Root modal={false}>
@@ -66,6 +68,9 @@ function UserMenu() {
         >
           <DropdownMenu.Item asChild className={MENU_ITEM}>
             <Link to="/account">Account</Link>
+          </DropdownMenu.Item>
+          <DropdownMenu.Item className={MENU_ITEM} onSelect={toggle}>
+            {theme === 'dark' ? 'Light theme' : 'Dark theme'}
           </DropdownMenu.Item>
           {system.data && (
             <DropdownMenu.Label className="space-y-0.5 px-3 py-2 text-xs text-muted">

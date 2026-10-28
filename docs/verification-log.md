@@ -149,7 +149,7 @@ with a real OpenRouter session.
 
 ## Phase 3.3.1 — tabbed UI redesign (2026-10-28)
 
-**Automated:** gateway 283, agent 80, CLI 25 tests pass; Release build 0 warnings. UI: 193 Vitest
+**Automated:** gateway 283, agent 80, CLI 25 tests pass; Release build 0 warnings. UI: 194 Vitest
 tests (shell and tabs, Overview charts/credits/live pause, Prompts model picker and status bar,
 agent tab, jest-axe on each tab), `lint`, `typecheck`, `check:api` and `build` pass; initial JS
 199.7 KB gzipped, `index.html` has no inline script or style.
