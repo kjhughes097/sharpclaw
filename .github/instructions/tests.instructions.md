@@ -36,5 +36,8 @@ applyTo: "tests/**"
 - Privacy tests: assert captured logs contain no message content, token or admin key.
 - **Agent tests** drive `AgentLoop.ProcessOnceAsync` with a fake `IGatewayClient`/`ISoulProvider`;
   **CLI tests** use a fake `ICliGateway` (check stream-opened-before-post ordering).
+- **Organisation:** keep test files under about 300 lines. Large suites are `partial` classes split
+  by theme (`AuthTests.Sessions.cs`, `ApprovalTests.Expiry.cs`, `CliTests.Chat.cs`) so they share
+  private setup helpers; reuse those helpers rather than adding new bespoke `SetupAsync`s.
 - Use xUnit analyzer-friendly asserts (e.g. `Assert.Single(items, predicate)`); Release builds
   treat warnings as errors.

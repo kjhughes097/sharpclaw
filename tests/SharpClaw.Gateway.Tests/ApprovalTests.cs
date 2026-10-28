@@ -8,7 +8,7 @@ using SharpClaw.Gateway.Data;
 namespace SharpClaw.Gateway.Tests;
 
 /// <summary>Approval brokering and the claim heartbeat (3.2 spec sections 8.1–8.3).</summary>
-public class ApprovalTests
+public partial class ApprovalTests
 {
     private sealed record Setup(GatewayFixture Fx, AgentDto Agent, string Token, Guid Thread, Guid Corr);
 
@@ -96,25 +96,6 @@ public class ApprovalTests
     }
 
     [Fact]
-    public async Task A_decided_approval_leaves_no_wake_up_signal_behind()
-    {
-        var s = await SetupAsync();
-        await using var _ = s.Fx;
-        var signals = s.Fx.App.Services.GetRequiredService<SharpClaw.Gateway.Services.ApprovalSignal>();
-        var (_, approval) = await CreateAsync(s, Request(s));
-
-        var poll = PollAsync(s, approval!.Id, wait: 5);
-        await TestHelpers.EventuallyAsync(() => signals.Count == 1);
-        Assert.Equal(HttpStatusCode.OK, (await DecideAsync(s, approval.Id, ApprovalStatuses.Approved)).StatusCode);
-
-        Assert.Equal(ApprovalStatuses.Approved, (await poll).Status);
-        Assert.Equal(0, signals.Count);
-        // A late poll of the decided approval answers at once and doesn't re-create the key.
-        Assert.Equal(ApprovalStatuses.Approved, (await PollAsync(s, approval.Id, wait: 5)).Status);
-        Assert.Equal(0, signals.Count);
-    }
-
-    [Fact]
     public async Task Queue_lists_and_gets_approvals_with_filters()
     {
         var s = await SetupAsync();
@@ -135,101 +116,6 @@ public class ApprovalTests
         Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync($"/api/approvals/{Guid.NewGuid()}")).StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, (await admin.GetAsync("/api/approvals?status=maybe")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/api/approvals?agent=nobody")).StatusCode);
-    }
-
-    [Fact]
-    public async Task Sweeper_expires_on_schedule_wakes_the_agent_and_emits_decided()
-    {
-        var s = await SetupAsync(new Dictionary<string, string?>
-        {
-            ["Approvals:TimeoutSeconds"] = "60",
-            ["Approvals:SweepIntervalSeconds"] = "10",
-        });
-        await using var _ = s.Fx;
-        var (_, approval) = await CreateAsync(s, Request(s));
-        var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream");
-        using var __ = client;
-        var events = TestHelpers.ReadSseEventsAsync(stream, 1, TimeSpan.FromSeconds(10));
-        var poll = PollAsync(s, approval!.Id, wait: 10);
-        await TestHelpers.WaitForLongPollAsync<SharpClaw.Gateway.Services.ApprovalSignal>(s.Fx);
-
-        // The sweeper's PeriodicTimer runs on the fake clock.
-        s.Fx.Time.Advance(TimeSpan.FromSeconds(61));
-
-        var result = await poll;
-        Assert.Equal(ApprovalStatuses.Expired, result.Status);
-        Assert.Equal(ApprovalDecidedBy.System, result.DecidedBy);
-        var decided = Assert.Single(await events);
-        Assert.Equal(SseEventNames.ApprovalDecided, decided.Event);
-        Assert.Contains("\"status\":\"expired\"", decided.Data);
-        Assert.Contains("\"decidedBy\":\"system\"", decided.Data);
-    }
-
-    [Fact]
-    public async Task Sweep_once_only_touches_overdue_approvals()
-    {
-        var s = await SetupAsync(new Dictionary<string, string?> { ["Approvals:TimeoutSeconds"] = "60" });
-        await using var _ = s.Fx;
-        var (_, approval) = await CreateAsync(s, Request(s));
-        var sweeper = s.Fx.App.Services.GetRequiredService<SharpClaw.Gateway.Services.ApprovalExpirySweeper>();
-
-        Assert.Equal(0, await sweeper.SweepOnceAsync(CancellationToken.None));
-        using (var db = s.Fx.NewDb())
-            await db.Approvals.Where(a => a.Id == approval!.Id)
-                .ExecuteUpdateAsync(x => x.SetProperty(a => a.ExpiresAt, s.Fx.Time.GetUtcNow().UtcDateTime.AddSeconds(-1)));
-        Assert.Equal(1, await sweeper.SweepOnceAsync(CancellationToken.None));
-        Assert.Equal(ApprovalStatuses.Expired, (await PollAsync(s, approval!.Id)).Status);
-    }
-
-    [Fact]
-    public async Task Fail_expires_pending_approvals_of_the_turn()
-    {
-        var s = await SetupAsync();
-        await using var _ = s.Fx;
-        var (_, approval) = await CreateAsync(s, Request(s));
-
-        using (var agent = s.Fx.AgentClient(s.Token))
-            (await agent.PostAsJsonAsync($"/agent/messages/{s.Corr}/fail", new FailMessageRequest("agent_error"), SharpClawJson.Options))
-                .EnsureSuccessStatusCode();
-
-        var expired = await PollAsync(s, approval!.Id);
-        Assert.Equal(ApprovalStatuses.Expired, expired.Status);
-        Assert.Equal(ApprovalDecidedBy.System, expired.DecidedBy);
-    }
-
-    [Fact]
-    public async Task Reply_expires_pending_approvals_of_the_turn()
-    {
-        var s = await SetupAsync();
-        await using var _ = s.Fx;
-        var (_, approval) = await CreateAsync(s, Request(s));
-
-        using (var agent = s.Fx.AgentClient(s.Token))
-            (await agent.PostAsJsonAsync($"/agent/threads/{s.Thread}/messages", new AgentReplyRequest("done", s.Corr), SharpClawJson.Options))
-                .EnsureSuccessStatusCode();
-
-        Assert.Equal(ApprovalStatuses.Expired, (await PollAsync(s, approval!.Id)).Status);
-    }
-
-    [Fact]
-    public async Task Claim_timeout_requeue_expires_pending_approvals_of_the_turn()
-    {
-        var s = await SetupAsync(new Dictionary<string, string?>
-        {
-            ["Inbox:ClaimTimeoutSeconds"] = "60",
-            ["Approvals:TimeoutSeconds"] = "600",
-        });
-        await using var _ = s.Fx;
-        var (_, approval) = await CreateAsync(s, Request(s));
-
-        s.Fx.Time.Advance(TimeSpan.FromSeconds(61));
-        var reclaimed = await s.Fx.ClaimAsync(s.Token);
-
-        Assert.Equal(s.Corr, reclaimed!.Id);
-        using var db = s.Fx.NewDb();
-        var row = await db.Approvals.AsNoTracking().SingleAsync(a => a.Id == approval!.Id);
-        Assert.Equal(ApprovalStatuses.Expired, row.Status);
-        Assert.Equal(ApprovalDecidedBy.System, row.DecidedBy);
     }
 
     [Fact]
@@ -308,47 +194,6 @@ public class ApprovalTests
         Assert.Contains("\"risk\":\"high\"", evt.Data);
     }
 
-    [Theory]
-    [InlineData(ApprovalStatuses.Approved)]
-    [InlineData(ApprovalStatuses.Denied)]
-    public async Task Human_decision_wakes_the_agent_long_poll(string decision)
-    {
-        var s = await SetupAsync();
-        await using var _ = s.Fx;
-        var (client, _) = await WatchAsync(s, 1);
-        using var __ = client;
-        var (_, approval) = await CreateAsync(s, Request(s));
-
-        var poll = PollAsync(s, approval!.Id, wait: 10);
-        await TestHelpers.WaitForLongPollAsync<SharpClaw.Gateway.Services.ApprovalSignal>(s.Fx);
-        var decided = await DecideAsync(s, approval.Id, decision);
-        Assert.Equal(HttpStatusCode.OK, decided.StatusCode);
-
-        var started = System.Diagnostics.Stopwatch.StartNew();
-        var result = await poll;
-        Assert.Equal(decision, result.Status);
-        Assert.Equal(ApprovalDecidedBy.User, result.DecidedBy);
-        Assert.True(started.Elapsed < TimeSpan.FromSeconds(5), "long poll should return promptly");
-    }
-
-    [Fact]
-    public async Task Pending_approval_expires_after_the_timeout_and_cannot_be_decided()
-    {
-        var s = await SetupAsync(new Dictionary<string, string?> { ["Approvals:TimeoutSeconds"] = "300" });
-        await using var _ = s.Fx;
-        var (client, _) = await WatchAsync(s, 1);
-        using var __ = client;
-        var (_, approval) = await CreateAsync(s, Request(s));
-
-        Assert.Equal(ApprovalStatuses.Pending, (await PollAsync(s, approval!.Id)).Status);
-        s.Fx.Time.Advance(TimeSpan.FromSeconds(301));
-
-        var expired = await PollAsync(s, approval.Id);
-        Assert.Equal(ApprovalStatuses.Expired, expired.Status);
-        Assert.Equal(ApprovalDecidedBy.System, expired.DecidedBy);
-        Assert.Equal(HttpStatusCode.Conflict, (await DecideAsync(s, approval.Id, ApprovalStatuses.Approved)).StatusCode);
-    }
-
     [Fact]
     public async Task Decisions_are_final_and_validated()
     {
@@ -384,37 +229,5 @@ public class ApprovalTests
         Assert.Equal(HttpStatusCode.BadRequest, (await CreateAsync(s, Request(s) with { Risk = "extreme" })).Status);
         Assert.Equal(HttpStatusCode.BadRequest, (await CreateAsync(s, Request(s) with { Summary = new string('x', 201) })).Status);
         Assert.Equal(HttpStatusCode.NotFound, (await CreateAsync(s, Request(s) with { CorrelationId = Guid.NewGuid() })).Status);
-    }
-
-    [Fact]
-    public async Task Approval_polling_keeps_the_message_claimed()
-    {
-        var s = await SetupAsync(new Dictionary<string, string?> { ["Inbox:ClaimTimeoutSeconds"] = "60" });
-        await using var _ = s.Fx;
-        var (client, _) = await WatchAsync(s, 1);
-        using var __ = client;
-        var (_, approval) = await CreateAsync(s, Request(s));
-
-        // 50 s + 50 s is past the 60 s claim timeout, but each poll refreshes the claim.
-        s.Fx.Time.Advance(TimeSpan.FromSeconds(50));
-        await PollAsync(s, approval!.Id);
-        s.Fx.Time.Advance(TimeSpan.FromSeconds(50));
-
-        Assert.Null(await s.Fx.ClaimAsync(s.Token));
-        using var db = s.Fx.NewDb();
-        Assert.Equal(MessageStatus.Claimed, (await db.Messages.AsNoTracking().SingleAsync(m => m.Id == s.Corr)).Status);
-    }
-
-    [Fact]
-    public async Task Chat_calls_keep_the_message_claimed()
-    {
-        var s = await SetupAsync(new Dictionary<string, string?> { ["Inbox:ClaimTimeoutSeconds"] = "60" });
-        await using var _ = s.Fx;
-
-        s.Fx.Time.Advance(TimeSpan.FromSeconds(50));
-        await (await s.Fx.ChatAsync(s.Token, s.Corr, s.Thread)).Content.ReadAsStringAsync();
-        s.Fx.Time.Advance(TimeSpan.FromSeconds(50));
-
-        Assert.Null(await s.Fx.ClaimAsync(s.Token));
     }
 }
