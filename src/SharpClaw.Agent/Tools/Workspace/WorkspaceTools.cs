@@ -18,14 +18,14 @@ public static class WorkspaceTools
         return new IAgentTool[]
         {
             new ListTool(root), new ReadTool(root), new WriteTool(root), new DeleteTool(root),
-            new SearchTool(root), new FindTool(root),
+            new SearchTool(root), new FindTool(root), new EditTool(root), new AppendTool(root),
         };
     }
 
     public static IReadOnlyCollection<string> Names { get; } = new[]
     {
         "workspace_list", "workspace_read", "workspace_write", "workspace_delete",
-        "workspace_search", "workspace_find",
+        "workspace_search", "workspace_find", "workspace_edit", "workspace_append",
     };
 
     private const string PathOnlySchema = """
