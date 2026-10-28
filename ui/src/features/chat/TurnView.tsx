@@ -95,11 +95,7 @@ export function TurnView({
   const inFlight = status === 'claimed' || (!!live && !turn.reply);
 
   return (
-    <li
-      className="max-w-4xl space-y-2"
-      id={user ? `msg-${user.id}` : undefined}
-      data-turn={turn.correlationId}
-    >
+    <li className="space-y-2" id={user ? `msg-${user.id}` : undefined} data-turn={turn.correlationId}>
       {user && (
         <div>
           <SpeakerLabel name={user.sentByUser ?? 'you'} at={user.createdAt} />

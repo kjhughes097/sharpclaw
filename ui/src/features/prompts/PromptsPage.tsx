@@ -191,7 +191,7 @@ export function PromptsPage() {
         {!collapsed && (
           <aside
             aria-label="Sessions"
-            className="hidden w-56 shrink-0 flex-col border-r border-border bg-surface md:flex"
+            className="hidden w-64 shrink-0 flex-col border-r border-border bg-surface md:flex lg:w-72 xl:w-80"
           >
             {sessions({ onCollapse: () => setCollapsed(true) })}
           </aside>

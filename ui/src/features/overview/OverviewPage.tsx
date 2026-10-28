@@ -118,7 +118,7 @@ export function OverviewPage() {
   );
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="relative min-h-0 flex-1 overflow-y-auto">
       <h1 className="sr-only">Overview</h1>
       <LiveBar live={live} />
       <div className="space-y-2.5 p-2.5">

@@ -49,7 +49,7 @@ export function ApprovalsPage() {
   });
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto">
       <h1 className="px-4 pt-4 text-xl font-semibold">Approvals</h1>
       <Tabs.Root
         value={tab}

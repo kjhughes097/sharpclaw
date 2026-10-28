@@ -38,7 +38,7 @@ export function AgentTabPage() {
   const agent = useAgent(name);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="relative min-h-0 flex-1 overflow-y-auto">
       <div className="space-y-2.5 p-2.5">
         {agent.isPending ? (
           <LoadingState label="Loading agent" />

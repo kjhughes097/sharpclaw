@@ -18,7 +18,7 @@ export function AgentsPage() {
   const [revealed, setRevealed] = useState<string | null>(null);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
+    <div className="relative min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl space-y-4 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">Agents</h1>

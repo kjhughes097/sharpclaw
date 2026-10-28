@@ -89,7 +89,7 @@ export function SessionList({
         </label>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {!agentId ? (
           <p className="p-2 text-sm text-muted">Choose an agent.</p>
         ) : threads.isPending ? (

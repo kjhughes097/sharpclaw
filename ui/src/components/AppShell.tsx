@@ -106,7 +106,9 @@ export function AppShell({ children }: { children?: ReactNode }) {
   }, [pending]);
 
   return (
-    <div className="app-height flex flex-col">
+    // relative + overflow-hidden: the shell is exactly the viewport and never scrolls itself; only
+    // the panes inside it do.
+    <div className="app-height relative flex flex-col overflow-hidden">
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-surface focus:px-3 focus:py-2"
