@@ -185,3 +185,30 @@ describe('applyEvent (event → UI state)', () => {
     expect(h.live.get(corr)?.text).toBe('Hello wor');
   });
 });
+
+describe('LiveStore', () => {
+  it('reset cancels a pending frame and notifies at once', () => {
+    let pending: (() => void) | null = null;
+    const cancel = vi.fn(() => {
+      pending = null;
+    });
+    const store = new LiveStore((callback) => {
+      pending = callback;
+      return cancel;
+    });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.append('t', 'c', 'hi');
+    expect(pending).not.toBeNull();
+    expect(listener).not.toHaveBeenCalled();
+
+    store.reset();
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.forThread('t')).toEqual([]);
+    // The next change schedules a fresh frame.
+    store.append('t', 'c', 'again');
+    expect(pending).not.toBeNull();
+  });
+});

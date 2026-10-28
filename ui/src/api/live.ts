@@ -15,11 +15,16 @@ export interface LiveTurn {
   tools: LiveTool[];
 }
 
-type Schedule = (callback: () => void) => void;
+/** Runs `callback` later; may return a function that cancels it. */
+type Schedule = (callback: () => void) => (() => void) | void;
 
 const defaultSchedule: Schedule = (callback) => {
-  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => callback());
-  else setTimeout(callback, 16);
+  if (typeof requestAnimationFrame === 'function') {
+    const frame = requestAnimationFrame(() => callback());
+    return () => cancelAnimationFrame(frame);
+  }
+  const timer = setTimeout(callback, 16);
+  return () => clearTimeout(timer);
 };
 
 export class LiveStore {
@@ -27,6 +32,7 @@ export class LiveStore {
   private readonly listeners = new Set<() => void>();
   private version = 0;
   private scheduled = false;
+  private cancelScheduled: (() => void) | null = null;
   private readonly cache = new Map<string, { version: number; turns: LiveTurn[] }>();
 
   constructor(private readonly schedule: Schedule = defaultSchedule) {}
@@ -83,6 +89,20 @@ export class LiveStore {
     this.changed();
   }
 
+  /**
+   * Sign-out: drops every turn and notifies now, cancelling any pending frame so nothing from the
+   * previous session fires afterwards.
+   */
+  reset() {
+    this.cancelScheduled?.();
+    this.cancelScheduled = null;
+    this.scheduled = false;
+    this.turns.clear();
+    this.cache.clear();
+    this.version++;
+    for (const listener of [...this.listeners]) listener();
+  }
+
   private ensure(threadId: string, correlationId: string): LiveTurn {
     return this.turns.get(correlationId) ?? { threadId, correlationId, text: '', tools: [] };
   }
@@ -91,9 +111,11 @@ export class LiveStore {
     this.version++;
     if (this.scheduled) return;
     this.scheduled = true;
-    this.schedule(() => {
-      this.scheduled = false;
-      for (const listener of [...this.listeners]) listener();
-    });
+    this.cancelScheduled =
+      this.schedule(() => {
+        this.scheduled = false;
+        this.cancelScheduled = null;
+        for (const listener of [...this.listeners]) listener();
+      }) ?? null;
   }
 }

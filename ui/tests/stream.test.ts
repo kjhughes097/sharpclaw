@@ -201,4 +201,50 @@ describe('EventStreamManager', () => {
     expect(t.manager.lastEventId).toBeNull();
     expect(t.states.at(-1)).toBe('idle');
   });
+
+  it('a session check answered after sign-out and back in is ignored', async () => {
+    let answer: (signedIn: boolean) => void = () => {};
+    const t = setup(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    t.manager.start();
+    t.last().fail();
+    // Signed out and back in before the old check returns.
+    t.manager.stop();
+    t.manager.start();
+    t.last().open();
+    answer(false);
+    await flush();
+
+    expect(t.onSignedOut).not.toHaveBeenCalled();
+    expect(t.manager.connectionState).toBe('open');
+    expect(t.last().closed).toBe(false);
+    expect(t.timers).toHaveLength(0);
+  });
+
+  it('a reopen while a session check is pending wins; the stale check schedules nothing', async () => {
+    let answer: (signedIn: boolean) => void = () => {};
+    const t = setup(() => new Promise<boolean>((resolve) => (answer = resolve)));
+    t.manager.start();
+    t.last().fail();
+    t.windowTarget.dispatchEvent(new Event('online'));
+    expect(t.sources).toHaveLength(2);
+    answer(true);
+    await flush();
+
+    expect(t.timers).toHaveLength(0);
+    expect(t.sources).toHaveLength(2);
+  });
+
+  it('a backoff timer from an older connection does not open a second one', async () => {
+    const t = setup(async () => true);
+    t.manager.start();
+    t.last().fail();
+    await flush();
+    const stale = t.timers.at(-1)!;
+    t.windowTarget.dispatchEvent(new Event('online'));
+    t.last().fail();
+    await flush();
+    const sourcesBefore = t.sources.length;
+    stale.fn();
+    expect(t.sources).toHaveLength(sourcesBefore);
+  });
 });

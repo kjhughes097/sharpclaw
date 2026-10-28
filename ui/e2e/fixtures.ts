@@ -42,10 +42,10 @@ export const test = base.extend<{ guard: void }>({
 
 export { expect };
 
-export async function login(page: Page, next = '/chats') {
+export async function login(page: Page, next = '/chats', user = USER, password = PASSWORD) {
   await page.goto(next);
-  await page.getByLabel('Username').fill(USER);
-  await page.getByLabel('Password').fill(PASSWORD);
+  await page.getByLabel('Username').fill(user);
+  await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).not.toHaveURL(/\/login/);
   await expect(

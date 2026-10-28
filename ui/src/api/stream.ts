@@ -57,6 +57,12 @@ export class EventStreamManager {
   private hiddenAt: number | null = null;
   private everOpened = false;
   private stopped = true;
+  /**
+   * Bumped by every open and stop. Async work (a session check after a CLOSED source, a backoff
+   * timer) remembers the generation it started in and does nothing if it has changed, so a stale
+   * result can never act on a newer connection (e.g. stop the stream after a quick re-login).
+   */
+  private generation = 0;
   private readonly deps: Required<Omit<StreamManagerDeps, 'window' | 'document'>> &
     Pick<StreamManagerDeps, 'window' | 'document'>;
 
@@ -99,6 +105,7 @@ export class EventStreamManager {
   /** Closes everything (sign-out). */
   stop(state: ConnectionState = 'idle') {
     this.stopped = true;
+    this.generation++;
     this.clearTimer();
     this.source?.close();
     this.source = null;
@@ -123,6 +130,7 @@ export class EventStreamManager {
   private open() {
     const url = this.lastId ? `/api/events?lastEventId=${encodeURIComponent(this.lastId)}` : '/api/events';
     this.setState(this.everOpened ? 'reconnecting' : 'connecting');
+    this.generation++;
     const source = this.deps.createEventSource(url);
     this.source = source;
     source.onopen = () => {
@@ -142,8 +150,10 @@ export class EventStreamManager {
     source.close();
     if (this.source === source) this.source = null;
     this.setState('reconnecting');
+    const generation = this.generation;
     const signedIn = await this.deps.checkSession();
-    if (this.stopped) return;
+    // Stopped, reopened or restarted meanwhile: this answer is about a connection that is gone.
+    if (this.stopped || generation !== this.generation) return;
     if (!signedIn) {
       this.stop('signed_out');
       this.deps.onSignedOut();
@@ -154,7 +164,7 @@ export class EventStreamManager {
     this.clearTimer();
     this.timer = this.deps.setTimeout(() => {
       this.timer = null;
-      if (!this.stopped && !this.source) this.open();
+      if (!this.stopped && generation === this.generation && !this.source) this.open();
     }, delay);
   }
 
