@@ -12,15 +12,25 @@ applyTo: "tests/**"
   `PostUserMessageAsync`, `ClaimAsync`, `ChatAsync`, `ChatTestHelpers.ParseChat`,
   `TestHelpers.ReadSseEventsAsync`, `ChatTestHelpers.WriteScript` (FakeProvider JSON rules).
 - **Time:** advance the clock with `fx.Time.Advance(...)`; derive test timestamps from
-  `fx.Time.GetUtcNow()`, never `DateTime.UtcNow` (e.g. token expiry, budget day rollover).
+  `fx.Time.GetUtcNow()`, never `DateTime.UtcNow` (e.g. token expiry, budget day rollover). Fake DTO
+  timestamps in the agent and CLI tests use `TestClock.Now`.
+- **Metrics:** every gateway in the test process shares the meter name; scope a `MeterListener`
+  to `fx.App.Services.GetRequiredService<GatewayMetrics>().Meter` (by reference), especially when
+  calling `RecordObservableInstruments()`.
 - **Streaming pitfall:** a chat call is only recorded in `llm_calls` after the stream completes.
   `ChatAsync` buffers the whole response; if you use `ResponseHeadersRead`, read the body to the
   end before asserting DB state. To test client aborts, dispose the response mid-stream and poll
   the DB for the `cancelled` row.
-- **SSE:** a fresh connect replays nothing, so subscribe to `/api/threads/{id}/stream` (and give
-  it ~200 ms) before triggering the event you assert on, or connect with `Last-Event-ID` via
-  `fx.OpenStreamAsync(path, lastEventId)`. `ReadSseEventsAsync` skips the `ready` framing event;
-  `ReadSseAsync` returns ids too. Posting a message emits `message.created` on the stream.
+- **SSE:** a fresh connect replays nothing, so open the stream with `fx.OpenStreamAsync(path)`
+  (optionally with `lastEventId`) **before** triggering the event you assert on. The server
+  subscribes before it sends headers, so the stream is live as soon as `OpenStreamAsync` returns —
+  no delay needed. `ReadSseEventsAsync` skips the `ready` framing event; `ReadSseAsync` returns ids
+  too. Posting a message emits `message.created` on the stream.
+- **No sleeps.** Never wait with a fixed `Task.Delay`. Use `TestHelpers.EventuallyAsync(condition)`
+  for "eventually true" (DB rows, metrics), `TestHelpers.WaitForLongPollAsync<TSignal>(fx)` before
+  triggering a long-poll wake-up (inbox: `IAgentInboxSignal`, approvals: `ApprovalSignal`), and
+  `TestHelpers.WaitForStreamedTextAsync(fx, thread)` for "a reply is mid-stream". In fakes, signal
+  with a `TaskCompletionSource` rather than polling a field. Measure promptness with a `Stopwatch`.
 - Simulate provider behaviour with FakeProvider scripts (`error.type` = `http` / `timeout` /
   `midstream`, `"usage": null` for unknown usage) rather than mocking `IChatProvider`.
 - Privacy tests: assert captured logs contain no message content, token or admin key.

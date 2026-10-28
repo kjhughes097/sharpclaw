@@ -158,7 +158,6 @@ public class AgentToolEndToEndTests : IDisposable
                 new DecideApprovalRequest(approve ? ApprovalStatuses.Approved : ApprovalStatuses.Denied), SharpClawJson.Options);
             return evt.Data;
         });
-        await Task.Delay(200);
 
         await h.Fx.PostUserMessageAsync(h.Thread, "delete the old note");
         await h.Loop.ProcessOnceAsync(CancellationToken.None);
@@ -185,14 +184,13 @@ public class AgentToolEndToEndTests : IDisposable
         var turn = Task.Run(() => h.Loop.ProcessOnceAsync(CancellationToken.None));
         using var admin = h.Fx.Admin();
         ApprovalDetailDto? pending = null;
-        for (var i = 0; i < 50 && pending is null; i++)
+        await TestHelpers.EventuallyAsync(async () =>
         {
-            await Task.Delay(100);
             var list = await admin.GetFromJsonAsync<ApprovalListResponse>("/api/approvals?status=pending", SharpClawJson.Options);
             pending = list!.Approvals.FirstOrDefault();
-        }
-        Assert.NotNull(pending);
-        (await admin.PostAsJsonAsync($"/api/approvals/{pending.Id}",
+            return pending is not null;
+        }, because: "the agent's approval request");
+        (await admin.PostAsJsonAsync($"/api/approvals/{pending!.Id}",
             new DecideApprovalRequest(ApprovalStatuses.Approved), SharpClawJson.Options)).EnsureSuccessStatusCode();
 
         await turn;
@@ -238,10 +236,10 @@ public class AgentToolEndToEndTests : IDisposable
         File.WriteAllText(Path.Combine(_workspace, "old.md"), "old");
         await h.Fx.PostUserMessageAsync(h.Thread, "delete the old note", unattended: true);
 
-        var started = DateTime.UtcNow;
+        var started = System.Diagnostics.Stopwatch.StartNew();
         await h.Loop.ProcessOnceAsync(CancellationToken.None);
 
-        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(10));
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(10));
         Assert.Equal("Nobody could approve that.", await FinalReplyAsync(h));
         Assert.True(File.Exists(Path.Combine(_workspace, "old.md")));
         Assert.Equal(ToolDecisions.Denied, Assert.Single(await ToolCallsAsync(h)).Decision);

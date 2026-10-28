@@ -21,7 +21,6 @@ public class GlobalStreamTests
 
         var (client, stream) = await fx.OpenStreamAsync("/api/events");
         using var _ = client;
-        await Task.Delay(200);
         // Per thread: message.created, 2 deltas, message.completed.
         var read = TestHelpers.ReadSseAsync(stream, 8, TimeSpan.FromSeconds(8), skipReady: true);
 
@@ -56,7 +55,7 @@ public class GlobalStreamTests
         var corr = await fx.PostUserMessageAsync(thread, "slow");
         await fx.ClaimAsync(token);
         var chat = Task.Run(async () => await (await fx.ChatAsync(token, corr, thread, "slow")).Content.ReadAsStringAsync());
-        await Task.Delay(800);
+        await TestHelpers.WaitForStreamedTextAsync(fx, thread);
 
         var (client, stream) = await fx.OpenStreamAsync("/api/events");
         using var _ = client;
@@ -110,7 +109,6 @@ public class GlobalStreamTests
 
         var (client, stream) = await fx.OpenStreamAsync("/api/events");
         using var _ = client;
-        await Task.Delay(200);
         var read = TestHelpers.ReadSseAsync(stream, 3, TimeSpan.FromSeconds(5), skipReady: true);
         await fx.RequestApprovalAsync(token, thread, corr);
         using (var agentClient = fx.AgentClient(token))

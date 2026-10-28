@@ -42,7 +42,7 @@ public class InboxAndMessagingTests
 
         // Long poll wakes promptly when a message is posted.
         var pollTask = c.GetAsync("/agent/inbox?wait=10");
-        await Task.Delay(200);
+        await TestHelpers.WaitForLongPollAsync<SharpClaw.Gateway.Services.IAgentInboxSignal>(fx);
         await fx.PostUserMessageAsync(threadId, "wake up");
         var resp = await pollTask;
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
@@ -113,7 +113,6 @@ public class InboxAndMessagingTests
         var stream = await streamResp.Content.ReadAsStreamAsync();
         var readTask = TestHelpers.ReadSseEventsAsync(stream, 1, TimeSpan.FromSeconds(5));
 
-        await Task.Delay(200);
         using var agentClient = fx.AgentClient(token);
         var fail = await agentClient.PostAsJsonAsync($"/agent/messages/{claimed!.Id}/fail",
             new FailMessageRequest("provider_error"), SharpClawJson.Options);

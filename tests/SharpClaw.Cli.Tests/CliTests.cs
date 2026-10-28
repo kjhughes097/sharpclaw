@@ -51,7 +51,7 @@ public class CliTests
 
     private static CliSseEvent ApprovalEvent(Guid corr, Guid approvalId) => new(SseEventNames.ApprovalRequested,
         System.Text.Json.JsonSerializer.Serialize(new ApprovalRequestedEvent(approvalId, corr, "workspace_delete",
-            "delete notes/old.md", "high", "deletes a file", DateTime.UtcNow.AddMinutes(5)), SharpClawJson.Options));
+            "delete notes/old.md", "high", "deletes a file", TestClock.Now.AddMinutes(5)), SharpClawJson.Options));
 
     [Theory]
     [InlineData("y", "approved")]
@@ -123,7 +123,7 @@ public class CliTests
         var gw = new FakeGateway();
         gw.ToolCalls.Add(new ToolCallDto(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
             "call_1", "workspace_delete", "{}", "denied", "denied", "high", true, Guid.NewGuid(), "denied_by_user", 12,
-            DateTime.UtcNow, DateTime.UtcNow));
+            TestClock.Now, TestClock.Now));
         var output = new StringWriter();
 
         await Commands.RunAsync(new[] { "audit", "tools", "--agent", "assistant", "--limit", "5" }, gw, output, TextReader.Null, CancellationToken.None);
@@ -209,7 +209,7 @@ public class CliTests
     public async Task Reset_reloads_history_and_finishes_if_the_reply_is_there()
     {
         var gw = new FakeGateway();
-        gw.Messages.Add(new MessageDto(Guid.NewGuid(), Roles.Assistant, "Hello", MessageStatus.Done, Guid.Empty, DateTime.UtcNow));
+        gw.Messages.Add(new MessageDto(Guid.NewGuid(), Roles.Assistant, "Hello", MessageStatus.Done, Guid.Empty, TestClock.Now));
         gw.Streams.Enqueue(corr => new[] { Ev(SseEventNames.Delta, new DeltaEvent(corr, "He")) });
         gw.Streams.Enqueue(_ => new[] { Ev(SseEventNames.Reset, new ResetEvent(ResetReasons.HistoryPruned)) });
         var output = new StringWriter();
@@ -302,7 +302,7 @@ public class CliTests
     {
         var gw = new FakeGateway();
         gw.Approvals.Add(new ApprovalDetailDto(Guid.NewGuid(), "assistant", Guid.NewGuid(), Guid.NewGuid(), "workspace_delete",
-            "delete old.md", "high", "deletes a file", "pending", DateTime.UtcNow, DateTime.UtcNow.AddMinutes(5), null, null));
+            "delete old.md", "high", "deletes a file", "pending", TestClock.Now, TestClock.Now.AddMinutes(5), null, null));
         var output = new StringWriter();
 
         await Commands.RunAsync(new[] { "approvals", "list", "--status", "pending", "--agent", "assistant" },
@@ -345,12 +345,15 @@ public class CliTests
         public long MessagePostedAt { get; private set; }
         private Guid _postedMessageId;
 
+        /// <summary>Completes when the CLI posts its message, so fake streams emit after the post (no polling).</summary>
+        private readonly TaskCompletionSource<Guid> _posted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public int? LastContextWindow { get; private set; }
 
         public Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget, int? contextWindow = null)
         {
             LastContextWindow = contextWindow;
-            var agent = new AgentDto(Guid.NewGuid(), name, model, budget, true, DateTime.UtcNow, 0, budget);
+            var agent = new AgentDto(Guid.NewGuid(), name, model, budget, true, TestClock.Now, 0, budget);
             var token = new TokenValueDto(Guid.NewGuid(), "sc_fake-token", "sc_fake-", null);
             return Task.FromResult(new CreatedAgentResponse(agent, token));
         }
@@ -359,12 +362,12 @@ public class CliTests
             Task.FromResult(new AgentListResponse(Array.Empty<AgentDto>()));
 
         public Task<AgentDto> GetAgentAsync(string idOrName) =>
-            Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, "m", 1, true, DateTime.UtcNow, 0, 1));
+            Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, "m", 1, true, TestClock.Now, 0, 1));
 
         public Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled, int? contextWindow = null)
         {
             LastContextWindow = contextWindow;
-            return Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, model ?? "m", budget ?? 1, enabled ?? true, DateTime.UtcNow, 0, 1,
+            return Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, model ?? "m", budget ?? 1, enabled ?? true, TestClock.Now, 0, 1,
                 contextWindow));
         }
 
@@ -377,7 +380,7 @@ public class CliTests
         public Task RevokeTokenAsync(string agent, string tokenId) => Task.CompletedTask;
 
         public Task<ThreadDto> CreateThreadAsync(string agentId, string? title) =>
-            Task.FromResult(new ThreadDto(Guid.NewGuid(), Guid.NewGuid(), title, DateTime.UtcNow));
+            Task.FromResult(new ThreadDto(Guid.NewGuid(), Guid.NewGuid(), title, TestClock.Now));
 
         public Task<IThreadStream> OpenThreadStreamAsync(Guid threadId, long? lastEventId, CancellationToken ct)
         {
@@ -409,9 +412,8 @@ public class CliTests
         {
             public async IAsyncEnumerable<CliSseEvent> ReadAsync([EnumeratorCancellation] CancellationToken ct)
             {
-                while (gw._postedMessageId == Guid.Empty)
-                    await Task.Delay(5, ct);
-                foreach (var ev in script(gw._postedMessageId))
+                var posted = await gw._posted.Task.WaitAsync(ct);
+                foreach (var ev in script(posted))
                     yield return ev;
                 throw new IOException("connection dropped");
             }
@@ -424,6 +426,7 @@ public class CliTests
             MessagePostedAt = Interlocked.Increment(ref _seq);
             PostedUnattended = unattended;
             _postedMessageId = Guid.NewGuid();
+            _posted.TrySetResult(_postedMessageId);
             return Task.FromResult(_postedMessageId);
         }
 
@@ -460,12 +463,12 @@ public class CliTests
         public Task<UserAdminDto> CreateUserAsync(string name, string password)
         {
             CreatedUsers.Add((name, password));
-            return Task.FromResult(new UserAdminDto(Guid.NewGuid(), name, false, DateTime.UtcNow));
+            return Task.FromResult(new UserAdminDto(Guid.NewGuid(), name, false, TestClock.Now));
         }
 
         public Task<UserListResponse> ListUsersAsync() => Task.FromResult(new UserListResponse(new[]
         {
-            new UserAdminDto(Guid.NewGuid(), "kevin", false, DateTime.UtcNow),
+            new UserAdminDto(Guid.NewGuid(), "kevin", false, TestClock.Now),
         }));
 
         public Task SetUserPasswordAsync(string name, string password)
@@ -477,7 +480,7 @@ public class CliTests
         public Task<UserAdminDto> SetUserDisabledAsync(string name, bool disabled)
         {
             DisabledChanges.Add((name, disabled));
-            return Task.FromResult(new UserAdminDto(Guid.NewGuid(), name, disabled, DateTime.UtcNow));
+            return Task.FromResult(new UserAdminDto(Guid.NewGuid(), name, disabled, TestClock.Now));
         }
 
         public Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision)
@@ -485,7 +488,7 @@ public class CliTests
             if (DecisionConflicts)
                 throw new CliException("Approval is already expired.");
             Decisions.Add((approvalId, decision));
-            return Task.FromResult(new ApprovalDto(approvalId, decision, "user", DateTime.UtcNow));
+            return Task.FromResult(new ApprovalDto(approvalId, decision, "user", TestClock.Now));
         }
 
         private sealed class FakeStream : IThreadStream
@@ -496,10 +499,7 @@ public class CliTests
             public async IAsyncEnumerable<CliSseEvent> ReadAsync([EnumeratorCancellation] CancellationToken ct)
             {
                 // Wait until a message has been posted, then emit events for it.
-                while (_gw._postedMessageId == Guid.Empty)
-                    await Task.Delay(5, ct);
-
-                var corr = _gw._postedMessageId;
+                var corr = await _gw._posted.Task.WaitAsync(ct);
                 foreach (var extra in _gw.BeforeCompletion(corr))
                     yield return extra;
                 yield return new CliSseEvent(SseEventNames.Delta,
@@ -511,4 +511,10 @@ public class CliTests
             public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }
+}
+
+/// <summary>A fixed instant for fake DTO timestamps; tests never read the real clock.</summary>
+internal static class TestClock
+{
+    public static readonly DateTime Now = new(2026, 10, 25, 12, 0, 0, DateTimeKind.Utc);
 }

@@ -53,7 +53,6 @@ public class ApprovalTests
         var client = s.Fx.Admin();
         var resp = await client.GetAsync($"/api/threads/{s.Thread}/stream", HttpCompletionOption.ResponseHeadersRead);
         var events = TestHelpers.ReadSseEventsAsync(await resp.Content.ReadAsStreamAsync(), count, TimeSpan.FromSeconds(5));
-        await Task.Delay(200);
         return (client, events);
     }
 
@@ -152,7 +151,7 @@ public class ApprovalTests
         using var __ = client;
         var events = TestHelpers.ReadSseEventsAsync(stream, 1, TimeSpan.FromSeconds(10));
         var poll = PollAsync(s, approval!.Id, wait: 10);
-        await Task.Delay(300);
+        await TestHelpers.WaitForLongPollAsync<SharpClaw.Gateway.Services.ApprovalSignal>(s.Fx);
 
         // The sweeper's PeriodicTimer runs on the fake clock.
         s.Fx.Time.Advance(TimeSpan.FromSeconds(61));
@@ -321,15 +320,15 @@ public class ApprovalTests
         var (_, approval) = await CreateAsync(s, Request(s));
 
         var poll = PollAsync(s, approval!.Id, wait: 10);
-        await Task.Delay(300);
+        await TestHelpers.WaitForLongPollAsync<SharpClaw.Gateway.Services.ApprovalSignal>(s.Fx);
         var decided = await DecideAsync(s, approval.Id, decision);
         Assert.Equal(HttpStatusCode.OK, decided.StatusCode);
 
-        var started = DateTime.UtcNow;
+        var started = System.Diagnostics.Stopwatch.StartNew();
         var result = await poll;
         Assert.Equal(decision, result.Status);
         Assert.Equal(ApprovalDecidedBy.User, result.DecidedBy);
-        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(5), "long poll should return promptly");
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(5), "long poll should return promptly");
     }
 
     [Fact]

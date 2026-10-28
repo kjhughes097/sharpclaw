@@ -147,7 +147,6 @@ public class ThreadsApiTests
 
         var (client, stream) = await fx.OpenStreamAsync("/api/events");
         using var _ = client;
-        await Task.Delay(200);
         var read = TestHelpers.ReadSseEventsAsync(stream, 1, TimeSpan.FromSeconds(5));
 
         var patched = await admin.PatchAsJsonAsync($"/api/threads/{archive}",
@@ -182,7 +181,6 @@ public class ThreadsApiTests
         var (agent, _) = await fx.CreateAgentAsync();
         var (client, stream) = await fx.OpenStreamAsync("/api/events");
         using var _ = client;
-        await Task.Delay(200);
         var read = TestHelpers.ReadSseAsync(stream, 1, TimeSpan.FromSeconds(5), skipReady: true);
 
         var thread = await fx.CreateThreadAsync(agent.Id);

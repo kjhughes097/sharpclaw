@@ -19,8 +19,23 @@ public abstract class KeyedSignal
         }
     }
 
-    public Task<bool> WaitAsync(Guid key, TimeSpan timeout, CancellationToken ct) =>
-        For(key).WaitAsync(timeout, ct);
+    private int _waiters;
+
+    public async Task<bool> WaitAsync(Guid key, TimeSpan timeout, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _waiters);
+        try
+        {
+            return await For(key).WaitAsync(timeout, ct);
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _waiters);
+        }
+    }
+
+    /// <summary>Pollers currently blocked in <see cref="WaitAsync"/> (lets tests act once a long poll is waiting).</summary>
+    public int Waiters => Volatile.Read(ref _waiters);
 
     /// <summary>
     /// Forgets a key that will never be signalled again (e.g. a decided approval), so the map
