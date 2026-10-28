@@ -4,7 +4,7 @@ import type { LiveTurn } from '../../api/live';
 import type { TraceToolCallDto } from '../../api/types';
 import { Badge, Button, RelativeTime } from '../../components/ui';
 import { AssistantText, Markdown, PlainText } from '../../lib/markdown';
-import { serverNow } from '../../lib/time';
+import { serverNow, useServerNow } from '../../lib/time';
 import { ApprovalCard, type ApprovalView } from '../approvals/ApprovalCard';
 import { ToolActivity } from './ToolActivity';
 import type { Turn } from './turns';
@@ -31,11 +31,7 @@ export function useThrottledText(text: string, intervalMs = 100): string {
 }
 
 function Elapsed({ since }: { since: string }) {
-  const [now, setNow] = useState(() => serverNow());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(serverNow()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+  const now = useServerNow(1000);
   const seconds = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
   return <span>{seconds} s</span>;
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { api, call } from '../../api/client';
 import { ApiError, errorMessage } from '../../api/errors';
@@ -7,7 +7,7 @@ import { keys } from '../../api/queryKeys';
 import { HIGHEST_RISK } from '../../api/types';
 import { useToast } from '../../app/toast';
 import { Badge, Button, RelativeTime, RiskBadge } from '../../components/ui';
-import { formatCountdown, serverNow } from '../../lib/time';
+import { formatCountdown, useServerNow } from '../../lib/time';
 import { deciderLabel } from './decider';
 
 export interface ApprovalView {
@@ -43,16 +43,6 @@ export function useDecideApproval(threadId?: string) {
   });
 }
 
-/** Ticks once a second while mounted, for countdowns. */
-export function useNow(intervalMs = 1000) {
-  const [now, setNow] = useState(() => serverNow());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(serverNow()), intervalMs);
-    return () => clearInterval(timer);
-  }, [intervalMs]);
-  return now;
-}
-
 const STATUS_TEXT: Record<string, string> = {
   approved: 'Approved',
   denied: 'Denied',
@@ -71,7 +61,8 @@ export function ApprovalCard({
   showThreadLink?: boolean;
 }) {
   const decide = useDecideApproval(approval.threadId);
-  const now = useNow();
+  // Ticks every second, and re-renders as soon as the server clock is known.
+  const now = useServerNow(1000);
   const [confirming, setConfirming] = useState(false);
   const due = Date.parse(approval.expiresAt) <= now;
   const pending = approval.status === 'pending' && !due;
