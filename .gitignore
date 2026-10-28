@@ -27,3 +27,12 @@ docker/fake-provider/script.json
 
 # OS
 .DS_Store
+
+# Web UI (3.3)
+ui/node_modules/
+ui/dist/
+ui/playwright-report/
+ui/test-results/
+ui/blob-report/
+ui/playwright/.cache/
+src/SharpClaw.Gateway/wwwroot/

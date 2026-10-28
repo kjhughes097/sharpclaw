@@ -1,0 +1,149 @@
+@import 'tailwindcss';
+
+/* Semantic colour tokens. Components use these (bg-surface, text-muted…), never raw colours, so
+   light and dark both meet AA contrast. The theme follows prefers-color-scheme only. */
+:root {
+  --sc-bg: #f6f7f9;
+  --sc-surface: #ffffff;
+  --sc-surface-2: #eef1f4;
+  --sc-text: #14181f;
+  --sc-muted: #4b5563;
+  --sc-border: #d4d9e0;
+  --sc-accent: #0f6b63;
+  --sc-accent-fg: #ffffff;
+  --sc-accent-soft: #dff3f0;
+  --sc-danger: #b42318;
+  --sc-danger-soft: #fdecea;
+  --sc-warn: #8a5300;
+  --sc-warn-soft: #fff4dc;
+  --sc-ok: #1d6b36;
+  --sc-ok-soft: #e3f4e8;
+  --sc-focus: #2563eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --sc-bg: #0d1117;
+    --sc-surface: #161b22;
+    --sc-surface-2: #1f2630;
+    --sc-text: #e8edf3;
+    --sc-muted: #a3adba;
+    --sc-border: #333c48;
+    --sc-accent: #4fd1c0;
+    --sc-accent-fg: #062320;
+    --sc-accent-soft: #0f2f2b;
+    --sc-danger: #ff8a80;
+    --sc-danger-soft: #3a1714;
+    --sc-warn: #f5c56b;
+    --sc-warn-soft: #3a2a0c;
+    --sc-ok: #7ee2a0;
+    --sc-ok-soft: #12301d;
+    --sc-focus: #8ab4ff;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--sc-bg);
+  --color-surface: var(--sc-surface);
+  --color-surface-2: var(--sc-surface-2);
+  --color-fg: var(--sc-text);
+  --color-muted: var(--sc-muted);
+  --color-border: var(--sc-border);
+  --color-accent: var(--sc-accent);
+  --color-accent-fg: var(--sc-accent-fg);
+  --color-accent-soft: var(--sc-accent-soft);
+  --color-danger: var(--sc-danger);
+  --color-danger-soft: var(--sc-danger-soft);
+  --color-warn: var(--sc-warn);
+  --color-warn-soft: var(--sc-warn-soft);
+  --color-ok: var(--sc-ok);
+  --color-ok-soft: var(--sc-ok-soft);
+  --color-focus: var(--sc-focus);
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--sc-bg);
+  color: var(--sc-text);
+  font-family: var(--font-sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+:focus-visible {
+  outline: 2px solid var(--sc-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* The shell fills the dynamic viewport so the composer stays above the on-screen keyboard. */
+.app-height {
+  height: 100dvh;
+}
+
+.markdown :where(p, ul, ol, pre, table, blockquote) {
+  margin: 0.5rem 0;
+}
+.markdown :where(ul) {
+  list-style: disc;
+  padding-left: 1.25rem;
+}
+.markdown :where(ol) {
+  list-style: decimal;
+  padding-left: 1.25rem;
+}
+.markdown :where(h1, h2, h3, h4) {
+  font-weight: 600;
+  margin: 0.75rem 0 0.25rem;
+}
+.markdown :where(a) {
+  color: var(--sc-accent);
+  text-decoration: underline;
+}
+.markdown :where(code) {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+.markdown :where(:not(pre) > code) {
+  background: var(--sc-surface-2);
+  border-radius: 0.25rem;
+  padding: 0 0.25rem;
+}
+.markdown :where(blockquote) {
+  border-left: 3px solid var(--sc-border);
+  padding-left: 0.75rem;
+  color: var(--sc-muted);
+}
+.markdown :where(th, td) {
+  border: 1px solid var(--sc-border);
+  padding: 0.25rem 0.5rem;
+  text-align: left;
+}
+
+@keyframes sc-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.caret::after {
+  content: '▍';
+  animation: sc-blink 1s step-end infinite;
+  margin-left: 1px;
+}
