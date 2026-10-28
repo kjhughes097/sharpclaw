@@ -31,6 +31,31 @@ test.describe('tools and approvals', () => {
     await expect(page.getByText('"ok": true')).toBeVisible();
   });
 
+  test('a critical-risk call needs a second confirmation', async ({ page, request }) => {
+    // Reading a file makes the turn untrusted, which raises the delete from high to critical.
+    seedWorkspaceFile('notes/crit.md', 'critical note\n');
+    await login(page);
+    await openNewThread(page, request, 'Critical');
+    await send(page, 'read then delete the note');
+    const card = page.getByRole('region', { name: 'Approval for workspace_delete' });
+    await expect(card.getByText('risk: critical')).toBeVisible({ timeout: 20_000 });
+
+    await card.getByRole('button', { name: 'Approve' }).click();
+    await expect(card.getByRole('alert')).toHaveText('This is a critical-risk action. Approve it?');
+    await card.getByRole('button', { name: 'Cancel' }).click();
+    await expect(card.getByRole('alert')).toHaveCount(0);
+
+    await card.getByRole('button', { name: 'Approve' }).click();
+    await card.getByRole('button', { name: 'Yes, approve' }).click();
+    await expect(messages(page).getByText('The tool step is finished.')).toBeVisible({ timeout: 20_000 });
+    const recent = await (await admin(request).get('/api/approvals?limit=1')).json();
+    expect(recent.approvals[0]).toMatchObject({
+      status: 'approved',
+      risk: 'critical',
+      decidedByUser: 'kevin',
+    });
+  });
+
   test('deny is reported to the agent', async ({ page, request }) => {
     await login(page);
     await openNewThread(page, request, 'Deny');

@@ -29,6 +29,8 @@ The gateway is the only trust boundary: the UI holds no secrets and talks only t
   outside `src/lib/prefs.ts` and `dangerouslySetInnerHTML`.
 - **Privacy:** never log, persist or send prompt/reply text, tool arguments or results, tokens or
   passwords anywhere except to the gateway. Agent tokens live only in the reveal dialog's state.
+- **Server clock:** render relative times, countdowns and staleness from `useServerNow()` (or
+  `RelativeTime`), never `serverNow()` during render; the offset may arrive after first render.
 - **Errors:** user-facing text for error codes and fail reasons comes from `src/api/errors.ts`.
 - **Tests:** Vitest + Testing Library + MSW (`tests/msw.ts`) with the fake `EventSource` from
   `tests/utils.tsx`; add a `jest-axe` check for new screens. Prefer role/label queries. Use fake

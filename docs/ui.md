@@ -133,4 +133,17 @@ it lives only in that dialog's state (mutations are removed from the cache when 
   state in `/tmp/sharpclaw-e2e`). Run `npm run build` first. Set `E2E_BASE_URL` (with
   `E2E_ADMIN_KEY`, `E2E_USER`, `E2E_PASSWORD`) to target a running Compose stack instead. Projects:
   Chromium, WebKit and a mobile viewport (`@core` tests). WebKit needs the host libraries from
-  `sudo npx playwright install-deps webkit`.
+  `sudo npx playwright install-deps webkit`. CI runs the Chromium project on every pull request.
+  Specs: `chat.spec.ts` (streaming, reload and offline recovery, markdown safety, banners),
+  `tools.spec.ts` (approve/deny/critical confirmation/expiry, agents and tokens, audit and trace),
+  `account.spec.ts` (password change and sign-out). Wait on locators, responses or page state,
+  never fixed timeouts.
+
+## Code layout notes
+
+- `components/ui/` holds the shared building blocks (`Button`, feedback states, badges, dialogs,
+  `CopyField`, `Meter`); import them from `components/ui`.
+- Feature pages stay thin: data and mutations live in hooks next to them (e.g. `useThreadScroll`,
+  `useTurnApprovals`, `useUpdateThread` in `features/chat/`), markup in focused components.
+- Anything that renders against the server clock uses `useServerNow()` (`lib/time.ts`), which
+  re-renders when the clock offset from `GET /api/system` arrives and every 30 s.

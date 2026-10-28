@@ -72,7 +72,8 @@ test.describe('chat', () => {
     await send(page, 'slow offline');
     await expect(messages(page).getByText(/This reply streams/)).toBeVisible();
     await context.setOffline(true);
-    await page.waitForTimeout(1500);
+    // Wait until the page knows it is offline (not a fixed time); going online then reopens the stream.
+    await page.waitForFunction(() => !navigator.onLine);
     await context.setOffline(false);
     await expect(messages(page).getByText(/The end\./)).toBeVisible({ timeout: 30_000 });
     const text =
