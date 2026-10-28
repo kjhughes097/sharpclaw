@@ -94,8 +94,8 @@ export function applyEvent(event: StreamEvent, { queryClient, live, onTurnError 
       // After a reconnect, refetch what may have changed while away (a safety net on top of replay).
       if (event.reconnected) {
         invalidate(keys.threads);
-        invalidate(['thread']);
-        invalidate(['messages']);
+        invalidate(keys.allThreadDetails);
+        invalidate(keys.allMessages);
         invalidate(keys.approvals);
       }
       break;

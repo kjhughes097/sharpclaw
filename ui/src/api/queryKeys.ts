@@ -7,7 +7,11 @@ export const keys = {
   tokens: (name: string) => ['tokens', name] as const,
   threads: ['threads'] as const,
   threadList: (filters: { agentId?: string | undefined; archived: boolean }) => ['threads', filters] as const,
+  /** Prefix of every thread-detail query (invalidates them all). */
+  allThreadDetails: ['thread'] as const,
   thread: (id: string) => ['thread', id] as const,
+  /** Prefix of every thread's message query. */
+  allMessages: ['messages'] as const,
   messages: (id: string) => ['messages', id] as const,
   trace: (id: string) => ['trace', id] as const,
   approvals: ['approvals'] as const,
