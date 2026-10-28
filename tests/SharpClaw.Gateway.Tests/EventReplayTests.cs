@@ -60,7 +60,9 @@ public class EventReplayTests
         Assert.True(durable[0].Id < durable[1].Id);
 
         using var db = s.Fx.NewDb();
-        var stored = await db.ThreadEvents.AsNoTracking().OrderBy(e => e.Id).ToListAsync();
+        // thread.created was stored before the stream opened, so a fresh connect doesn't replay it.
+        var stored = await db.ThreadEvents.AsNoTracking().Where(e => e.Type != SseEventNames.ThreadCreated)
+            .OrderBy(e => e.Id).ToListAsync();
         Assert.Equal(durable.Select(e => e.Id!.Value), stored.Select(e => e.Id));
         Assert.DoesNotContain(stored, e => e.Type == SseEventNames.Delta);
         Assert.Equal(corr, Data<MessageCreatedEvent>(durable[0]).MessageId);
@@ -128,11 +130,12 @@ public class EventReplayTests
         await Task.Delay(30);
         var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream", lastEventId: 0);
         using var __ = client;
-        var events = await TestHelpers.ReadSseAsync(stream, messages, TimeSpan.FromSeconds(10), skipReady: true);
+        // lastEventId=0 also replays the thread.created event.
+        var events = await TestHelpers.ReadSseAsync(stream, messages + 1, TimeSpan.FromSeconds(10), skipReady: true);
         await posting;
 
         var ids = events.Select(e => e.Id!.Value).ToList();
-        Assert.Equal(messages, ids.Count);
+        Assert.Equal(messages + 1, ids.Count);
         Assert.Equal(ids.OrderBy(i => i), ids);
         Assert.Equal(ids.Count, ids.Distinct().Count());
         using var db = s.Fx.NewDb();
@@ -204,18 +207,19 @@ public class EventReplayTests
 
         using (var db = s.Fx.NewDb())
         {
+            // Ids: 1 thread.created, 2–3 the old turn (pruned), 4–5 the recent one.
             Assert.Equal(2, await db.ThreadEvents.CountAsync());
-            Assert.Equal(2, await db.EventLogState.Select(x => x.PrunedThrough).SingleAsync());
+            Assert.Equal(3, await db.EventLogState.Select(x => x.PrunedThrough).SingleAsync());
         }
 
-        var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream", lastEventId: 1);
+        var (client, stream) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream", lastEventId: 2);
         using var __ = client;
         var events = await TestHelpers.ReadSseAsync(stream, 2, Wait);
         Assert.Equal(new[] { SseEventNames.Reset, SseEventNames.Ready }, events.Select(e => e.Event));
         Assert.Equal(ResetReasons.HistoryPruned, Data<ResetEvent>(events[0]).Reason);
 
         // A last id at the pruned point is still fine.
-        var (client2, stream2) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream", lastEventId: 2);
+        var (client2, stream2) = await s.Fx.OpenStreamAsync($"/api/threads/{s.Thread}/stream", lastEventId: 3);
         using var ___ = client2;
         var replay = await TestHelpers.ReadSseAsync(stream2, 3, Wait);
         Assert.Equal(new[] { SseEventNames.MessageCreated, SseEventNames.MessageCompleted, SseEventNames.Ready },

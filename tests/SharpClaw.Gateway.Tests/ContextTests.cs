@@ -244,8 +244,8 @@ public class ContextTests
         Assert.Equal("latest", body.Messages[^1].Content);
 
         using var admin = s.Fx.Admin();
-        var threads = await admin.GetFromJsonAsync<ThreadListResponse>("/api/threads", SharpClawJson.Options);
-        var context = Assert.Single(threads!.Threads).Context!;
+        var detail = await admin.GetFromJsonAsync<ThreadDetailResponse>($"/api/threads/{s.Thread}", SharpClawJson.Options);
+        var context = detail!.Thread.Context!;
         Assert.Equal(4, context.DroppedTurns);
         Assert.Equal(body.EstimatedTokens, context.EstimatedTokens);
         Assert.Equal(3000, context.WindowTokens);

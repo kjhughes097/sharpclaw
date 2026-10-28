@@ -12,6 +12,9 @@ public class Agent
     /// <summary>Model context window override; null uses <c>Context:DefaultWindowTokens</c>.</summary>
     public int? ContextWindowTokens { get; set; }
 
+    /// <summary>Last authenticated agent-listener request; updated at most once a minute.</summary>
+    public DateTime? LastSeenAt { get; set; }
+
     public List<AgentToken> Tokens { get; set; } = new();
 }
 
@@ -39,6 +42,14 @@ public class ConversationThread
     /// <summary>Turns left out of the model's context the last time it was built.</summary>
     public int ContextDroppedTurns { get; set; }
     public int ContextEstimatedTokens { get; set; }
+
+    /// <summary>When the last <c>kind = 'message'</c> row was added (the thread's creation time before that).</summary>
+    public DateTime LastMessageAt { get; set; }
+
+    /// <summary>A short, whitespace-collapsed slice of the last message (at most 120 characters).</summary>
+    public string? LastPreview { get; set; }
+
+    public bool Archived { get; set; }
 }
 
 public class Message

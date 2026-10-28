@@ -35,7 +35,7 @@ public sealed class ApprovalDecisions(
         metrics.RecordApprovalDecisionTime(agentName, status, (now - approval.CreatedAt).TotalSeconds);
         signal.Signal(approval.Id);
         await events.PublishDurableAsync(approval.ThreadId, SseEventNames.ApprovalDecided,
-            new ApprovalDecidedEvent(approval.Id, approval.CorrelationId, status, decidedBy), ct);
+            new ApprovalDecidedEvent(approval.Id, approval.CorrelationId, status, decidedBy, approval.ThreadId), ct);
         return true;
     }
 

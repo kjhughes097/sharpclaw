@@ -30,9 +30,10 @@ public static class ApprovalEndpoints
 
     public static void MapClient(RouteGroupBuilder client)
     {
-        client.MapGet("/approvals", List);
-        client.MapGet("/approvals/{id}", Get);
-        client.MapPost("/approvals/{id}", Decide);
+        var approvals = client.MapGroup("/approvals").WithTags("approvals");
+        approvals.MapGet("", List).WithName("listApprovals").Produces<ApprovalListResponse>();
+        approvals.MapGet("/{id}", Get).WithName("getApproval").Produces<ApprovalDetailResponse>();
+        approvals.MapPost("/{id}", Decide).WithName("decideApproval").Produces<ApprovalResponse>();
     }
 
     private static async Task<IResult> Create(
@@ -98,7 +99,7 @@ public static class ApprovalEndpoints
         {
             await events.PublishDurableAsync(approval.ThreadId, SseEventNames.ApprovalRequested,
                 new ApprovalRequestedEvent(approval.Id, approval.CorrelationId, approval.ToolName,
-                    approval.Summary, approval.Risk, approval.Reason, approval.ExpiresAt), ct);
+                    approval.Summary, approval.Risk, approval.Reason, approval.ExpiresAt, approval.ThreadId), ct);
             await NotifyAsync(notifier, approval, agent.Name, logger);
         }
 

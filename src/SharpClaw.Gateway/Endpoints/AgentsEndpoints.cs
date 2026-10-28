@@ -12,14 +12,16 @@ public static class AgentsEndpoints
 {
     public static void Map(RouteGroupBuilder client)
     {
-        client.MapPost("/agents", CreateAgent);
-        client.MapGet("/agents", ListAgents);
-        client.MapGet("/agents/{idOrName}", GetAgent);
-        client.MapPatch("/agents/{idOrName}", PatchAgent);
+        var agents = client.MapGroup("/agents").WithTags("agents");
+        agents.MapPost("", CreateAgent).WithName("createAgent").Produces<CreatedAgentResponse>(StatusCodes.Status201Created);
+        agents.MapGet("", ListAgents).WithName("listAgents").Produces<AgentListResponse>();
+        agents.MapGet("/{idOrName}", GetAgent).WithName("getAgent").Produces<AgentDto>();
+        agents.MapPatch("/{idOrName}", PatchAgent).WithName("updateAgent").Produces<AgentDto>();
 
-        client.MapPost("/agents/{idOrName}/tokens", IssueToken);
-        client.MapGet("/agents/{idOrName}/tokens", ListTokens);
-        client.MapDelete("/agents/{idOrName}/tokens/{tokenId}", RevokeToken);
+        var tokens = client.MapGroup("/agents/{idOrName}/tokens").WithTags("tokens");
+        tokens.MapPost("", IssueToken).WithName("issueToken").Produces<CreatedTokenResponse>(StatusCodes.Status201Created);
+        tokens.MapGet("", ListTokens).WithName("listTokens").Produces<TokenListResponse>();
+        tokens.MapDelete("/{tokenId}", RevokeToken).WithName("revokeToken").Produces(StatusCodes.Status204NoContent);
     }
 
     private static async Task<IResult> CreateAgent(

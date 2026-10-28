@@ -48,17 +48,17 @@ public sealed class EventStreamResult(Guid? threadId, long? lastEventId) : IResu
         {
             var sb = new StringBuilder("retry: 3000\n\n");
             if (reset)
-                Append(sb, SseEventNames.Reset, Json(new ResetEvent(ResetReasons.HistoryPruned)));
+                Append(sb, SseEventNames.Reset, Json(new ResetEvent(ResetReasons.HistoryPruned, threadId)));
             foreach (var e in replay)
                 Append(sb, e.Type, e.Data, e.Id);
             Append(sb, SseEventNames.Ready, Json(new ReadyEvent(threadId)), baseline);
 
             // 5. The text streamed so far for turns still in flight.
             var snapshotLengths = new Dictionary<Guid, int>();
-            foreach (var (corr, content) in buffers.Snapshots(threadId))
+            foreach (var (corr, turnThread, content) in buffers.Snapshots(threadId))
             {
                 snapshotLengths[corr] = content.Length;
-                Append(sb, SseEventNames.Snapshot, Json(new SnapshotEvent(corr, content)));
+                Append(sb, SseEventNames.Snapshot, Json(new SnapshotEvent(corr, content, turnThread)));
             }
             await WriteAsync(response, sb.ToString(), ct);
 

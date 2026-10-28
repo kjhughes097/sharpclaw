@@ -186,6 +186,8 @@ public static class AgentEndpoints
             userMsg.Status = MessageStatus.Done;
             userMsg.CompletedAt = now;
             db.Messages.Add(assistant);
+            var thread = await db.Threads.FirstAsync(t => t.Id == id, ct);
+            ThreadActivity.OnMessage(thread, body.Content, now, isFirstUserMessage: false);
 
             try
             {
@@ -201,7 +203,7 @@ public static class AgentEndpoints
         buffers.Remove(body.CorrelationId);
         await decisions.ExpireForCorrelationAsync(db, body.CorrelationId, ct);
         await events.PublishDurableAsync(id, SseEventNames.MessageCompleted,
-            new MessageCompletedEvent(body.CorrelationId, assistant.Id, body.Content), ct);
+            new MessageCompletedEvent(body.CorrelationId, assistant.Id, body.Content, id), ct);
         var messageSeconds = (now - userMsg.CreatedAt).TotalSeconds;
         metrics.RecordMessageDuration(agent.Name, messageSeconds);
         using (logger.BeginScope(new Dictionary<string, object>
@@ -248,7 +250,7 @@ public static class AgentEndpoints
 
         buffers.Remove(msg.Id);
         await decisions.ExpireForCorrelationAsync(db, msg.Id, ct);
-        await events.PublishDurableAsync(msg.ThreadId, SseEventNames.Error, new ErrorEvent(msg.Id, reason, reason), ct);
+        await events.PublishDurableAsync(msg.ThreadId, SseEventNames.Error, new ErrorEvent(msg.Id, reason, reason, msg.ThreadId), ct);
         return Results.StatusCode(204);
     }
 }

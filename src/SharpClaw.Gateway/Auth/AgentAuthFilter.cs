@@ -38,12 +38,20 @@ public sealed class AgentAuthFilter : IEndpointFilter
         if (!token.Agent.Enabled)
             return ApiResults.AgentDisabled();
 
-        // Update last_used_at at most once per minute per token.
+        // Update last_used_at (per token) and the agent's last_seen_at at most once per minute each.
+        var touched = false;
         if (token.LastUsedAt is null || now - token.LastUsedAt.Value >= TimeSpan.FromMinutes(1))
         {
             token.LastUsedAt = now;
-            await db.SaveChangesAsync(http.RequestAborted);
+            touched = true;
         }
+        if (token.Agent.LastSeenAt is null || now - token.Agent.LastSeenAt.Value >= TimeSpan.FromMinutes(1))
+        {
+            token.Agent.LastSeenAt = now;
+            touched = true;
+        }
+        if (touched)
+            await db.SaveChangesAsync(http.RequestAborted);
 
         var agent = token.Agent;
         metrics.MarkSeen(agent.Name);

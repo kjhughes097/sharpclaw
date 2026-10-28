@@ -28,17 +28,22 @@ public static class GatewayBuilder
         builder.Services.Configure<EventsOptions>(builder.Configuration.GetSection(EventsOptions.Section));
         builder.Services.Configure<ToolsOptions>(builder.Configuration.GetSection(ToolsOptions.Section));
         builder.Services.Configure<ContextOptions>(builder.Configuration.GetSection(ContextOptions.Section));
+        builder.Services.Configure<UiOptions>(builder.Configuration.GetSection(UiOptions.Section));
 
         builder.Services.AddSingleton(TimeProvider.System);
 
         builder.Services.ConfigureHttpJsonOptions(o =>
         {
             o.SerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+            // Numbers are numbers: keeps request parsing strict and the OpenAPI schemas plain integers.
+            o.SerializerOptions.NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.Strict;
             o.SerializerOptions.Converters.Add(
                 new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase));
         });
 
         builder.Services.AddSingleton<SqlitePragmaInterceptor>();
+        builder.Services.AddSharpClawOpenApi();
+        builder.Services.AddUiHosting();
 
         // Test overrides (config sources and service replacements) apply here, before we read
         // provider/listener/database settings and register providers, Kestrel and the DbContext.
@@ -87,11 +92,13 @@ public static class GatewayBuilder
         }
 
         app.UseMiddleware<ExceptionMiddleware>();
+        app.UseClientListenerPipeline();
 
         // Health check: unauthenticated, available on both listeners.
-        app.MapGet("/healthz", () => Results.Json(new { status = "ok" }, SharpClawJson.Options));
+        app.MapGet("/healthz", () => Results.Json(new { status = "ok" }, SharpClawJson.Options)).ExcludeFromDescription();
 
         GatewayEndpoints.Map(app);
+        app.MapSharpClawOpenApi();
 
         return app;
     }

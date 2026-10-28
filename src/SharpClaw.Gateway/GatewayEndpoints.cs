@@ -8,7 +8,7 @@ public static partial class GatewayEndpoints
 {
     public static void Map(WebApplication app)
     {
-        var api = app.MapGroup("/api").RequireListener(Listener.Client);
+        var api = app.MapGroup("/api").RequireListener(Listener.Client).ProducesApiErrors();
         // Login, session info and user management choose their own credentials.
         AuthEndpoints.Map(api);
         var client = api.MapGroup("").AddEndpointFilter(new ClientAuthFilter(ClientAuthMode.AdminKeyOrSession));

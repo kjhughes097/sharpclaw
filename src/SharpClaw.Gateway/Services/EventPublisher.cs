@@ -50,5 +50,5 @@ public sealed class EventPublisher(IThreadEventBus bus, IServiceScopeFactory sco
 
     public void PublishDelta(Guid threadId, Guid correlationId, string text, int? endOffset) =>
         bus.Publish(threadId, new ThreadSseEvent(SseEventNames.Delta,
-            JsonSerializer.Serialize(new DeltaEvent(correlationId, text), SharpClawJson.Options), null, correlationId, endOffset));
+            JsonSerializer.Serialize(new DeltaEvent(correlationId, text, threadId), SharpClawJson.Options), null, correlationId, endOffset));
 }

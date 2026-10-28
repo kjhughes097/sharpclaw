@@ -10,6 +10,7 @@ public static partial class GatewayEndpoints
         ThreadsEndpoints.Map(client);
         AuditEndpoints.Map(client);
         ApprovalEndpoints.MapClient(client);
+        SystemEndpoints.Map(client);
     }
 
     static partial void MapAgentEndpoints(WebApplication app, RouteGroupBuilder agent, RouteGroupBuilder v1)

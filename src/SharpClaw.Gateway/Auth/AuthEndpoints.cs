@@ -22,17 +22,22 @@ public static partial class AuthEndpoints
 
     public static void Map(RouteGroupBuilder api)
     {
-        var auth = api.MapGroup("/auth");
-        auth.MapPost("/login", Login);
-        auth.MapGet("/session", SessionInfo);
-        auth.MapPost("/logout", Logout).AddEndpointFilter(new ClientAuthFilter(ClientAuthMode.SessionOnly));
-        auth.MapPost("/password", ChangePassword).AddEndpointFilter(new ClientAuthFilter(ClientAuthMode.SessionOnly));
+        var auth = api.MapGroup("/auth").WithTags("auth");
+        auth.MapPost("/login", Login).WithName("login").Produces<LoginResponse>()
+            .Produces<ApiErrorResponse>(StatusCodes.Status429TooManyRequests);
+        auth.MapGet("/session", SessionInfo).WithName("getSession").Produces<SessionInfoResponse>();
+        auth.MapPost("/logout", Logout).WithName("logout").Produces(StatusCodes.Status204NoContent)
+            .AddEndpointFilter(new ClientAuthFilter(ClientAuthMode.SessionOnly));
+        auth.MapPost("/password", ChangePassword).WithName("changePassword").Produces(StatusCodes.Status204NoContent)
+            .AddEndpointFilter(new ClientAuthFilter(ClientAuthMode.SessionOnly));
 
-        var users = api.MapGroup("/users").AddEndpointFilter(new ClientAuthFilter(ClientAuthMode.AdminKeyOnly));
-        users.MapPost("", CreateUser);
-        users.MapGet("", ListUsers);
-        users.MapPut("/{name}/password", SetPassword);
-        users.MapPatch("/{name}", UpdateUser);
+        // Admin-key only and not used by the UI (user creation stays a CLI action).
+        var users = api.MapGroup("/users").WithTags("users")
+            .AddEndpointFilter(new ClientAuthFilter(ClientAuthMode.AdminKeyOnly));
+        users.MapPost("", CreateUser).WithName("createUser").Produces<CreatedUserResponse>(StatusCodes.Status201Created);
+        users.MapGet("", ListUsers).WithName("listUsers").Produces<UserListResponse>();
+        users.MapPut("/{name}/password", SetPassword).WithName("setUserPassword").Produces(StatusCodes.Status204NoContent);
+        users.MapPatch("/{name}", UpdateUser).WithName("updateUser").Produces<UserAdminDto>();
     }
 
     // A fixed dummy hash per iteration count, so an unknown user costs the same work as a real one.

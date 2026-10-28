@@ -49,10 +49,10 @@ public sealed class ActiveTurnBuffers(TimeProvider time, ILogger<ActiveTurnBuffe
     public void Remove(Guid correlationId) => _buffers.TryRemove(correlationId, out _);
 
     /// <summary>In-flight turns for one thread, or for all threads when <paramref name="threadId"/> is null.</summary>
-    public IReadOnlyList<(Guid CorrelationId, string Content)> Snapshots(Guid? threadId)
+    public IReadOnlyList<(Guid CorrelationId, Guid ThreadId, string Content)> Snapshots(Guid? threadId)
     {
         var cutoff = time.GetUtcNow().UtcDateTime - MaxAge;
-        var result = new List<(Guid, string)>();
+        var result = new List<(Guid, Guid, string)>();
         foreach (var (corr, buffer) in _buffers)
         {
             if (buffer.StartedAt < cutoff)
@@ -62,7 +62,7 @@ public sealed class ActiveTurnBuffers(TimeProvider time, ILogger<ActiveTurnBuffe
             }
             if (threadId is null || buffer.ThreadId == threadId)
                 lock (buffer)
-                    result.Add((corr, buffer.Text.ToString()));
+                    result.Add((corr, buffer.ThreadId, buffer.Text.ToString()));
         }
         return result;
     }
