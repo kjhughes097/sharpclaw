@@ -172,18 +172,7 @@ Not to be built as agent tools, now or later, without a deliberate change to the
 - Nothing is enabled by default. Each agent's `docker/agents/<name>/config/agent.json` lists the
   tools it gets; updating the shipped `ade` and `cody` configs is part of task 7.
 
-## 8. Open questions
-
-1. **`calculate`:** include it? It does not execute code (fixed grammar, no `eval`), but it is the
-   closest thing to the line in section 2. Recommendation: include, with the constraints in §5.2.
-2. **Workspace quota:** append/copy make unbounded growth easier. Add a total workspace size cap
-   (e.g. 100 MB → `Blocked`)? Recommendation: yes, checked by tools that add bytes.
-3. **`workspace_edit` risk:** `medium` (same as overwrite) or `low` (smaller blast radius than a
-   full rewrite)? Recommendation: `medium`, to stay consistent with overwrite.
-4. **Directory operations:** `workspace_move` / `workspace_delete` are files only. Is directory
-   move/delete needed? Recommendation: not yet.
-
-## 9. Tests
+## 8. Tests
 
 - **Unit, per tool:** schema parses; `Assess` returns the expected `Scored` / `Uncertain` /
   `Blocked` for normal, overwrite, sensitive and every hardline case (absolute, `..`, symlink
@@ -201,7 +190,7 @@ Not to be built as agent tools, now or later, without a deliberate change to the
   `ExecuteUncheckedAsync`).
 - **Dispatcher integration:** taint from `workspace_search` raises later calls in the same turn.
 
-## 10. Task order
+## 9. Task order
 
 | # | Task |
 |---|---|
@@ -213,7 +202,7 @@ Not to be built as agent tools, now or later, without a deliberate change to the
 | 6 | `workspace_read` paging |
 | 7 | `calculate` (if Q1 = yes); update `ade` / `cody` configs; README tool table |
 
-## 11. Out of scope
+## 10. Out of scope
 
 Everything in section 6; any tool needing a gateway endpoint or network access (`http_fetch`,
 `download_to_workspace`, web search, GitHub, budget status, memory beyond workspace files,
