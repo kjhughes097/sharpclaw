@@ -70,32 +70,81 @@ public static class WorkspaceTools
         }
     }
 
-    /// <summary>Reads a text file. File content is untrusted, so reading taints the rest of the turn.</summary>
+    /// <summary>
+    /// Reads a text file, a page of at most <see cref="MaxReadBytes"/> at a time (agent tools spec
+    /// section 4.6). File content is untrusted, so reading taints the rest of the turn.
+    /// </summary>
     private sealed class ReadTool(WorkspaceRoot root) : IAgentTool
     {
         public string Name => "workspace_read";
-        public string Description => $"Read a text file from the workspace (at most {MaxReadBytes / 1024} KB; longer files are truncated).";
-        public string ParametersJson => PathOnlySchema;
+        public string Description =>
+            $"Read a text file from the workspace, at most {MaxReadBytes / 1024} KB per call. " +
+            "When the result is truncated, call again with offset = nextOffset to read the next part.";
+        public string ParametersJson => """
+            {"type":"object","properties":{"path":{"type":"string","description":"File path relative to the workspace root"},"offset":{"type":"integer","minimum":0,"description":"Byte offset to start reading from (default 0); use nextOffset from a truncated result"}},"required":["path"]}
+            """;
         public bool ReturnsUntrustedContent => true;
 
-        public ToolAssessment Assess(JsonElement args) =>
-            root.Resolve(Args.String(args, "path")).Error is { } error
-                ? new ToolAssessment.Blocked(error)
-                : new ToolAssessment.Scored(RiskLevel.Low, "reads a file");
+        public ToolAssessment Assess(JsonElement args)
+        {
+            if (root.Resolve(Args.String(args, "path")).Error is { } error)
+                return new ToolAssessment.Blocked(error);
+            if (!TryOffset(args, out _))
+                return new ToolAssessment.Blocked("offset must be a non-negative integer");
+            return new ToolAssessment.Scored(RiskLevel.Low, "reads a file");
+        }
 
-        public string Summarize(JsonElement args) => $"read {Args.ShortPath(Args.String(args, "path"))}";
+        public string Summarize(JsonElement args) =>
+            TryOffset(args, out var offset) && offset > 0
+                ? $"read {Args.ShortPath(Args.String(args, "path"))} (from byte {offset})"
+                : $"read {Args.ShortPath(Args.String(args, "path"))}";
 
         public async Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
         {
             var (path, _) = root.Resolve(Args.String(args, "path"));
             if (!File.Exists(path!.FullPath))
                 return ToolResult.Error("not_found", $"No file at '{path.Relative}'.");
+            TryOffset(args, out var requested);
 
             await using var stream = File.OpenRead(path.FullPath);
-            var buffer = new byte[Math.Min(stream.Length, MaxReadBytes)];
+            var length = stream.Length;
+            var start = Math.Min(requested, length);
+            stream.Seek(start, SeekOrigin.Begin);
+
+            // Up to 3 extra bytes on each side let the page snap to UTF-8 character boundaries.
+            var buffer = new byte[Math.Min(length - start, MaxReadBytes + 6)];
             var read = await stream.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, ct);
-            var content = Encoding.UTF8.GetString(buffer, 0, read);
-            return ToolResult.Success(new { path = path.Relative, content, bytes = stream.Length, truncated = stream.Length > MaxReadBytes });
+
+            // Start at the first character boundary at or after the offset.
+            var skip = 0;
+            while (skip < 3 && skip < read && IsContinuation(buffer[skip]))
+                skip++;
+
+            // End before a character that wouldn't fit; the next page starts with it.
+            var end = Math.Min(read, skip + MaxReadBytes);
+            if (end < read)
+            {
+                var limit = end - 3;
+                while (end > skip && end > limit && IsContinuation(buffer[end]))
+                    end--;
+            }
+
+            var offset = start + skip;
+            var next = start + end;
+            var content = Encoding.UTF8.GetString(buffer, skip, end - skip);
+            return next < length
+                ? ToolResult.Success(new { path = path.Relative, content, bytes = length, offset, truncated = true, nextOffset = next })
+                : ToolResult.Success(new { path = path.Relative, content, bytes = length, offset, truncated = false });
+        }
+
+        private static bool IsContinuation(byte b) => (b & 0b1100_0000) == 0b1000_0000;
+
+        private static bool TryOffset(JsonElement args, out long offset)
+        {
+            offset = 0;
+            if (!args.TryGetProperty("offset", out var el) || el.ValueKind == JsonValueKind.Null)
+                return true;
+            return el.ValueKind == JsonValueKind.Number && el.TryGetInt64(out offset) && offset >= 0;
         }
     }
 
