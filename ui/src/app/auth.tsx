@@ -62,9 +62,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       live.clearAll();
       notices.clear();
       queryClient.clear();
-      setState({ status: 'signed_out' });
       const here = returnTo ?? locationRef.current.pathname + locationRef.current.search;
+      // Navigate first so the auth gate doesn't add its own `next` for an explicit sign-out.
       navigate(here.startsWith('/login') ? '/login' : loginPath(here), { replace: true });
+      setState({ status: 'signed_out' });
     },
     [navigate, queryClient, stream, live, notices],
   );

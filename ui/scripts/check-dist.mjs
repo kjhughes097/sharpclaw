@@ -22,7 +22,9 @@ if (problems.length > 0) {
 }
 
 const entryScripts = [...html.matchAll(/<script\b[^>]*\bsrc="\/([^"]+)"/gi)].map((m) => m[1]);
-const preloads = [...html.matchAll(/<link\b[^>]*rel="modulepreload"[^>]*href="\/([^"]+)"/gi)].map((m) => m[1]);
+const preloads = [...html.matchAll(/<link\b[^>]*rel="modulepreload"[^>]*href="\/([^"]+)"/gi)].map(
+  (m) => m[1],
+);
 const initial = [...new Set([...entryScripts, ...preloads])];
 const gzipped = initial.reduce((sum, file) => sum + gzipSync(readFileSync(join(dist, file))).length, 0);
 const kb = (gzipped / 1024).toFixed(1);

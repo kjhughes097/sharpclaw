@@ -28,7 +28,8 @@ export function useAgents() {
 export function usePendingApprovals() {
   return useQuery({
     queryKey: keys.approvalList('pending'),
-    queryFn: () => call(() => api.GET('/api/approvals', { params: { query: { status: 'pending', limit: 200 } } })),
+    queryFn: () =>
+      call(() => api.GET('/api/approvals', { params: { query: { status: 'pending', limit: 200 } } })),
     select: (data) => data.approvals,
   });
 }

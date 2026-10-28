@@ -81,7 +81,12 @@ export const defaultHandlers = [
     }),
   ),
   http.get('*/api/system', () =>
-    HttpResponse.json({ version: 'abc1234', provider: 'Fake', utcNow: NOW, budgetResetAtUtc: '2026-10-26T00:00:00Z' }),
+    HttpResponse.json({
+      version: 'abc1234',
+      provider: 'Fake',
+      utcNow: NOW,
+      budgetResetAtUtc: '2026-10-26T00:00:00Z',
+    }),
   ),
   http.get('*/api/approvals', () => HttpResponse.json({ approvals: [] })),
   http.get('*/api/agents', () => HttpResponse.json({ agents: [fixtures.agent()] })),

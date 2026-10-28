@@ -118,7 +118,7 @@ public sealed record PostMessageRequest(string Content, bool Unattended = false)
 /// <summary>
 /// A thread row. <c>Kind</c> is <c>message</c> (user messages and final replies), <c>tool_request</c>
 /// (role assistant, <c>ToolCalls</c> set) or <c>tool_result</c> (role tool, <c>ToolCallId</c> set).
-/// Rows are ordered by <c>Seq</c>.
+/// Rows are ordered by <c>Seq</c>. <c>FailReason</c> is the reason code on a failed user message.
 /// </summary>
 public sealed record MessageDto(
     Guid Id,
@@ -133,7 +133,8 @@ public sealed record MessageDto(
     string? ToolCallId = null,
     bool? ToolOk = null,
     bool Untrusted = false,
-    bool Truncated = false);
+    bool Truncated = false,
+    string? FailReason = null);
 
 /// <summary><c>HasMoreBefore</c>: older rows exist before the first one returned.</summary>
 public sealed record MessageListResponse(IReadOnlyList<MessageDto> Messages, bool HasMoreBefore = false);

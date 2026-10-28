@@ -40,7 +40,10 @@ export function LoginPage() {
 
   return (
     <main id="main" className="app-height flex items-center justify-center p-4">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-surface p-6 shadow-sm">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-surface p-6 shadow-sm"
+      >
         <h1 className="text-xl font-semibold">Sign in to SharpClaw</h1>
         <div className="space-y-1">
           <label htmlFor="username" className="block text-sm font-medium">

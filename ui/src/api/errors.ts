@@ -31,7 +31,10 @@ export function budgetResetLocalTime(now = serverNow()): string {
  * API error codes and message fail reasons as plain text (3.3 spec section 9.11). The server's
  * own message is used only for validation errors, which are written for people.
  */
-const MESSAGES: Record<string, (ctx: { message: string; retryAfter: number | null } & ErrorContext) => string> = {
+const MESSAGES: Record<
+  string,
+  (ctx: { message: string; retryAfter: number | null } & ErrorContext) => string
+> = {
   unauthorized: () => 'Your session has ended. Please sign in again.',
   csrf_failed: () => 'Your session needs refreshing. Please try again.',
   rate_limited: ({ retryAfter }) => {
@@ -68,13 +71,18 @@ export function messageForCode(
 /** Plain text for any thrown error. */
 export function errorMessage(error: unknown, ctx: ErrorContext = {}): string {
   if (error instanceof ApiError)
-    return messageForCode(error.code, { message: error.message, retryAfter: error.retryAfterSeconds, ...ctx });
+    return messageForCode(error.code, {
+      message: error.message,
+      retryAfter: error.retryAfterSeconds,
+      ...ctx,
+    });
   return 'Something went wrong. Try again.';
 }
 
 /** Plain text for a failed user message's `failReason`. */
 export function failReasonMessage(code: string | null | undefined): string {
   if (!code) return 'The agent could not complete this turn.';
-  if (code === 'internal_error' || !(code in MESSAGES)) return `The agent could not complete this turn (${code}).`;
+  if (code === 'internal_error' || !(code in MESSAGES))
+    return `The agent could not complete this turn (${code}).`;
   return messageForCode(code);
 }

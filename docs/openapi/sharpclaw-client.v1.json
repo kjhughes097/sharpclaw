@@ -590,6 +590,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "failReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "id": {
             "format": "uuid",
             "type": "string"

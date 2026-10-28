@@ -57,7 +57,10 @@ export function notifyUnauthorized() {
 /** Re-checks the session (used after `csrf_failed` and by the stream manager). */
 export async function refreshSession(): Promise<boolean> {
   try {
-    const res = await fetch(`${origin}/api/auth/session`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+    const res = await fetch(`${origin}/api/auth/session`, {
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' },
+    });
     if (!res.ok) return false;
     const body = (await res.json()) as { authenticated: boolean; csrfToken?: string };
     if (body.authenticated && body.csrfToken) setCsrfToken(body.csrfToken);
@@ -85,7 +88,10 @@ function toApiError(result: { error?: unknown; response: Response }): ApiError {
  * Runs an API call and returns its data or throws an {@link ApiError}. A 401 signs the user out; a
  * `csrf_failed` re-fetches the session and retries once if still signed in.
  */
-export async function call<T>(fn: () => Promise<Result<T>>, options: { signOutOn401?: boolean } = {}): Promise<T> {
+export async function call<T>(
+  fn: () => Promise<Result<T>>,
+  options: { signOutOn401?: boolean } = {},
+): Promise<T> {
   let result = await fn();
   if (!result.response.ok) {
     const error = toApiError(result);

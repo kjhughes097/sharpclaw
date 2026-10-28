@@ -58,7 +58,10 @@ function NavItems({ pending, onNavigate }: { pending: number; onNavigate?: () =>
           >
             {item.label}
             {item.to === '/approvals' && pending > 0 && (
-              <span className="rounded-full bg-danger px-2 text-xs text-surface" aria-label={`${pending} pending`}>
+              <span
+                className="rounded-full bg-danger px-2 text-xs text-surface"
+                aria-label={`${pending} pending`}
+              >
                 {pending}
               </span>
             )}
@@ -135,7 +138,9 @@ export function AppShell({ children }: { children?: ReactNode }) {
             aria-label={pending > 0 ? `Open navigation (${pending} approvals pending)` : 'Open navigation'}
           >
             <span aria-hidden="true">☰</span>
-            {pending > 0 && <span className="ml-1 rounded-full bg-danger px-1.5 text-xs text-surface">{pending}</span>}
+            {pending > 0 && (
+              <span className="ml-1 rounded-full bg-danger px-1.5 text-xs text-surface">{pending}</span>
+            )}
           </RadixDialog.Trigger>
           <RadixDialog.Portal>
             <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/50" />

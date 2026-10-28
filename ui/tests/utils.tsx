@@ -114,7 +114,10 @@ export function renderApp(route = '/chats', options: { services?: TestServices }
 }
 
 /** Renders a component inside the providers (signed in), without the app routes. */
-export function renderWithProviders(ui: ReactNode, options: { route?: string; path?: string; services?: TestServices } = {}) {
+export function renderWithProviders(
+  ui: ReactNode,
+  options: { route?: string; path?: string; services?: TestServices } = {},
+) {
   const services = options.services ?? createTestServices();
   const queryClient = createQueryClient();
   queryClient.setDefaultOptions({ queries: { ...queryClient.getDefaultOptions().queries, retry: false } });

@@ -31,6 +31,8 @@ export default defineConfig({
     modulePreload: { polyfill: false },
     assetsInlineLimit: 0,
     sourcemap: false,
+    // scripts/check-dist.mjs enforces the real budget: 250 KB gzipped of initial JavaScript.
+    chunkSizeWarningLimit: 1024,
   },
   test: {
     environment: 'jsdom',

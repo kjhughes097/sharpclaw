@@ -75,7 +75,11 @@ export function formatCost(usd: number | null | undefined): string {
 
 /** Budgets and spend in USD via Intl. */
 export function formatUsd(usd: number): string {
-  return new Intl.NumberFormat(locale(), { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(usd);
+  return new Intl.NumberFormat(locale(), {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 2,
+  }).format(usd);
 }
 
 export function formatTokens(n: number): string {

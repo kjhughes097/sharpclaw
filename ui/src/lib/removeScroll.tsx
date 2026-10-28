@@ -16,7 +16,16 @@ type Props = {
   [key: string]: unknown;
 };
 
-const IGNORED = new Set(['noIsolation', 'inert', 'removeScrollBar', 'gapMode', 'lockRef', 'sideCar', 'forwardProps', 'noRelative']);
+const IGNORED = new Set([
+  'noIsolation',
+  'inert',
+  'removeScrollBar',
+  'gapMode',
+  'lockRef',
+  'sideCar',
+  'forwardProps',
+  'noRelative',
+]);
 
 let locks = 0;
 let previousOverflow = '';

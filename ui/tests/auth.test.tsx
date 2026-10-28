@@ -37,7 +37,9 @@ describe('auth gate', () => {
   it('sends a signed-out visitor to the login page with next', async () => {
     server.use(signedOut);
     renderApp('/agents/assistant');
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/login?next=%2Fagents%2Fassistant'));
+    await waitFor(() =>
+      expect(screen.getByTestId('location')).toHaveTextContent('/login?next=%2Fagents%2Fassistant'),
+    );
     expect(screen.getByRole('heading', { name: 'Sign in to SharpClaw' })).toBeInTheDocument();
   });
 
@@ -47,7 +49,11 @@ describe('auth gate', () => {
       http.post('*/api/auth/login', async ({ request }) => {
         const body = (await request.json()) as { username: string; password: string };
         expect(body).toEqual({ username: 'kevin', password: 'correct horse battery staple' });
-        return HttpResponse.json({ user: { id: 'u-1', name: 'kevin' }, csrfToken: 'csrf-xyz', expiresAt: '2026-11-01T00:00:00Z' });
+        return HttpResponse.json({
+          user: { id: 'u-1', name: 'kevin' },
+          csrfToken: 'csrf-xyz',
+          expiresAt: '2026-11-01T00:00:00Z',
+        });
       }),
     );
     const { user } = renderApp('/login?next=%2Faudit');
@@ -66,7 +72,11 @@ describe('auth gate', () => {
     server.use(
       signedOut,
       http.post('*/api/auth/login', () =>
-        HttpResponse.json({ user: { id: 'u-1', name: 'kevin' }, csrfToken: 'c', expiresAt: '2026-11-01T00:00:00Z' }),
+        HttpResponse.json({
+          user: { id: 'u-1', name: 'kevin' },
+          csrfToken: 'c',
+          expiresAt: '2026-11-01T00:00:00Z',
+        }),
       ),
     );
     const { user } = renderApp('/login?next=%2F%2Fevil.example');
@@ -77,14 +87,19 @@ describe('auth gate', () => {
   });
 
   it('shows a generic error and the rate-limit wait', async () => {
-    server.use(signedOut, http.post('*/api/auth/login', () => apiError(401, 'unauthorized', 'Invalid username or password.')));
+    server.use(
+      signedOut,
+      http.post('*/api/auth/login', () => apiError(401, 'unauthorized', 'Invalid username or password.')),
+    );
     const { user } = renderApp('/login');
     await user.type(await screen.findByLabelText('Username'), 'kevin');
     await user.type(screen.getByLabelText('Password'), 'nope');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid username or password.');
 
-    server.use(http.post('*/api/auth/login', () => apiError(429, 'rate_limited', 'x', { 'Retry-After': '600' })));
+    server.use(
+      http.post('*/api/auth/login', () => apiError(429, 'rate_limited', 'x', { 'Retry-After': '600' })),
+    );
     await user.type(screen.getByLabelText('Password'), 'nope');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Too many attempts. Try again in 10 minutes.');
@@ -95,7 +110,12 @@ describe('auth gate', () => {
     server.use(
       http.get('*/api/auth/session', () => {
         sessionCalls++;
-        return HttpResponse.json({ authenticated: true, method: 'session', user: { id: 'u', name: 'kevin' }, csrfToken: 'c' });
+        return HttpResponse.json({
+          authenticated: true,
+          method: 'session',
+          user: { id: 'u', name: 'kevin' },
+          csrfToken: 'c',
+        });
       }),
       http.get('*/api/threads', () => apiError(401, 'unauthorized')),
       http.get('*/api/approvals', () => apiError(401, 'unauthorized')),
@@ -116,13 +136,17 @@ describe('auth gate', () => {
         tokens.push(request.headers.get('X-CSRF-Token'));
         return attempts === 1
           ? apiError(403, 'csrf_failed')
-          : HttpResponse.json({ thread: { id: 't', agentId: 'a', title: 'x', createdAt: '', archived: false } });
+          : HttpResponse.json({
+              thread: { id: 't', agentId: 'a', title: 'x', createdAt: '', archived: false },
+            });
       }),
       http.get('*/api/auth/session', () =>
         HttpResponse.json({ authenticated: true, method: 'session', csrfToken: 'fresh-token' }),
       ),
     );
-    await call(() => api.PATCH('/api/threads/{id}', { params: { path: { id: 't' } }, body: { title: 'x', archived: null } }));
+    await call(() =>
+      api.PATCH('/api/threads/{id}', { params: { path: { id: 't' } }, body: { title: 'x', archived: null } }),
+    );
     expect(attempts).toBe(2);
     expect(tokens[1]).toBe('fresh-token');
   });

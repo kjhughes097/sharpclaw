@@ -7,8 +7,16 @@ import tseslint from 'typescript-eslint';
 // Secure-context APIs are unavailable over plain HTTP on the LAN (3.3 spec section 3), and
 // browser storage must never hold credentials: these rules keep both out of the code.
 const restrictedProperties = [
-  { object: 'navigator', property: 'clipboard', message: 'Unavailable over plain HTTP. Use copyText() from lib/clipboard.' },
-  { object: 'crypto', property: 'randomUUID', message: 'Unavailable over plain HTTP. Use localId() from lib/ids.' },
+  {
+    object: 'navigator',
+    property: 'clipboard',
+    message: 'Unavailable over plain HTTP. Use copyText() from lib/clipboard.',
+  },
+  {
+    object: 'crypto',
+    property: 'randomUUID',
+    message: 'Unavailable over plain HTTP. Use localId() from lib/ids.',
+  },
   { object: 'window', property: 'localStorage', message: 'Only lib/prefs.ts may use localStorage.' },
   { object: 'window', property: 'sessionStorage', message: 'Do not use sessionStorage.' },
 ];
@@ -40,6 +48,10 @@ export default tseslint.config(
       ],
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
+  },
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: { globals: globals.node },
   },
   {
     // The one module allowed to touch localStorage (a non-sensitive UI preference).

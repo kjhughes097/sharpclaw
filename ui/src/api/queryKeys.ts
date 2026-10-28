@@ -13,5 +13,6 @@ export const keys = {
   approvals: ['approvals'] as const,
   approvalList: (status: string) => ['approvals', status] as const,
   audit: ['audit'] as const,
-  auditList: (tab: 'llm' | 'tools', filters: Record<string, string | undefined>) => ['audit', tab, filters] as const,
+  auditList: (tab: 'llm' | 'tools', filters: Record<string, string | undefined>) =>
+    ['audit', tab, filters] as const,
 };

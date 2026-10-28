@@ -23,7 +23,9 @@ export function createQueryClient() {
       queries: {
         // Events invalidate what changed; refetching on every focus would only add load.
         refetchOnWindowFocus: false,
-        retry: (count, error) => count < 2 && !(error instanceof Error && 'status' in error && (error as { status: number }).status < 500),
+        retry: (count, error) =>
+          count < 2 &&
+          !(error instanceof Error && 'status' in error && (error as { status: number }).status < 500),
         staleTime: 15_000,
       },
       mutations: { retry: false },
@@ -36,7 +38,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
   const { state } = useAuth();
   const location = useLocation();
   if (state.status === 'loading') return <LoadingState label="Checking your session" />;
-  if (state.status === 'signed_out') return <Navigate to={loginPath(location.pathname + location.search)} replace />;
+  if (state.status === 'signed_out')
+    return <Navigate to={loginPath(location.pathname + location.search)} replace />;
   return (
     <>
       <LiveEvents />

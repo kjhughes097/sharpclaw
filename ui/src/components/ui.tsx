@@ -100,7 +100,10 @@ export function Badge({
     ok: 'bg-ok-soft text-fg',
   };
   return (
-    <span title={title} className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}>
+    <span
+      title={title}
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tones[tone]}`}
+    >
       {children}
     </span>
   );
@@ -163,7 +166,9 @@ export function Dialog({
         >
           <RadixDialog.Title className="text-lg font-semibold">{title}</RadixDialog.Title>
           {description ? (
-            <RadixDialog.Description className="mt-1 text-sm text-muted">{description}</RadixDialog.Description>
+            <RadixDialog.Description className="mt-1 text-sm text-muted">
+              {description}
+            </RadixDialog.Description>
           ) : (
             <RadixDialog.Description className="sr-only">{title}</RadixDialog.Description>
           )}
@@ -230,7 +235,11 @@ export function CopyField({ value, label }: { value: string; label: string }) {
         </Button>
       </div>
       <p className="mt-1 min-h-5 text-xs text-muted" aria-live="polite">
-        {status === 'copied' ? 'Copied.' : status === 'failed' ? 'Copy failed — the text is selected; copy it by hand.' : ''}
+        {status === 'copied'
+          ? 'Copied.'
+          : status === 'failed'
+            ? 'Copy failed — the text is selected; copy it by hand.'
+            : ''}
       </p>
     </div>
   );

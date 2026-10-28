@@ -531,6 +531,7 @@ export interface components {
       correlationId: null | string;
       /** Format: date-time */
       createdAt: string;
+      failReason?: null | string;
       /** Format: uuid */
       id: string;
       /** @default message */

@@ -11,7 +11,8 @@ expect.extend(toHaveNoViolations);
 // Secure-context APIs are unavailable over plain HTTP on the LAN; the UI must never rely on
 // them, so the whole suite runs without them (3.3 spec section 11).
 Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
-if (globalThis.crypto) Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true });
+if (globalThis.crypto)
+  Object.defineProperty(globalThis.crypto, 'randomUUID', { value: undefined, configurable: true });
 
 // jsdom lacks these; Radix and the scroll logic use them.
 class ResizeObserverStub {

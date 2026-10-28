@@ -78,7 +78,11 @@ export function applyEvent(event: StreamEvent, { queryClient, live, onTurnError 
       invalidate(keys.thread(event.data.threadId));
       invalidate(keys.trace(event.data.threadId));
       invalidate(keys.threads);
-      onTurnError?.({ threadId: event.data.threadId, correlationId: event.data.correlationId, code: event.data.code });
+      onTurnError?.({
+        threadId: event.data.threadId,
+        correlationId: event.data.correlationId,
+        code: event.data.code,
+      });
       break;
     case 'approval.requested':
     case 'approval.decided':
