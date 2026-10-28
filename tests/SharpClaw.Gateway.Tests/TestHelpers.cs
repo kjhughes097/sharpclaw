@@ -101,4 +101,31 @@ public static class TestHelpers
         resp.EnsureSuccessStatusCode();
         return (client, await resp.Content.ReadAsStreamAsync());
     }
+
+    /// <summary>
+    /// Waits (polling every 20 ms) until <paramref name="condition"/> holds, failing after
+    /// <paramref name="timeout"/> (default 5 s). Use instead of a fixed <c>Task.Delay</c>.
+    /// </summary>
+    public static async Task EventuallyAsync(Func<bool> condition, TimeSpan? timeout = null, string? because = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+                Assert.Fail($"Condition not met in time{(because is null ? "" : $": {because}")}.");
+            await Task.Delay(20);
+        }
+    }
+
+    /// <inheritdoc cref="EventuallyAsync(Func{bool}, TimeSpan?, string?)"/>
+    public static async Task EventuallyAsync(Func<Task<bool>> condition, TimeSpan? timeout = null, string? because = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(5));
+        while (!await condition())
+        {
+            if (DateTime.UtcNow > deadline)
+                Assert.Fail($"Condition not met in time{(because is null ? "" : $": {because}")}.");
+            await Task.Delay(20);
+        }
+    }
 }

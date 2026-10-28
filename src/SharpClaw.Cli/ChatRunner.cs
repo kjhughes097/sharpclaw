@@ -184,7 +184,9 @@ public static class ChatRunner
         if (mine?.Status == MessageStatus.Failed)
         {
             await output.WriteLineAsync();
-            throw new CliException("Error: the message failed.");
+            throw new CliException(mine.FailReason is { } reason
+                ? $"Error: {FailReasons.Describe(reason)}"
+                : "Error: the message failed.");
         }
         return false;
     }

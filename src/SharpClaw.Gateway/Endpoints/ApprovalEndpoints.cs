@@ -77,8 +77,16 @@ public static class ApprovalEndpoints
             CreatedAt = now,
             ExpiresAt = now.AddSeconds(options.Value.TimeoutSeconds),
         };
-        db.Approvals.Add(approval);
-        await db.SaveChangesAsync(ct);
+        // The approval row and its approval.requested event commit together.
+        await events.WriteAsync(db, batch =>
+        {
+            db.Approvals.Add(approval);
+            if (!unattended)
+                batch.Add(approval.ThreadId, SseEventNames.ApprovalRequested,
+                    new ApprovalRequestedEvent(approval.Id, approval.CorrelationId, approval.ToolName,
+                        approval.Summary, approval.Risk, approval.Reason, approval.ExpiresAt, approval.ThreadId));
+            return Task.FromResult(true);
+        }, ct);
 
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Approvals");
         using (LogScopes.Turn(logger, approval.ThreadId, approval.CorrelationId))
@@ -92,9 +100,6 @@ public static class ApprovalEndpoints
         }
         else
         {
-            await events.PublishDurableAsync(approval.ThreadId, SseEventNames.ApprovalRequested,
-                new ApprovalRequestedEvent(approval.Id, approval.CorrelationId, approval.ToolName,
-                    approval.Summary, approval.Risk, approval.Reason, approval.ExpiresAt, approval.ThreadId), ct);
             await NotifyAsync(notifier, approval, agent.Name, logger);
         }
 
@@ -132,7 +137,11 @@ public static class ApprovalEndpoints
             var now = time.GetUtcNow().UtcDateTime;
             await ExpireIfDueAsync(db, decisions, approval, now, ct);
             if (approval.Status != ApprovalStatuses.Pending)
+            {
+                // A decision that landed between our read and the wait may have re-created the key.
+                signal.Remove(id);
                 return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options);
+            }
 
             // Still waiting on the human: keep the message claimed while we do.
             await InboxRepository.TouchClaimAsync(db, agent.Id, approval.CorrelationId, now, ct);

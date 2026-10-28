@@ -57,10 +57,12 @@ public static class ThreadsEndpoints
             CreatedAt = now,
             LastMessageAt = now,
         };
-        db.Threads.Add(thread);
-        await db.SaveChangesAsync(ct);
-        await events.PublishDurableAsync(thread.Id, SseEventNames.ThreadCreated,
-            new ThreadCreatedEvent(thread.Id, agent.Id), ct);
+        await events.WriteAsync(db, batch =>
+        {
+            db.Threads.Add(thread);
+            batch.Add(thread.Id, SseEventNames.ThreadCreated, new ThreadCreatedEvent(thread.Id, agent.Id));
+            return Task.FromResult(true);
+        }, ct);
 
         var dto = ToDto(thread, context.Value.WindowFor(agent.ContextWindowTokens));
         return Results.Json(new CreatedThreadResponse(dto), SharpClawJson.Options, statusCode: 201);
@@ -180,9 +182,11 @@ public static class ThreadsEndpoints
         if (body.Archived is { } archived)
             thread.Archived = archived;
 
-        await db.SaveChangesAsync(ct);
-        await events.PublishDurableAsync(thread.Id, SseEventNames.ThreadUpdated,
-            new ThreadUpdatedEvent(thread.Id, thread.Title, thread.Archived), ct);
+        await events.WriteAsync(db, batch =>
+        {
+            batch.Add(thread.Id, SseEventNames.ThreadUpdated, new ThreadUpdatedEvent(thread.Id, thread.Title, thread.Archived));
+            return Task.FromResult(true);
+        }, ct);
         return Results.Json(new ThreadResponse(ToDto(thread, context.Value.WindowFor(thread.Agent.ContextWindowTokens))),
             SharpClawJson.Options);
     }

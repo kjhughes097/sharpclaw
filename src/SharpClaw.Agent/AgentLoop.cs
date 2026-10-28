@@ -134,7 +134,7 @@ public sealed class AgentLoop
         catch (Exception ex)
         {
             _logger.LogError("unexpected error handling message: {Error}", ex.GetType().Name);
-            await SafeFail(msg.Id, "agent_error");
+            await SafeFail(msg.Id, FailReasons.AgentError);
         }
 
         return LoopOutcome.Processed;
@@ -164,7 +164,7 @@ public sealed class AgentLoop
             if (_tools is null || round >= maxRounds)
             {
                 _logger.LogWarning("tool loop limit reached after {Rounds} rounds", round);
-                return (null, "tool_loop_limit", exchanges);
+                return (null, FailReasons.ToolLoopLimit, exchanges);
             }
 
             var assistantContent = string.IsNullOrEmpty(chat.Content) ? null : chat.Content;

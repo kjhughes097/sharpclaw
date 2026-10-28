@@ -99,10 +99,12 @@ public class TelemetryAndAbortTests
         fx.Time.Advance(TimeSpan.FromMinutes(6));
 
         var observed = new ConcurrentBag<(string Name, int Value, Dictionary<string, string?> Tags)>();
+        var meter = fx.App.Services.GetRequiredService<GatewayMetrics>().Meter;
         using var listener = new MeterListener();
         listener.InstrumentPublished = (inst, l) =>
         {
-            if (inst.Meter.Name == GatewayMetrics.MeterName)
+            // Only this fixture's meter: other tests' gateways may be shutting down concurrently.
+            if (ReferenceEquals(inst.Meter, meter))
                 l.EnableMeasurementEvents(inst);
         };
         listener.SetMeasurementEventCallback<int>((inst, v, tags, _) =>

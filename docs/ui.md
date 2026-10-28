@@ -92,7 +92,7 @@ global stream's `ready`/`reset`).
 | `approval.requested` | yes | `approvalId`, `correlationId`, `toolName`, `summary`, `risk`, `reason`, `expiresAt`, `threadId` |
 | `approval.decided` | yes | `approvalId`, `correlationId`, `status`, `decidedBy`, `threadId` |
 | `message.completed` | yes | `correlationId`, `messageId`, `content`, `threadId` |
-| `error` | yes | `correlationId`, `code`, `message`, `threadId` |
+| `error` | yes | `correlationId`, `code` (the fail reason), `message` (readable text from `FailReasons.Describe`), `threadId` |
 
 ## Security constraints
 

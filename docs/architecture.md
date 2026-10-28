@@ -85,8 +85,12 @@ Agent listener: `GET /agent/inbox`, `GET /agent/threads/{id}/messages`,
 
 `IEventPublisher` is the single path for client events.
 
-- **Durable** events are written to `thread_events` (their row id is the SSE `id`) and then published
-  on the in-memory `ThreadEventBus`. Persist-and-publish is serialised, so ids reach subscribers in order.
+- **Durable** events are staged by `IEventPublisher.WriteAsync` in the **same transaction** as the
+  state change they describe (`thread_events`, row id = SSE `id`), then published on the in-memory
+  `ThreadEventBus` after commit. Event-producing writes are serialised, so ids reach subscribers in
+  order; a failed write publishes nothing.
+- Each subscriber has a bounded buffer (`Events:SubscriberBufferSize`); a subscriber that falls
+  behind is disconnected and recovers by reconnecting with `Last-Event-ID`.
 - **`delta`** is ephemeral (bus only).
 - A stream subscribes **before** computing its replay baseline. It replays `id > Last-Event-ID`,
   sends `ready` (id = baseline), then a `snapshot` per in-flight turn, then live events. Replayed ids
