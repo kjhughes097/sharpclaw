@@ -33,7 +33,10 @@ public sealed record TraceLlmCallDto(
     string? ErrorCode,
     DateTime CreatedAt);
 
-/// <summary><c>ToolCallId</c> is the provider's id, matching <c>MessageDto.ToolCallId</c>; <c>Outcome</c> is the row status.</summary>
+/// <summary>
+/// <c>ToolCallId</c> is the provider's id, matching <c>MessageDto.ToolCallId</c>; <c>Outcome</c> is the
+/// row status. <c>LlmCallId</c> is the model round that requested it (a <see cref="TraceLlmCallDto"/>).
+/// </summary>
 public sealed record TraceToolCallDto(
     Guid Id,
     string ToolCallId,
@@ -44,7 +47,8 @@ public sealed record TraceToolCallDto(
     Guid? ApprovalId,
     int? DurationMs,
     DateTime CreatedAt,
-    DateTime? ReportedAt);
+    DateTime? ReportedAt,
+    Guid? LlmCallId = null);
 
 public sealed record TraceApprovalDto(
     Guid Id,

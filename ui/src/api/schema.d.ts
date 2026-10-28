@@ -856,6 +856,8 @@ export interface components {
       durationMs: null | number;
       /** Format: uuid */
       id: string;
+      /** Format: uuid */
+      llmCallId?: null | string;
       outcome: string;
       /** Format: date-time */
       reportedAt: null | string;
