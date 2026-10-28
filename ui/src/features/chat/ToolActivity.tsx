@@ -1,90 +1,114 @@
 import { useState } from 'react';
 import type { LiveTool } from '../../api/live';
-import type { TraceToolCallDto } from '../../api/types';
-import { Badge, RiskBadge } from '../../components/ui';
-import { formatDuration } from '../../lib/time';
-import { pretty, summariseArguments, type ToolItem } from './turns';
+import type { TraceLlmCallDto, TraceToolCallDto } from '../../api/types';
+import { formatCost, formatCount } from '../../lib/time';
+import type { ApprovalView } from '../approvals/ApprovalCard';
+import { pretty, type ToolItem } from './turns';
 
-type Status = 'ok' | 'failed' | 'denied' | 'running';
+export type ToolStatus = 'done' | 'failed' | 'denied' | 'awaiting' | 'running' | 'no_result';
 
 const DENIED = new Set(['denied', 'blocked', 'expired']);
 
-function statusOf(item: ToolItem, trace: TraceToolCallDto | undefined): Status {
+export function toolStatus(
+  item: ToolItem,
+  trace: TraceToolCallDto | undefined,
+  awaitingApproval: boolean,
+  turnInFlight: boolean,
+): ToolStatus {
   if (trace && (DENIED.has(trace.outcome) || (trace.decision && DENIED.has(trace.decision)))) return 'denied';
-  if (!item.result) return 'running';
-  return item.result.toolOk === false ? 'failed' : 'ok';
+  if (item.result) return item.result.toolOk === false ? 'failed' : 'done';
+  if (awaitingApproval) return 'awaiting';
+  return turnInFlight ? 'running' : 'no_result';
 }
 
-const STATUS_LABEL: Record<Status, { icon: string; text: string }> = {
-  ok: { icon: '✓', text: 'ok' },
-  failed: { icon: '✗', text: 'failed' },
-  denied: { icon: '⊘', text: 'denied' },
-  running: { icon: '…', text: 'no result' },
+function seconds(ms: number | null | undefined): string {
+  return ms === null || ms === undefined ? '' : ` ${(ms / 1000).toFixed(ms < 100 ? 2 : 1)}s`;
+}
+
+const STATUS_TEXT: Record<ToolStatus, { text: string; tone: string }> = {
+  done: { text: 'done', tone: 'text-ok' },
+  failed: { text: 'failed', tone: 'text-danger' },
+  denied: { text: 'denied', tone: 'text-danger' },
+  awaiting: { text: 'awaiting approval', tone: 'text-warn' },
+  running: { text: 'running…', tone: 'text-warn' },
+  no_result: { text: 'no result', tone: 'text-muted' },
 };
 
-function ToolCard({
+/** "812 in · 96 out · gpt-a · 1.8s · $0.0024": one model round's metrics, from the trace. */
+export function roundMetrics(call: TraceLlmCallDto): string {
+  return [
+    `${formatCount(call.promptTokens)} in`,
+    `${formatCount(call.completionTokens)} out`,
+    call.model,
+    `${(call.latencyMs / 1000).toFixed(1)}s`,
+    formatCost(call.costUsd),
+  ].join(' · ');
+}
+
+const ROW = 'grid grid-cols-[1rem_3.5rem_minmax(0,12rem)_minmax(0,1fr)_auto] items-baseline gap-x-2';
+
+function ToolRow({
   item,
   trace,
+  round,
+  approval,
+  turnInFlight,
   defaultOpen,
 }: {
   item: ToolItem;
   trace?: TraceToolCallDto;
+  /** The round's LLM call, set on the first tool of each round. */
+  round?: TraceLlmCallDto;
+  approval?: ApprovalView;
+  turnInFlight: boolean;
   defaultOpen: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const status = statusOf(item, trace);
-  const label = STATUS_LABEL[status];
+  const status = toolStatus(item, trace, approval?.status === 'pending', turnInFlight);
+  const label = STATUS_TEXT[status];
+  const note = approval?.summary ?? (trace?.risk ? `risk: ${trace.risk}` : '');
   return (
-    <li className="rounded-md border border-border bg-surface">
+    <li>
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex min-h-11 w-full flex-wrap items-center gap-2 px-3 py-2 text-left text-sm"
+        className={`${ROW} w-full rounded px-1 py-0.5 text-left hover:bg-surface-2`}
       >
-        <span
-          aria-hidden="true"
-          className={status === 'ok' ? 'text-ok' : status === 'running' ? 'text-muted' : 'text-danger'}
-        >
-          {label.icon}
+        <span aria-hidden="true" className="text-muted">
+          {status === 'running' ? '⟳' : '┌'}
         </span>
-        <span className="font-mono font-medium">{item.name}</span>
-        <span className="sr-only">{label.text}</span>
-        {status !== 'ok' && status !== 'running' && <Badge tone="danger">{label.text}</Badge>}
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted">
-          {summariseArguments(item.arguments)}
+        <span className="text-muted">tool</span>
+        <span className="truncate">{item.name}</span>
+        <span className="truncate text-muted">{note}</span>
+        <span className={label.tone}>
+          {label.text}
+          {status === 'done' || status === 'failed' ? seconds(trace?.durationMs) : ''}
         </span>
       </button>
-      <div className="flex flex-wrap gap-1 px-3 pb-2">
-        {item.result?.untrusted && (
-          <Badge tone="warn" title="Not replayed to the model on later turns">
-            untrusted · not replayed to the model on later turns
-          </Badge>
-        )}
-        {item.result?.truncated && <Badge>truncated</Badge>}
-        {trace && (
-          <>
-            <RiskBadge risk={trace.risk} />
-            {trace.decision && <Badge>decision: {trace.decision}</Badge>}
-            {trace.durationMs !== null && trace.durationMs !== undefined && (
-              <Badge>{formatDuration(trace.durationMs)}</Badge>
-            )}
-            {trace.approvalId && <Badge tone="accent">approval required</Badge>}
-          </>
-        )}
-      </div>
+      {round && (
+        <p className={`${ROW} px-1 text-muted`}>
+          <span />
+          <span />
+          <span className="col-span-3 truncate">{roundMetrics(round)}</span>
+        </p>
+      )}
       {open && (
-        <div className="space-y-2 border-t border-border p-3">
+        <div className="my-1 ml-6 space-y-2">
           <div>
-            <p className="text-xs font-medium text-muted">Arguments</p>
+            <p className="text-muted">Arguments</p>
             {/* Tool data is always plain text: never markdown or HTML. */}
-            <pre className="max-h-64 overflow-auto rounded bg-surface-2 p-2 font-mono text-xs whitespace-pre-wrap">
+            <pre className="max-h-64 overflow-auto rounded bg-surface-2 p-2 whitespace-pre-wrap">
               {pretty(item.arguments)}
             </pre>
           </div>
           <div>
-            <p className="text-xs font-medium text-muted">Result</p>
-            <pre className="max-h-64 overflow-auto rounded bg-surface-2 p-2 font-mono text-xs whitespace-pre-wrap">
+            <p className="text-muted">
+              Result
+              {item.result?.untrusted && ' · untrusted, not replayed to the model on later turns'}
+              {item.result?.truncated && ' · truncated'}
+            </p>
+            <pre className="max-h-64 overflow-auto rounded bg-surface-2 p-2 whitespace-pre-wrap">
               {item.result ? pretty(item.result.content) : 'No result was stored.'}
             </pre>
           </div>
@@ -95,68 +119,85 @@ function ToolCard({
 }
 
 /**
- * The tool block of a turn: collapsed to "Used N tools" by default (or expanded, per the user's
- * preference), with live "running…" rows while the turn is in flight.
+ * A turn's tool activity as compact rows (3.3.1 spec section 6.3): status glyph, kind, tool name,
+ * the approval or risk note, and the status with its duration. A muted line under each model
+ * round's first tool shows that round's tokens, model, latency and cost. Clicking a row shows its
+ * arguments and result, as plain text.
  */
 export function ToolActivity({
   tools,
   interim,
   live = [],
   trace,
+  llmCalls,
+  approvals = [],
+  turnInFlight = false,
   expandByDefault,
 }: {
   tools: ToolItem[];
   interim: string[];
   live?: LiveTool[];
-  /** Enrichment by provider tool-call id, only when the trace data links them. */
+  /** Trace enrichment by provider tool-call id. */
   trace?: Map<string, TraceToolCallDto>;
+  /** The trace's LLM calls by id, for the per-round metrics line. */
+  llmCalls?: Map<string, TraceLlmCallDto>;
+  approvals?: ApprovalView[];
+  turnInFlight?: boolean;
   expandByDefault: boolean;
 }) {
-  const [open, setOpen] = useState(expandByDefault);
   const pendingLive = live.filter((l) => !tools.some((t) => t.toolCallId === l.toolCallId));
   if (tools.length === 0 && pendingLive.length === 0) return null;
 
+  const seenRounds = new Set<string>();
+  const roundFor = (t: TraceToolCallDto | undefined) => {
+    const id = t?.llmCallId;
+    if (!id || seenRounds.has(id)) return undefined;
+    seenRounds.add(id);
+    return llmCalls?.get(id);
+  };
+  // Approvals carry no tool-call id; match the turn's approvals by tool name, newest first.
+  const approvalFor = (name: string) =>
+    [...approvals].reverse().find((a) => a.toolName === name && a.status === 'pending') ??
+    approvals.find((a) => a.toolName === name);
+
   return (
-    <div className="my-2">
-      {tools.length > 0 && (
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-          className="min-h-11 rounded-md px-2 text-sm text-muted hover:bg-surface-2"
-        >
-          {open ? '▾' : '▸'} Used {tools.length} {tools.length === 1 ? 'tool' : 'tools'}
-        </button>
-      )}
-      {open && tools.length > 0 && (
-        <div className="mt-1 space-y-2">
-          {interim.map((text, i) => (
-            <p key={i} className="text-sm break-words whitespace-pre-wrap text-muted">
-              {text}
-            </p>
-          ))}
-          <ul className="space-y-2">
-            {tools.map((item) => (
-              <ToolCard
-                key={item.toolCallId}
-                item={item}
-                trace={trace?.get(item.toolCallId)}
-                defaultOpen={false}
-              />
-            ))}
-          </ul>
-        </div>
-      )}
-      {pendingLive.length > 0 && (
-        <ul className="mt-1 space-y-1" aria-label="Tools running">
-          {pendingLive.map((tool) => (
-            <li key={tool.toolCallId} className="flex items-center gap-2 text-sm text-muted">
-              <span aria-hidden="true">⚙</span>
-              <span className="font-mono">{tool.toolName}</span> running…
+    <div className="my-2 border-l border-border pl-2 font-mono text-xs">
+      {interim.map((text, i) => (
+        <p key={i} className="mb-1 font-sans text-sm break-words whitespace-pre-wrap text-muted">
+          {text}
+        </p>
+      ))}
+      <ul aria-label="Tool activity">
+        {tools.map((item) => {
+          const t = trace?.get(item.toolCallId);
+          return (
+            <ToolRow
+              key={item.toolCallId}
+              item={item}
+              trace={t}
+              round={roundFor(t)}
+              approval={approvalFor(item.name)}
+              turnInFlight={turnInFlight}
+              defaultOpen={expandByDefault}
+            />
+          );
+        })}
+        {pendingLive.map((tool) => {
+          const approval = approvalFor(tool.toolName);
+          const awaiting = approval?.status === 'pending';
+          return (
+            <li key={tool.toolCallId} className={`${ROW} px-1 py-0.5`}>
+              <span aria-hidden="true" className="text-muted">
+                ⟳
+              </span>
+              <span className="text-muted">tool</span>
+              <span className="truncate">{tool.toolName}</span>
+              <span className="truncate text-muted">{approval?.summary ?? ''}</span>
+              <span className="text-warn">{awaiting ? 'awaiting approval' : 'running…'}</span>
             </li>
-          ))}
-        </ul>
-      )}
+          );
+        })}
+      </ul>
     </div>
   );
 }

@@ -10,25 +10,25 @@ const signedOut = http.get('*/api/auth/session', () => HttpResponse.json({ authe
 
 describe('safeNext', () => {
   it.each([
-    ['/chats/abc', '/chats/abc'],
+    ['/prompts/abc', '/prompts/abc'],
     ['/audit?tab=tools', '/audit?tab=tools'],
-    ['//evil.example', '/chats'],
-    ['//evil.example/chats', '/chats'],
-    ['/\\evil.example', '/chats'],
-    ['https://evil.example', '/chats'],
-    ['javascript:alert(1)', '/chats'],
-    ['JAVASCRIPT:alert(1)', '/chats'],
-    ['chats', '/chats'],
-    ['', '/chats'],
-    [null, '/chats'],
-    ['/login?next=/x', '/chats'],
-    ['/\u0000x', '/chats'],
+    ['//evil.example', '/overview'],
+    ['//evil.example/chats', '/overview'],
+    ['/\\evil.example', '/overview'],
+    ['https://evil.example', '/overview'],
+    ['javascript:alert(1)', '/overview'],
+    ['JAVASCRIPT:alert(1)', '/overview'],
+    ['chats', '/overview'],
+    ['', '/overview'],
+    [null, '/overview'],
+    ['/login?next=/x', '/overview'],
+    ['/\u0000x', '/overview'],
   ])('%s → %s', (input, expected) => {
     expect(safeNext(input)).toBe(expected);
   });
 
   it('builds login paths with an encoded next', () => {
-    expect(loginPath('/chats/abc')).toBe('/login?next=%2Fchats%2Fabc');
+    expect(loginPath('/prompts/abc')).toBe('/login?next=%2Fprompts%2Fabc');
     expect(loginPath('/')).toBe('/login');
   });
 });
@@ -83,7 +83,7 @@ describe('auth gate', () => {
     await user.type(await screen.findByLabelText('Username'), 'kevin');
     await user.type(screen.getByLabelText('Password'), 'pw');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/chats$/));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/overview$/));
   });
 
   it('shows a generic error and the rate-limit wait', async () => {

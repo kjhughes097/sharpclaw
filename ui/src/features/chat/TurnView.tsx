@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { failReasonMessage } from '../../api/errors';
 import type { LiveTurn } from '../../api/live';
-import type { TraceToolCallDto } from '../../api/types';
-import { Badge, Button, RelativeTime } from '../../components/ui';
+import type { TraceLlmCallDto, TraceToolCallDto } from '../../api/types';
+import { Badge, Button } from '../../components/ui';
 import { AssistantText, Markdown, PlainText } from '../../lib/markdown';
-import { serverNow, useServerNow } from '../../lib/time';
+import { formatTimeOfDay, serverNow, useServerNow } from '../../lib/time';
 import { ApprovalCard, type ApprovalView } from '../approvals/ApprovalCard';
 import { ToolActivity } from './ToolActivity';
 import type { Turn } from './turns';
@@ -51,20 +51,40 @@ function StreamingBubble({ text, since }: { text: string; since: string }) {
   );
 }
 
+const LABEL = 'text-[0.7rem] tracking-wide text-muted uppercase';
+
+/** "KEN · 10:40:00": who spoke and when (local time). */
+function SpeakerLabel({ name, at }: { name: string; at: string | null | undefined }) {
+  return (
+    <p className={LABEL}>
+      {name}
+      {at && <> · {formatTimeOfDay(at)}</>}
+    </p>
+  );
+}
+
+/**
+ * One turn (3.3.1 spec section 6.3): the user's message in a raised block, the agent's reply (or
+ * the streaming bubble) in the assistant colour, then the tool rows and any approval cards.
+ */
 export function TurnView({
   turn,
+  agentName,
   live,
   approvals,
   trace,
+  llmCalls,
   expandTools,
   claimedAt,
   highlighted,
   onResend,
 }: {
   turn: Turn;
+  agentName: string;
   live: LiveTurn | undefined;
   approvals: ApprovalView[];
   trace: Map<string, TraceToolCallDto> | undefined;
+  llmCalls?: Map<string, TraceLlmCallDto> | undefined;
   expandTools: boolean;
   claimedAt: string | null;
   highlighted: boolean;
@@ -75,25 +95,28 @@ export function TurnView({
   const inFlight = status === 'claimed' || (!!live && !turn.reply);
 
   return (
-    <li className="space-y-2" id={user ? `msg-${user.id}` : undefined} data-turn={turn.correlationId}>
+    <li
+      className="max-w-4xl space-y-2"
+      id={user ? `msg-${user.id}` : undefined}
+      data-turn={turn.correlationId}
+    >
       {user && (
-        <div className="flex flex-col items-end">
+        <div>
+          <SpeakerLabel name={user.sentByUser ?? 'you'} at={user.createdAt} />
           <div
-            className={`max-w-[85%] rounded-2xl rounded-br-sm bg-accent-soft px-4 py-2 ${highlighted ? 'ring-2 ring-focus' : ''}`}
+            className={`mt-0.5 border-l-2 border-accent bg-surface-2 px-3 py-1.5 ${highlighted ? 'ring-2 ring-focus' : ''}`}
           >
             <span className="sr-only">You said: </span>
             <PlainText text={user.content} />
           </div>
-          <div className="mt-1 flex items-center gap-2 text-xs text-muted">
-            {status === 'pending' && <Badge tone="warn">Queued</Badge>}
-            {status === 'claimed' && <Badge tone="accent">In progress</Badge>}
-            <RelativeTime iso={user.createdAt} />
-          </div>
+          {(status === 'pending' || status === 'claimed') && (
+            <div className="mt-1 flex items-center gap-2 text-xs text-muted">
+              {status === 'pending' && <Badge tone="warn">Queued</Badge>}
+              {status === 'claimed' && <Badge tone="accent">In progress</Badge>}
+            </div>
+          )}
           {status === 'failed' && (
-            <div
-              role="alert"
-              className="mt-2 max-w-[85%] rounded-md border border-danger bg-danger-soft p-2 text-sm"
-            >
+            <div role="alert" className="mt-2 rounded-md border border-danger bg-danger-soft p-2 text-sm">
               <p>{failReasonMessage(user.failReason)}</p>
               <Button className="mt-2" onClick={() => onResend(user.content)}>
                 Resend
@@ -103,31 +126,39 @@ export function TurnView({
         </div>
       )}
 
+      {(turn.reply || inFlight) && (
+        <div>
+          <SpeakerLabel name={agentName} at={turn.reply?.createdAt ?? claimedAt} />
+          <div className="mt-0.5 text-assistant">
+            {turn.reply ? (
+              <>
+                <span className="sr-only">Assistant said: </span>
+                <AssistantText text={turn.reply.content} />
+              </>
+            ) : (
+              <StreamingBubble
+                text={live?.text ?? ''}
+                since={claimedAt ?? user?.createdAt ?? new Date(serverNow()).toISOString()}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
       <ToolActivity
         tools={turn.tools}
         interim={turn.interim}
         live={turn.reply ? [] : live?.tools}
         trace={trace}
+        llmCalls={llmCalls}
+        approvals={approvals}
+        turnInFlight={inFlight}
         expandByDefault={expandTools}
       />
 
       {approvals.map((approval) => (
         <ApprovalCard key={approval.id} approval={approval} />
       ))}
-
-      {turn.reply ? (
-        <div className="max-w-[92%] rounded-2xl rounded-bl-sm border border-border bg-surface px-4 py-2">
-          <span className="sr-only">Assistant said: </span>
-          <AssistantText text={turn.reply.content} />
-        </div>
-      ) : inFlight ? (
-        <div className="max-w-[92%] rounded-2xl rounded-bl-sm border border-border bg-surface px-4 py-2">
-          <StreamingBubble
-            text={live?.text ?? ''}
-            since={claimedAt ?? user?.createdAt ?? new Date(serverNow()).toISOString()}
-          />
-        </div>
-      ) : null}
     </li>
   );
 }

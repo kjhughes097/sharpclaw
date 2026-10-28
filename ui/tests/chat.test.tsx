@@ -83,15 +83,18 @@ beforeEach(() => clearDraftsForTests());
 describe('thread view', () => {
   it('renders user text plainly and assistant text as markdown', async () => {
     useThread({ messages: [user1, reply1] });
-    const { container } = renderApp(`/chats/${T}`);
+    const { container } = renderApp(`/prompts/${T}`);
     expect(await screen.findByText('Plan my **trip**')).toBeInTheDocument();
     expect(within(container).getByText('the plan').tagName).toBe('STRONG');
-    expect(screen.getByText('~5.1k / 32k tokens')).toBeInTheDocument();
+    // Context moved from the header to the status bar.
+    expect(
+      await within(screen.getByLabelText('Session status')).findByText(/5,100 \/ 32,000 \(15\.9%\)/),
+    ).toBeInTheDocument();
   });
 
   it('shows the sent message at once and dedupes it against message.created', async () => {
     const state = useThread({ messages: [user1, reply1] });
-    const { user, services } = renderApp(`/chats/${T}`);
+    const { user, services } = renderApp(`/prompts/${T}`);
     const box = await screen.findByLabelText('Message');
     await user.type(box, 'Book the hotel');
     await user.click(screen.getByRole('button', { name: 'Send' }));
@@ -125,7 +128,7 @@ describe('thread view', () => {
         }),
       ],
     });
-    const { user } = renderApp(`/chats/${T}`);
+    const { user } = renderApp(`/prompts/${T}`);
     expect(await screen.findByText('The model provider timed out. Try again.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Resend' }));
     await waitFor(() => expect(state.posts).toEqual(['try this']));
@@ -136,7 +139,7 @@ describe('thread view', () => {
       messages: [fixtures.message({ id: 'u1', seq: 1, content: 'hi', status: 'claimed' })],
       detail: detail({ inFlight: { correlationId: 'u1', claimedAt: '2026-10-25T11:59:58Z' } }),
     });
-    const { services } = renderApp(`/chats/${T}`);
+    const { services } = renderApp(`/prompts/${T}`);
     expect(await screen.findByText(/Thinking…/)).toBeInTheDocument();
     act(() => {
       services.source().open();
@@ -176,7 +179,7 @@ describe('thread view', () => {
       messages: [fixtures.message({ id: 'u1', seq: 1, content: 'hi', status: 'claimed' })],
       detail: detail({ inFlight: { correlationId: 'u1', claimedAt: '2026-10-25T11:59:58Z' } }),
     });
-    const { services } = renderApp(`/chats/${T}`);
+    const { services } = renderApp(`/prompts/${T}`);
     await screen.findByText(/Thinking…/);
     act(() => {
       services.source().emit('delta', { correlationId: 'u1', content: 'Hello', threadId: T });
@@ -193,7 +196,7 @@ describe('thread view', () => {
         { enabled: false, remainingUsd: 0, todaySpendUsd: 1, lastSeenAt: '2026-10-25T11:00:00Z' },
       ),
     });
-    renderApp(`/chats/${T}`);
+    renderApp(`/prompts/${T}`);
     expect(
       await screen.findByText('This agent is disabled. Messages will queue until it is enabled.'),
     ).toBeInTheDocument();
@@ -205,7 +208,7 @@ describe('thread view', () => {
     const d = detail();
     d.thread.context = { droppedTurns: 4, estimatedTokens: 2900, windowTokens: 3000 };
     useThread({ detail: d });
-    renderApp(`/chats/${T}`);
+    renderApp(`/prompts/${T}`);
     expect(
       await screen.findByText('The model no longer sees the oldest 4 turns of this conversation.'),
     ).toBeInTheDocument();
@@ -221,7 +224,7 @@ describe('thread view', () => {
         }),
       ),
     );
-    const { user } = renderApp(`/chats/${T}`);
+    const { user } = renderApp(`/prompts/${T}`);
     await user.type(await screen.findByLabelText('Message'), 'half-written');
     await user.click(await screen.findByRole('link', { name: /Other/ }));
     await waitFor(() => expect(screen.getByLabelText('Message')).toHaveValue(''));
@@ -239,7 +242,7 @@ describe('thread view', () => {
       matches: q === '(pointer: fine)',
     })) as typeof window.matchMedia;
     try {
-      const { user } = renderApp(`/chats/${T}`);
+      const { user } = renderApp(`/prompts/${T}`);
       const box = await screen.findByLabelText('Message');
       await user.type(box, 'line one{Shift>}{Enter}{/Shift}line two');
       expect(box).toHaveValue('line one\nline two');
@@ -252,7 +255,7 @@ describe('thread view', () => {
 
   it('on touch devices Enter is a newline and Send sends', async () => {
     const state = useThread();
-    const { user } = renderApp(`/chats/${T}`);
+    const { user } = renderApp(`/prompts/${T}`);
     const box = await screen.findByLabelText('Message');
     await user.type(box, 'a{Enter}b');
     expect(box).toHaveValue('a\nb');
@@ -263,7 +266,7 @@ describe('thread view', () => {
 
   it('disables Send when empty or over the limit and shows a counter near it', async () => {
     useThread();
-    renderApp(`/chats/${T}`);
+    renderApp(`/prompts/${T}`);
     const box = await screen.findByLabelText('Message');
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
     fireEvent.change(box, { target: { value: 'x'.repeat(32001) } });
@@ -278,7 +281,7 @@ describe('thread view', () => {
         apiError(400, 'validation_failed', 'content exceeds 32000 characters.'),
       ),
     );
-    const { user } = renderApp(`/chats/${T}`);
+    const { user } = renderApp(`/prompts/${T}`);
     const box = await screen.findByLabelText('Message');
     await user.type(box, 'hello');
     await user.click(screen.getByRole('button', { name: 'Send' }));
@@ -301,7 +304,7 @@ describe('scrolling', () => {
       messages: [fixtures.message({ id: 'u1', seq: 1, content: 'hi', status: 'claimed' })],
       detail: detail({ inFlight: { correlationId: 'u1', claimedAt: '2026-10-25T11:59:58Z' } }),
     });
-    const { services, user } = renderApp(`/chats/${T}`);
+    const { services, user } = renderApp(`/prompts/${T}`);
     await screen.findByText(/Thinking…/);
     const scroller = screen.getByTestId('message-scroll');
     const m = scrollMetrics(scroller, { scrollHeight: 2000, clientHeight: 500 });
@@ -330,7 +333,7 @@ describe('scrolling', () => {
           : HttpResponse.json({ messages: state.messages, hasMoreBefore: true });
       }),
     );
-    const { user } = renderApp(`/chats/${T}`);
+    const { user } = renderApp(`/prompts/${T}`);
     await screen.findByText('new one');
     const scroller = screen.getByTestId('message-scroll');
     // 200 px per rendered turn plus 400 px of chrome.
@@ -376,13 +379,17 @@ describe('tool activity', () => {
     fixtures.message({ id: 'r1', seq: 4, role: 'assistant', correlationId: 'u1', content: 'Done' }),
   ];
 
-  it('collapses to a summary and expands to plain-text cards with badges', async () => {
+  it('shows a compact row per tool that expands to plain-text arguments and result', async () => {
     useThread({ messages: toolRows });
-    const { user, container } = renderApp(`/chats/${T}`);
-    await user.click(await screen.findByRole('button', { name: /Used 1 tool/ }));
-    expect(screen.getByText(/untrusted · not replayed to the model on later turns/)).toBeInTheDocument();
-    expect(screen.getByText('truncated')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /workspace_read/ }));
+    const { user, container } = renderApp(`/prompts/${T}`);
+    const row = await screen.findByRole('button', { name: /workspace_read/ });
+    expect(row).toHaveTextContent('done');
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(/not markdown/)).toBeNull();
+    await user.click(row);
+    expect(
+      screen.getByText(/untrusted, not replayed to the model on later turns · truncated/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/\*\*not markdown\*\* <script>x<\/script>/)).toBeInTheDocument();
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('b')).toBeNull();
@@ -390,7 +397,7 @@ describe('tool activity', () => {
     expect(screen.queryByText(/risk:/)).toBeNull();
   });
 
-  it('enriches cards only when the trace links the tool-call id', async () => {
+  it('adds risk, duration and round metrics when the trace links the tool call', async () => {
     useThread({ messages: toolRows });
     server.use(
       http.get('*/api/threads/:id/trace', () =>
@@ -404,9 +411,25 @@ describe('tool activity', () => {
               createdAt: '2026-10-25T11:00:00Z',
               claimedAt: null,
               completedAt: null,
-              llmCalls: [],
+              llmCalls: [
+                {
+                  id: 'llm-1',
+                  model: 'gpt-a',
+                  status: 'ok',
+                  purpose: 'chat',
+                  promptTokens: 812,
+                  completionTokens: 96,
+                  estimatedPromptTokens: null,
+                  costUsd: 0.0024,
+                  usageKnown: true,
+                  latencyMs: 1800,
+                  ttftMs: 300,
+                  errorCode: null,
+                  createdAt: '2026-10-25T11:00:00Z',
+                },
+              ],
               approvals: [],
-              totals: { costUsd: 0, promptTokens: 0, completionTokens: 0, llmCalls: 0, toolCalls: 1 },
+              totals: { costUsd: 0.0024, promptTokens: 812, completionTokens: 96, llmCalls: 1, toolCalls: 1 },
               toolCalls: [
                 {
                   id: 'tc',
@@ -419,6 +442,7 @@ describe('tool activity', () => {
                   durationMs: 12,
                   createdAt: '2026-10-25T11:00:00Z',
                   reportedAt: '2026-10-25T11:00:01Z',
+                  llmCallId: 'llm-1',
                 },
               ],
             },
@@ -426,11 +450,13 @@ describe('tool activity', () => {
         }),
       ),
     );
-    const { user } = renderApp(`/chats/${T}`);
-    await user.click(await screen.findByRole('button', { name: /Used 1 tool/ }));
+    renderApp(`/prompts/${T}`);
     expect(await screen.findByText('risk: low')).toBeInTheDocument();
-    expect(screen.getByText('decision: allowed')).toBeInTheDocument();
-    expect(screen.getByText('12 ms')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /workspace_read/ })).toHaveTextContent('done 0.01s');
+    expect(screen.getByText('812 in · 96 out · gpt-a · 1.8s · $0.0024')).toBeInTheDocument();
+    // The status bar sums the trace.
+    expect(screen.getByLabelText('Session status')).toHaveTextContent('Tokens 908 (in 812 · out 96)');
+    expect(screen.getByLabelText('Session status')).toHaveTextContent('Cost $0.0024');
   });
 
   it('shows live "running…" rows from tool.requested', async () => {
@@ -438,7 +464,7 @@ describe('tool activity', () => {
       messages: [fixtures.message({ id: 'u1', seq: 1, content: 'go', status: 'claimed' })],
       detail: detail({ inFlight: { correlationId: 'u1', claimedAt: '2026-10-25T11:59:58Z' } }),
     });
-    const { services } = renderApp(`/chats/${T}`);
+    const { services } = renderApp(`/prompts/${T}`);
     await screen.findByText(/Thinking…/);
     act(() =>
       services
@@ -454,8 +480,8 @@ describe('tool activity', () => {
   });
 });
 
-describe('thread list', () => {
-  it('shows rows with badges and opens a new chat with an enabled agent', async () => {
+describe('sessions', () => {
+  it('shows rows with badges and starts a new session with the selected agent', async () => {
     server.use(
       http.get('*/api/threads', () =>
         HttpResponse.json({
@@ -469,7 +495,7 @@ describe('thread list', () => {
         }),
       ),
       http.post('*/api/threads', async ({ request }) => {
-        expect(await request.json()).toEqual({ agentId: 'agent-1', title: null });
+        expect(await request.json()).toEqual({ agentId: 'agent-1', title: null, model: null });
         return HttpResponse.json(
           { thread: { id: 'thread-new', agentId: 'agent-1', title: null, createdAt: '' } },
           { status: 201 },
@@ -480,15 +506,16 @@ describe('thread list', () => {
         HttpResponse.json({ messages: [], hasMoreBefore: false }),
       ),
     );
-    const { user } = renderApp('/chats');
-    expect(await screen.findByText('2 approvals')).toBeInTheDocument();
-    expect(screen.getByText('1 queued')).toBeInTheDocument();
-    expect(screen.getByText('replying')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'New chat' }));
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).queryByText('off')).toBeNull();
-    await user.click(within(dialog).getByRole('button', { name: /assistant/ }));
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/chats/thread-new'));
+    const { user } = renderApp('/prompts');
+    const sidebar = await screen.findByRole('complementary', { name: 'Sessions' });
+    expect(await within(sidebar).findByText('2 approvals')).toBeInTheDocument();
+    expect(within(sidebar).getByText('1 queued')).toBeInTheDocument();
+    expect(within(sidebar).getByText('replying')).toBeInTheDocument();
+    // Disabled agents can't be picked for a new session.
+    const agentSelect = screen.getByRole('combobox', { name: 'Agent' });
+    expect(within(agentSelect).queryByRole('option', { name: /off/ })).toBeNull();
+    await user.click(within(sidebar).getByRole('button', { name: '+ New session' }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/prompts/thread-new'));
   });
 
   it('pages with Load more', async () => {
@@ -503,7 +530,7 @@ describe('thread list', () => {
           : HttpResponse.json({ threads: [fixtures.thread()], nextCursor: 'c2' });
       }),
     );
-    const { user } = renderApp('/chats');
+    const { user } = renderApp('/prompts');
     await user.click(await screen.findByRole('button', { name: 'Load more' }));
     expect(await screen.findByText('Second page')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
@@ -511,7 +538,7 @@ describe('thread list', () => {
 
   it('has no accessibility violations', async () => {
     useThread({ messages: [user1, reply1] });
-    const { container } = renderApp(`/chats/${T}`);
+    const { container } = renderApp(`/prompts/${T}`);
     await screen.findByText('Plan my **trip**');
     expect(await axe(container)).toHaveNoViolations();
   });

@@ -102,7 +102,7 @@ describe('audit page', () => {
     expect(row).toHaveTextContent('400 ms');
     expect(within(row).getByRole('link', { name: /thread/i })).toHaveAttribute(
       'href',
-      '/chats/thread-abcdef123456',
+      '/prompts/thread-abcdef123456?panel=trace',
     );
     expect(await axe(container)).toHaveNoViolations();
   });

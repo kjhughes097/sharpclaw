@@ -1,9 +1,6 @@
 import { DropdownMenu } from 'radix-ui';
 import { useState } from 'react';
-import { Link } from 'react-router';
 import type { ThreadDetailResponse } from '../../api/types';
-import { Meter } from '../../components/ui';
-import { formatTokens } from '../../lib/time';
 import { useUpdateThread } from './useUpdateThread';
 
 type Detail = ThreadDetailResponse;
@@ -11,55 +8,49 @@ type Detail = ThreadDetailResponse;
 const MENU_ITEM =
   'flex min-h-11 cursor-pointer items-center rounded px-3 text-sm outline-none data-[highlighted]:bg-surface-2';
 
-/** Title (click to rename), agent and model, the context meter, and the chat menu. */
+/**
+ * The thread's title, small and muted (click to rename), with a menu: Rename, Trace, Archive or
+ * Unarchive, and the tool-details preference. Agent, model and context live in the status bar.
+ */
 export function ThreadHeader({
   threadId,
   thread,
-  agent,
-  backLink,
   onOpenTrace,
   expandTools,
   onExpandToolsChange,
 }: {
   threadId: string;
   thread: Detail['thread'];
-  agent: Detail['agent'];
-  backLink?: boolean;
   onOpenTrace: () => void;
   expandTools: boolean;
   onExpandToolsChange: (expand: boolean) => void;
 }) {
+  const [editing, setEditing] = useState(false);
   return (
-    <header className="flex flex-wrap items-center gap-2 border-b border-border bg-surface px-3 py-1">
-      {backLink && (
-        <Link
-          to="/chats"
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-surface-2 md:hidden"
-          aria-label="Back to chats"
-        >
-          ←
-        </Link>
-      )}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <TitleEditor key={thread.title ?? ''} threadId={threadId} title={thread.title ?? null} />
-        <p className="truncate px-1 text-xs text-muted">
-          {agent.name} · {agent.model}
-          {thread.archived && ' · archived'}
-        </p>
-      </div>
-      <ContextIndicator context={thread.context} />
+    <header className="flex items-center gap-1 px-3 pt-1">
+      <TitleEditor
+        key={thread.title ?? ''}
+        threadId={threadId}
+        title={thread.title ?? null}
+        editing={editing}
+        onEditingChange={setEditing}
+      />
+      {thread.archived && <span className="text-xs text-muted">· archived</span>}
       <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md hover:bg-surface-2"
+          className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-muted hover:bg-surface-2"
           aria-label="Chat menu"
         >
           ⋯
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
-            align="end"
+            align="start"
             className="z-30 min-w-56 rounded-md border border-border bg-surface p-1 shadow-lg"
           >
+            <DropdownMenu.Item className={MENU_ITEM} onSelect={() => setEditing(true)}>
+              Rename
+            </DropdownMenu.Item>
             <DropdownMenu.Item className={MENU_ITEM} onSelect={onOpenTrace}>
               Trace
             </DropdownMenu.Item>
@@ -78,26 +69,17 @@ export function ThreadHeader({
   );
 }
 
-function ContextIndicator({ context }: { context: Detail['thread']['context'] }) {
-  if (!context) return null;
-  const label = `~${formatTokens(context.estimatedTokens)} / ${formatTokens(context.windowTokens)} tokens`;
-  return (
-    <div className="w-36" title="Approximate: from the last time the gateway built this thread's context">
-      <p className="text-xs text-muted">
-        {label}
-        <span className="sr-only"> (approximate)</span>
-      </p>
-      <Meter
-        value={context.estimatedTokens}
-        max={context.windowTokens}
-        label="Context window used (approximate)"
-      />
-    </div>
-  );
-}
-
-function TitleEditor({ threadId, title }: { threadId: string; title: string | null }) {
-  const [editing, setEditing] = useState(false);
+function TitleEditor({
+  threadId,
+  title,
+  editing,
+  onEditingChange: setEditing,
+}: {
+  threadId: string;
+  title: string | null;
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+}) {
   const [value, setValue] = useState(title ?? '');
   const rename = useUpdateThread(threadId);
 
@@ -105,7 +87,7 @@ function TitleEditor({ threadId, title }: { threadId: string; title: string | nu
     return (
       <button
         type="button"
-        className="min-h-11 min-w-0 truncate rounded px-1 text-left text-base font-semibold hover:bg-surface-2"
+        className="min-h-8 min-w-0 truncate rounded px-1 text-left text-xs text-muted hover:bg-surface-2"
         onClick={() => {
           setValue(title ?? '');
           setEditing(true);
@@ -120,8 +102,7 @@ function TitleEditor({ threadId, title }: { threadId: string; title: string | nu
   const save = () => {
     const trimmed = value.trim();
     setEditing(false);
-    if (trimmed && trimmed !== title && trimmed.length <= 120)
-      rename.mutate({ title: trimmed, archived: null });
+    if (trimmed && trimmed !== title && trimmed.length <= 120) rename.mutate({ title: trimmed });
   };
   return (
     <input
@@ -137,7 +118,7 @@ function TitleEditor({ threadId, title }: { threadId: string; title: string | nu
         if (e.key === 'Enter') save();
         if (e.key === 'Escape') setEditing(false);
       }}
-      className="min-h-11 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 font-semibold"
+      className="min-h-8 max-w-md min-w-0 flex-1 rounded-md border border-border bg-surface px-2 text-sm"
     />
   );
 }
@@ -147,10 +128,7 @@ function ArchiveItem({ threadId, archived }: { threadId: string; archived: boole
     nowArchived ? 'Chat archived.' : 'Chat restored.',
   );
   return (
-    <DropdownMenu.Item
-      className={MENU_ITEM}
-      onSelect={() => mutation.mutate({ title: null, archived: !archived })}
-    >
+    <DropdownMenu.Item className={MENU_ITEM} onSelect={() => mutation.mutate({ archived: !archived })}>
       {archived ? 'Unarchive' : 'Archive'}
     </DropdownMenu.Item>
   );

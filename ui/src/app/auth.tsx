@@ -23,28 +23,31 @@ const AuthContext = createContext<AuthApi | null>(null);
 
 const PLACEHOLDER_ORIGIN = 'http://sharpclaw.invalid';
 
+/** Where sign-in lands when there is no (safe) `next`. */
+export const DEFAULT_PATH = '/overview';
+
 /**
  * Only a same-site relative path may be a post-login destination: it must start with a single
- * `/` (not `//` or `/\`), and contain no scheme or control characters. Anything else → `/chats`.
+ * `/` (not `//` or `/\`), and contain no scheme or control characters. Anything else → `/overview`.
  */
 export function safeNext(next: string | null | undefined): string {
-  if (!next || typeof next !== 'string') return '/chats';
-  if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return '/chats';
+  if (!next || typeof next !== 'string') return DEFAULT_PATH;
+  if (!next.startsWith('/') || next.startsWith('//') || next.startsWith('/\\')) return DEFAULT_PATH;
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\\]/.test(next)) return '/chats';
+  if (/[\u0000-\u001f\\]/.test(next)) return DEFAULT_PATH;
   try {
     const url = new URL(next, PLACEHOLDER_ORIGIN);
-    if (url.origin !== PLACEHOLDER_ORIGIN) return '/chats';
-    if (url.pathname === '/' || url.pathname.startsWith('/login')) return '/chats';
+    if (url.origin !== PLACEHOLDER_ORIGIN) return DEFAULT_PATH;
+    if (url.pathname === '/' || url.pathname.startsWith('/login')) return DEFAULT_PATH;
     return url.pathname + url.search + url.hash;
   } catch {
-    return '/chats';
+    return DEFAULT_PATH;
   }
 }
 
 export function loginPath(returnTo: string): string {
   const next = safeNext(returnTo);
-  return next === '/chats' ? '/login' : `/login?next=${encodeURIComponent(next)}`;
+  return next === DEFAULT_PATH ? '/login' : `/login?next=${encodeURIComponent(next)}`;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

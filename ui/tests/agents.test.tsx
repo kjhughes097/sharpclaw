@@ -373,6 +373,62 @@ describe('agent detail', () => {
     server.use(...detailHandlers());
     renderApp('/agents/ghost');
     expect(await screen.findByText('Not found. It may have been removed.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to agents' })).toHaveAttribute('href', '/agents');
+    expect(screen.getByRole('link', { name: 'All agents' })).toHaveAttribute('href', '/agents');
+  });
+});
+
+describe('agent tab', () => {
+  it('shows usage, activity, recent sessions and this agent’s pending approvals', async () => {
+    const approvalQueries: string[] = [];
+    server.use(
+      ...detailHandlers(),
+      http.get('*/api/threads', ({ request }) => {
+        const url = new URL(request.url);
+        expect(url.searchParams.get('agentId')).toBe('agent-1');
+        return HttpResponse.json({ threads: [fixtures.thread({ queued: 1 })], nextCursor: null });
+      }),
+      http.get('*/api/approvals', ({ request }) => {
+        approvalQueries.push(new URL(request.url).search);
+        return HttpResponse.json({ approvals: [fixtures.approval()] });
+      }),
+    );
+    const { container } = renderApp('/agents/assistant');
+    expect(await screen.findByRole('heading', { level: 1, name: 'assistant' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open in Prompts' })).toHaveAttribute(
+      'href',
+      '/prompts?agent=assistant',
+    );
+    expect(await screen.findByRole('img', { name: 'Today: 0 tokens, $0.00' })).toBeInTheDocument();
+    expect(await screen.findByText('No messages yet.')).toBeInTheDocument();
+    const sessions = screen.getByRole('region', { name: 'Sessions' });
+    expect(await within(sessions).findByRole('link', { name: /Trip plan/ })).toHaveAttribute(
+      'href',
+      '/prompts/thread-1',
+    );
+    expect(within(sessions).getByRole('link', { name: 'View all' })).toHaveAttribute(
+      'href',
+      '/prompts?agent=assistant',
+    );
+    const pending = screen.getByRole('region', { name: 'Pending approvals' });
+    expect(await within(pending).findByText('Delete notes/a.md')).toBeInTheDocument();
+    expect(approvalQueries).toContain('?status=pending&agent=assistant&limit=50');
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('asks before disabling the agent', async () => {
+    let body: unknown;
+    server.use(
+      ...detailHandlers(),
+      http.patch('*/api/agents/:name', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(fixtures.agent({ enabled: false }));
+      }),
+    );
+    const { user } = renderApp('/agents/assistant');
+    await user.click(await screen.findByRole('button', { name: 'Disable' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Disable assistant?' });
+    expect(body).toBeUndefined();
+    await user.click(within(dialog).getByRole('button', { name: 'Disable' }));
+    await waitFor(() => expect(body).toMatchObject({ enabled: false }));
   });
 });
