@@ -190,6 +190,12 @@ public class Approval
     public string Reason { get; set; } = "";
     public string Status { get; set; } = "";
     public string? DecidedBy { get; set; }
+
+    /// <summary>
+    /// Who decided, when <see cref="DecidedBy"/> is <c>user</c>: the signed-in user's name, or
+    /// <c>admin_key</c> for an admin-key client (the CLI). Null for system decisions.
+    /// </summary>
+    public string? DecidedByUser { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime? DecidedAt { get; set; }

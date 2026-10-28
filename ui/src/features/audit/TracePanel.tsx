@@ -14,6 +14,7 @@ import {
   RiskBadge,
 } from '../../components/ui';
 import { formatCost, formatDuration, formatTokens } from '../../lib/time';
+import { deciderLabel } from '../approvals/decider';
 import { humanize, statusTone } from './auditFormat';
 
 /**
@@ -169,7 +170,7 @@ function TurnDetails({ turn }: { turn: TraceTurnDto }) {
               <Field label="Status">
                 <Badge tone={statusTone(a.status)}>{humanize(a.status)}</Badge>
               </Field>
-              <Field label="Decided by">{a.decidedBy ?? '—'}</Field>
+              <Field label="Decided by">{deciderLabel(a.decidedBy, a.decidedByUser) ?? '—'}</Field>
             </dl>
           </li>
         ))}

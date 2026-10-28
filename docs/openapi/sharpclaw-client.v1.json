@@ -125,6 +125,12 @@
               "string"
             ]
           },
+          "decidedByUser": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "expiresAt": {
             "format": "date-time",
             "type": "string"
@@ -1266,6 +1272,12 @@
             ]
           },
           "decidedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decidedByUser": {
             "type": [
               "null",
               "string"

@@ -54,6 +54,7 @@ public sealed record TraceApprovalDto(
     string Status,
     DateTime CreatedAt,
     DateTime? DecidedAt,
-    string? DecidedBy);
+    string? DecidedBy,
+    string? DecidedByUser = null);
 
 public sealed record TraceTotalsDto(double CostUsd, int PromptTokens, int CompletionTokens, int LlmCalls, int ToolCalls);

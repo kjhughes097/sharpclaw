@@ -195,7 +195,7 @@ public static class ApprovalEndpoints
     }
 
     private static async Task<IResult> Decide(
-        Guid id, DecideApprovalRequest? body, SharpClawDbContext db, TimeProvider time,
+        Guid id, DecideApprovalRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
         ApprovalDecisions decisions, CancellationToken ct)
     {
         if (body?.Decision is not (ApprovalStatuses.Approved or ApprovalStatuses.Denied))
@@ -207,7 +207,7 @@ public static class ApprovalEndpoints
 
         await ExpireIfDueAsync(db, decisions, approval, time.GetUtcNow().UtcDateTime, ct);
         if (approval.Status != ApprovalStatuses.Pending ||
-            !await decisions.TryDecideAsync(db, approval, body.Decision, ApprovalDecidedBy.User, ct))
+            !await decisions.TryDecideAsync(db, approval, body.Decision, ApprovalDecidedBy.User, ct, DeciderName(http)))
         {
             var current = await db.Approvals.AsNoTracking().Where(a => a.Id == id).Select(a => a.Status).FirstAsync(ct);
             return ApiResults.Conflict($"Approval is already {current}.");
@@ -215,6 +215,10 @@ public static class ApprovalEndpoints
 
         return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options);
     }
+
+    /// <summary>Who is deciding: the signed-in user's name, or <c>admin_key</c> for an admin-key client.</summary>
+    private static string DeciderName(HttpContext http) =>
+        ClientAuthFilter.Principal(http)?.Session?.User?.Name ?? ApprovalDecidedBy.AdminKeyUser;
 
     /// <summary>Backup for the sweeper: an overdue approval is expired when it is read.</summary>
     private static async Task ExpireIfDueAsync(
@@ -225,7 +229,8 @@ public static class ApprovalEndpoints
         if (!await decisions.TryDecideAsync(db, approval, ApprovalStatuses.Expired, ApprovalDecidedBy.System, ct))
         {
             var fresh = await db.Approvals.AsNoTracking().FirstAsync(a => a.Id == approval.Id, ct);
-            (approval.Status, approval.DecidedBy, approval.DecidedAt) = (fresh.Status, fresh.DecidedBy, fresh.DecidedAt);
+            (approval.Status, approval.DecidedBy, approval.DecidedByUser, approval.DecidedAt) =
+                (fresh.Status, fresh.DecidedBy, fresh.DecidedByUser, fresh.DecidedAt);
         }
     }
 
@@ -240,5 +245,5 @@ public static class ApprovalEndpoints
 
     private static ApprovalDetailDto ToDetail(Approval a, IReadOnlyDictionary<Guid, string> names) => new(
         a.Id, names.GetValueOrDefault(a.AgentId, ""), a.ThreadId, a.CorrelationId, a.ToolName, a.Summary, a.Risk,
-        a.Reason, a.Status, a.CreatedAt, a.ExpiresAt, a.DecidedBy, a.DecidedAt);
+        a.Reason, a.Status, a.CreatedAt, a.ExpiresAt, a.DecidedBy, a.DecidedAt, a.DecidedByUser);
 }

@@ -8,6 +8,7 @@ import { HIGHEST_RISK } from '../../api/types';
 import { useToast } from '../../app/toast';
 import { Badge, Button, RelativeTime, RiskBadge } from '../../components/ui';
 import { formatCountdown, serverNow } from '../../lib/time';
+import { deciderLabel } from './decider';
 
 export interface ApprovalView {
   id: string;
@@ -21,6 +22,7 @@ export interface ApprovalView {
   threadId?: string;
   agent?: string;
   decidedBy?: string | null;
+  decidedByUser?: string | null;
 }
 
 /** Decides an approval; a 409 (already decided or expired) shows a notice and refreshes. */
@@ -102,7 +104,12 @@ export function ApprovalCard({
             expires in {formatCountdown(approval.expiresAt, now)}
           </span>
         ) : (
-          <span className="ml-auto text-xs text-muted">{STATUS_TEXT[status] ?? status}</span>
+          <span className="ml-auto text-xs text-muted">
+            {STATUS_TEXT[status] ?? status}
+            {(status === 'approved' || status === 'denied') && approval.decidedByUser
+              ? ` by ${deciderLabel(approval.decidedBy, approval.decidedByUser)}`
+              : ''}
+          </span>
         )}
       </div>
       <p className="mt-1 text-sm break-words whitespace-pre-wrap">{approval.summary}</p>

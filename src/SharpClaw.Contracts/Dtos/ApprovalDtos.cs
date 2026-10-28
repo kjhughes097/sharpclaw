@@ -34,7 +34,8 @@ public sealed record ApprovalDetailDto(
     DateTime CreatedAt,
     DateTime ExpiresAt,
     string? DecidedBy,
-    DateTime? DecidedAt);
+    DateTime? DecidedAt,
+    string? DecidedByUser = null);
 
 public sealed record ApprovalListResponse(IReadOnlyList<ApprovalDetailDto> Approvals);
 

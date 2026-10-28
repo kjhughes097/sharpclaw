@@ -148,6 +148,9 @@ public class ToolDispatcherTests
     [InlineData("Critical.", 0, 1)]
     [InlineData("I think this is medium risk", 1, 0)]
     [InlineData("no idea", 0, 1)]
+    [InlineData("not low - critical", 0, 1)]
+    [InlineData("low, maybe medium", 0, 1)]
+    [InlineData("LOW low Low", 1, 0)]
     public async Task Smart_mode_classifies_uncertain_calls(string reply, int expectedExecutions, int expectedApprovals)
     {
         var tool = new FakeTool("t", new ToolAssessment.Uncertain("writes a script"));

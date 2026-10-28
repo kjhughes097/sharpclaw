@@ -42,7 +42,9 @@ public sealed record ApprovalRequestedEvent(
     Guid ThreadId = default);
 
 /// <summary>An approval was decided by the user or by the system (expiry, unattended, orphaned turn).</summary>
-public sealed record ApprovalDecidedEvent(Guid ApprovalId, Guid CorrelationId, string Status, string DecidedBy, Guid ThreadId = default);
+/// <summary><c>DecidedByUser</c>: the deciding user's name (or <c>admin_key</c>) when <c>DecidedBy</c> is <c>user</c>.</summary>
+public sealed record ApprovalDecidedEvent(
+    Guid ApprovalId, Guid CorrelationId, string Status, string DecidedBy, Guid ThreadId = default, string? DecidedByUser = null);
 
 /// <summary>The text streamed so far for an in-flight turn, sent on (re)connect.</summary>
 public sealed record SnapshotEvent(Guid CorrelationId, string Content, Guid ThreadId = default);

@@ -44,7 +44,7 @@ public static class TraceEndpoints
             .Where(a => a.ThreadId == id && ids.Contains(a.CorrelationId))
             .OrderBy(a => a.CreatedAt).ThenBy(a => a.Id)
             .Select(a => new { a.CorrelationId, Dto = new TraceApprovalDto(a.Id, a.ToolCallId, a.ToolName, a.Risk,
-                a.Status, a.CreatedAt, a.DecidedAt, a.DecidedBy) })
+                a.Status, a.CreatedAt, a.DecidedAt, a.DecidedBy, a.DecidedByUser) })
             .ToListAsync(ct);
 
         var turns = users.Select(u =>

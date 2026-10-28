@@ -13,12 +13,16 @@ namespace SharpClaw.Gateway.Services;
 public sealed class ApprovalDecisions(
     GatewayMetrics metrics, ApprovalSignal signal, IEventPublisher events, TimeProvider time)
 {
-    /// <summary>Decides a pending approval. Returns false if it was no longer pending.</summary>
+    /// <summary>
+    /// Decides a pending approval. Returns false if it was no longer pending.
+    /// <paramref name="decidedByUser"/> names the human (or <c>admin_key</c>) for user decisions.
+    /// </summary>
     public async Task<bool> TryDecideAsync(
-        SharpClawDbContext db, Approval approval, string status, string decidedBy, CancellationToken ct)
+        SharpClawDbContext db, Approval approval, string status, string decidedBy, CancellationToken ct,
+        string? decidedByUser = null)
     {
         var decided = await events.WriteAsync(db,
-            batch => StageDecisionAsync(db, batch, approval, status, decidedBy, ct), ct);
+            batch => StageDecisionAsync(db, batch, approval, status, decidedBy, decidedByUser, ct), ct);
         if (decided)
             await AfterDecidedAsync(db, new[] { approval }, ct);
         return decided;
@@ -37,7 +41,7 @@ public sealed class ApprovalDecisions(
             .Where(a => a.Status == ApprovalStatuses.Pending && a.CorrelationId == correlationId)
             .ToListAsync(ct);
         foreach (var approval in pending)
-            if (await StageDecisionAsync(db, batch, approval, ApprovalStatuses.Expired, ApprovalDecidedBy.System, ct))
+            if (await StageDecisionAsync(db, batch, approval, ApprovalStatuses.Expired, ApprovalDecidedBy.System, null, ct))
                 expired.Add(approval);
         return expired;
     }
@@ -75,7 +79,8 @@ public sealed class ApprovalDecisions(
 
     /// <summary>The conditional update plus its staged event; updates <paramref name="approval"/> when it wins.</summary>
     private async Task<bool> StageDecisionAsync(
-        SharpClawDbContext db, EventBatch batch, Approval approval, string status, string decidedBy, CancellationToken ct)
+        SharpClawDbContext db, EventBatch batch, Approval approval, string status, string decidedBy,
+        string? decidedByUser, CancellationToken ct)
     {
         var now = time.GetUtcNow().UtcDateTime;
         var updated = await db.Approvals
@@ -83,15 +88,17 @@ public sealed class ApprovalDecisions(
             .ExecuteUpdateAsync(s => s
                 .SetProperty(a => a.Status, status)
                 .SetProperty(a => a.DecidedBy, decidedBy)
+                .SetProperty(a => a.DecidedByUser, decidedByUser)
                 .SetProperty(a => a.DecidedAt, now), ct);
         if (updated == 0)
             return false;
 
         approval.Status = status;
         approval.DecidedBy = decidedBy;
+        approval.DecidedByUser = decidedByUser;
         approval.DecidedAt = now;
         batch.Add(approval.ThreadId, SseEventNames.ApprovalDecided,
-            new ApprovalDecidedEvent(approval.Id, approval.CorrelationId, status, decidedBy, approval.ThreadId));
+            new ApprovalDecidedEvent(approval.Id, approval.CorrelationId, status, decidedBy, approval.ThreadId, decidedByUser));
         return true;
     }
 

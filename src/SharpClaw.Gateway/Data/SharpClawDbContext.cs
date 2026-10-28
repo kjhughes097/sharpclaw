@@ -103,6 +103,7 @@ public class SharpClawDbContext : DbContext
         {
             e.ToTable("approvals");
             e.HasKey(x => x.Id);
+            e.Property(x => x.DecidedByUser).HasMaxLength(100);
             e.HasIndex(x => x.CorrelationId);
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
         });

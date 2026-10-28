@@ -120,6 +120,7 @@ describe('approvals', () => {
           status: 'approved',
           decidedBy: 'user',
           threadId: 'thread-1',
+          decidedByUser: 'kevin',
         },
         30,
       ),

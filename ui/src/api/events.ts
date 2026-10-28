@@ -52,6 +52,8 @@ export interface ApprovalDecidedEvent {
   status: string;
   decidedBy: string;
   threadId: string;
+  /** The deciding user's name, or `admin_key`, when `decidedBy` is `user`; otherwise null. */
+  decidedByUser: string | null;
 }
 export interface ThreadCreatedEvent {
   threadId: string;

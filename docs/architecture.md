@@ -46,8 +46,8 @@ and are pruned daily.
    message (`claimed`). A claim older than `Inbox:ClaimTimeoutSeconds` is requeued; chat calls,
    approval creation and approval polls refresh it (heartbeat).
 3. **Context.** The agent fetches `GET /agent/threads/{id}/context?reserveTokens=`. The gateway
-   returns the whole turns that fit the window, newest first (`ContextBuilder`), and records
-   `droppedTurns`/`estimatedTokens` on the thread.
+   returns the whole turns that fit the window, newest first (`ContextBuilder`, which reads only the
+   newest turns it needs, not the whole thread), and records `droppedTurns`/`estimatedTokens` on the thread.
 4. **Model calls.** `POST /v1/chat/completions` (streaming only). The gateway checks ownership, the
    per-message call limit, the daily budget and the context size, then streams from the provider as
    OpenAI-style SSE. Deltas are teed to the thread (`delta`, plus `ActiveTurnBuffers` for
@@ -109,7 +109,7 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), `docs/api
 | `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`). |
 | `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose, outcome). |
 | `tool_calls` | Every tool call the model requested, plus the agent's report. |
-| `approvals` | Approval requests and decisions. |
+| `approvals` | Approval requests and decisions (`decided_by` = user/system; `decided_by_user` = which user, or `admin_key`). |
 | `thread_events`, `event_log_state` | Durable SSE events and the retention watermark. |
 | `users`, `sessions` | Browser users (PBKDF2 passwords) and hashed session tokens with CSRF tokens. |
 

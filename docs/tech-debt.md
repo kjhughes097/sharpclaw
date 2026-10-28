@@ -50,6 +50,7 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Half-open streams heal only on visibility or online/offline changes | No server keep-alive detection in the UI. |
 | The context meter is the last computed value | From the gateway's last context build, not a live figure. |
 | Tool-card enrichment depends on the trace | Risk, decision and duration come from `tool_calls`, joined by the provider tool-call id. |
+| Every user sees every agent, thread and approval | Shared visibility suits a household system; there is no per-user ownership. Approvals record *which* user decided (`approvals.decided_by_user`). Revisit if the gateway is ever shared beyond a household. |
 | Thread previews duplicate content | `threads.last_preview` holds a 120-character slice of the last message. |
 | No list virtualisation | Very long threads rely on paging. |
 | No frontend error reporting | UI crashes are visible only in the browser console. |

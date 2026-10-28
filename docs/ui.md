@@ -90,7 +90,7 @@ global stream's `ready`/`reset`).
 | `snapshot` | no | `correlationId`, `content` (all text so far), `threadId` |
 | `tool.requested` | yes | `correlationId`, `toolCallId`, `toolName`, `threadId` (never arguments) |
 | `approval.requested` | yes | `approvalId`, `correlationId`, `toolName`, `summary`, `risk`, `reason`, `expiresAt`, `threadId` |
-| `approval.decided` | yes | `approvalId`, `correlationId`, `status`, `decidedBy`, `threadId` |
+| `approval.decided` | yes | `approvalId`, `correlationId`, `status`, `decidedBy`, `threadId`, `decidedByUser` (user name or `admin_key` for user decisions, else null) |
 | `message.completed` | yes | `correlationId`, `messageId`, `content`, `threadId` |
 | `error` | yes | `correlationId`, `code` (the fail reason), `message` (readable text from `FailReasons.Describe`), `threadId` |
 

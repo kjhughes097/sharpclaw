@@ -43,6 +43,7 @@ const DECLARED: { [K in EventType]: Record<keyof EventPayloads[K], true> } = {
     status: true,
     decidedBy: true,
     threadId: true,
+    decidedByUser: true,
   },
   'thread.created': { threadId: true, agentId: true },
   'thread.updated': { threadId: true, title: true, archived: true },
