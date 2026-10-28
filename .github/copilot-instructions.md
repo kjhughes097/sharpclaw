@@ -9,7 +9,8 @@ network-isolated workloads that hold no provider keys and reach the world only v
   they differ: [3.1](../docs/sharpclaw-3.1-implementation-spec.md) →
   [3.2](../docs/sharpclaw-3.2-implementation-spec.md) →
   [pre-3.3 foundations](../docs/sharpclaw-pre-3.3-foundations-spec.md) →
-  [3.3 (web UI)](../docs/sharpclaw-3.3-implementation-spec.md). Build only what they describe;
+  [3.3 (web UI)](../docs/sharpclaw-3.3-implementation-spec.md) →
+  [3.3.1 (tabbed UI redesign)](../docs/sharpclaw-3.3.1-ui-redesign-spec.md). Build only what they describe;
   anything still in an "Out of scope" list (agent-to-agent, retries, non-streaming completions,
   Postgres, Docker socket access, network or code-execution tools, stop/cancel turn, message
   editing, attachments, thread deletion, search, multi-user features, push/PWA, TLS, frontend

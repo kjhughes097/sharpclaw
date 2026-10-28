@@ -153,6 +153,25 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 
 ---
 
+## Phase 3.3.1 — Tabbed UI redesign *(specified)*
+
+> **Source of truth:** `sharpclaw-3.3.1-ui-redesign-spec.md` (mockups: `sample-overview-tab.png`,
+> `sample-prompts-tab.png`).
+
+**Goal:** replace the 3.3 sidebar shell with a tabbed, dashboard-style UI.
+
+**Scope**
+- Tabs: Overview (usage charts, cost by model, provider credits, live per-agent cards), Prompts
+  (agent/model pickers, sessions, chat with inline tool metrics and a status bar), one tab per
+  agent, and the existing Approvals, Audit and Agents pages; Account in a header menu
+- Gateway additions: `GET /api/usage`, `GET /api/activity` (with the message sender recorded), a
+  per-thread model override from a `Models:Allowed` allow-list, a cached OpenRouter credits balance
+
+**Exit criteria**
+- The acceptance checklist in the spec passes, with the fake provider and with a real OpenRouter session.
+
+---
+
 ## Phase 3.4 — Controls *(outline)*
 
 - Human approval in the UI (the CLI flow lands in 3.2; the queue API in the pre-3.3 foundations)
