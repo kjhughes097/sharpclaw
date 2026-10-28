@@ -21,6 +21,9 @@ public static class ServicesRegistration
         builder.Services.TryAddSingleton<IContextSummariser, NoSummariser>();
         builder.Services.AddSingleton<ApprovalExpirySweeper>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ApprovalExpirySweeper>());
+        builder.Services.AddSingleton<CreditsState>();
+        builder.Services.AddHttpClient(CreditsRefresher.HttpClientName, c => c.Timeout = CreditsRefresher.RequestTimeout);
+        builder.Services.AddHostedService<CreditsRefresher>();
         return builder;
     }
 }

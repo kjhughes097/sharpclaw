@@ -501,6 +501,62 @@
         ],
         "type": "object"
       },
+      "CreditsResponse": {
+        "properties": {
+          "asOf": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastAttemptAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lowThresholdUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "remainingUsd": {
+            "format": "double",
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "totalCreditsUsd": {
+            "format": "double",
+            "type": [
+              "null",
+              "number"
+            ]
+          },
+          "totalUsageUsd": {
+            "format": "double",
+            "type": [
+              "null",
+              "number"
+            ]
+          }
+        },
+        "required": [
+          "status",
+          "remainingUsd",
+          "totalCreditsUsd",
+          "totalUsageUsd",
+          "asOf",
+          "lastAttemptAt",
+          "lowThresholdUsd"
+        ],
+        "type": "object"
+      },
       "DecideApprovalRequest": {
         "properties": {
           "decision": {
@@ -3686,6 +3742,86 @@
         ]
       }
     },
+    "/api/credits": {
+      "get": {
+        "operationId": "getCredits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreditsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "tags": [
+          "credits"
+        ]
+      }
+    },
     "/api/events": {
       "get": {
         "description": "A text/event-stream of SharpClaw events. Event names and payloads are listed in docs/ui.md.",
@@ -5181,6 +5317,9 @@
     },
     {
       "name": "activity"
+    },
+    {
+      "name": "credits"
     },
     {
       "name": "audit"

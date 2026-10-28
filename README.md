@@ -120,6 +120,9 @@ ASP.NET `__` syntax).
 | `Provider:Type` | `OpenRouter` | `OpenRouter` or `Fake` |
 | `OpenRouter:BaseUrl` | `https://openrouter.ai/api/v1` | |
 | `OpenRouter:ApiKey` | (required for OpenRouter) | `OpenRouter__ApiKey` |
+| `OpenRouter:ManagementKey` | empty | `OpenRouter__ManagementKey`; a [management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys), used only to show the remaining credits in the UI. Empty: the credits card says "not configured" |
+| `Credits:RefreshHours` / `LowThresholdUsd` | `24` / `5` | How often the credits balance is fetched (hourly while failing); below the threshold the UI shows it in red |
+| `Models:Allowed` | empty | Model ids a thread may switch to in the UI (e.g. `Models__Allowed__0=openai/gpt-4o-mini`); the agent's own model is always available. Empty: no per-thread model picker |
 | `Provider:ConnectTimeoutSeconds` | `10` | |
 | `Provider:IdleTimeoutSeconds` | `60` | Max gap between streamed chunks |
 | `Fake:ScriptPath` | (none) | Optional JSON script for the fake provider |

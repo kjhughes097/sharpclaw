@@ -85,6 +85,20 @@ public sealed class OpenRouterOptions
     public const string Section = "OpenRouter";
     [Required, Url] public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
     public string ApiKey { get; set; } = "";
+
+    /// <summary>
+    /// A management key, used only to read the credits balance (<c>GET /credits</c> accepts nothing
+    /// else). Empty: the Overview's credits card shows "not configured".
+    /// </summary>
+    public string ManagementKey { get; set; } = "";
+}
+
+/// <summary>The cached OpenRouter credits balance (3.3.1 spec section 3.4).</summary>
+public sealed class CreditsOptions
+{
+    public const string Section = "Credits";
+    [Range(1, 168)] public int RefreshHours { get; set; } = 24;
+    [Range(0, 1_000_000)] public double LowThresholdUsd { get; set; } = 5;
 }
 
 public sealed class FakeOptions

@@ -18,6 +18,7 @@ services:
     environment:
       Auth__AdminKey: ${ADMIN_KEY}
       OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      OpenRouter__ManagementKey: ${OPENROUTER_MANAGEMENT_KEY:-}
       Provider__Type: ${PROVIDER_TYPE:-OpenRouter}
       Fake__ScriptPath: ${FAKE_SCRIPT_PATH:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
