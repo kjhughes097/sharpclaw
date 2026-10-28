@@ -23,8 +23,12 @@ public sealed class MessageTurns(
     ApprovalDecisions decisions, IAgentInboxSignal inboxSignal, GatewayMetrics metrics,
     IOptions<ToolsOptions> toolsOptions, ILogger<MessageTurns> logger)
 {
-    /// <summary>Queues a user message on the thread and wakes its agent. Null when the thread doesn't exist.</summary>
-    public async Task<Message?> PostAsync(Guid threadId, string content, bool unattended, CancellationToken ct)
+    /// <summary>
+    /// Queues a user message on the thread and wakes its agent. Null when the thread doesn't exist.
+    /// <paramref name="sentByUser"/> records who posted it (see <c>ClientAuthFilter.ActorName</c>).
+    /// </summary>
+    public async Task<Message?> PostAsync(
+        Guid threadId, string content, bool unattended, CancellationToken ct, string? sentByUser = null)
     {
         var now = time.GetUtcNow().UtcDateTime;
         var message = await events.WriteAsync(db, async batch =>
@@ -44,6 +48,7 @@ public sealed class MessageTurns(
                 Content = content,
                 Status = MessageStatus.Pending,
                 Unattended = unattended,
+                SentByUser = sentByUser,
                 CreatedAt = now,
                 Seq = await MessageQueries.NextSeqAsync(db, thread.Id, ct),
             };

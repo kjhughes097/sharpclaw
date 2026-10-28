@@ -61,7 +61,7 @@ public static class MessageQueries
     public static MessageDto ToDto(Message m) => new(
         m.Id, m.Role, m.Content, m.Status, m.CorrelationId, m.CreatedAt, m.Kind, m.Seq,
         m.ToolCalls is null ? null : JsonSerializer.Deserialize<List<ChatToolCall>>(m.ToolCalls, SharpClawJson.Options),
-        m.ToolCallId, m.ToolOk, m.Untrusted, m.Truncated, m.FailReason);
+        m.ToolCallId, m.ToolOk, m.Untrusted, m.Truncated, m.FailReason, m.SentByUser);
 
     /// <summary>
     /// The next <c>seq</c> for the thread. Call inside a write transaction (SQLite <c>BEGIN

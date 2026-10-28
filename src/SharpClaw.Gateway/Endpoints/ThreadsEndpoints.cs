@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
+using SharpClaw.Gateway.Auth;
 using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Infrastructure;
@@ -208,14 +209,15 @@ public static class ThreadsEndpoints
     }
 
     private static async Task<IResult> PostMessage(
-        Guid id, PostMessageRequest? body, MessageTurns turns, IOptions<MessagesOptions> messages, CancellationToken ct)
+        Guid id, PostMessageRequest? body, HttpContext http, MessageTurns turns, IOptions<MessagesOptions> messages,
+        CancellationToken ct)
     {
         if (body is null || string.IsNullOrEmpty(body.Content))
             return ApiResults.ValidationFailed("content is required.");
         if (body.Content.Length > messages.Value.MaxContentChars)
             return ApiResults.ValidationFailed($"content exceeds {messages.Value.MaxContentChars} characters.");
 
-        var message = await turns.PostAsync(id, body.Content, body.Unattended, ct);
+        var message = await turns.PostAsync(id, body.Content, body.Unattended, ct, ClientAuthFilter.ActorName(http));
         if (message is null)
             return ApiResults.NotFound("Thread not found.");
 

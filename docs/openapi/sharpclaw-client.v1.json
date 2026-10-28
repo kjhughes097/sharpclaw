@@ -1,6 +1,84 @@
 {
   "components": {
     "schemas": {
+      "ActivityItemDto": {
+        "properties": {
+          "agentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "preview": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "threadId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "threadTitle": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "messageId",
+          "threadId",
+          "threadTitle",
+          "agentId",
+          "agentName",
+          "role",
+          "from",
+          "to",
+          "status",
+          "createdAt",
+          "preview"
+        ],
+        "type": "object"
+      },
+      "ActivityResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityItemDto"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "AgentDto": {
         "properties": {
           "contextWindowTokens": {
@@ -612,6 +690,12 @@
           },
           "role": {
             "type": "string"
+          },
+          "sentByUser": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "seq": {
             "default": 0,
@@ -1911,6 +1995,110 @@
   },
   "openapi": "3.1.1",
   "paths": {
+    "/api/activity": {
+      "get": {
+        "operationId": "listActivity",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "int32",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "tags": [
+          "activity"
+        ]
+      }
+    },
     "/api/agents": {
       "get": {
         "operationId": "listAgents",
@@ -4959,6 +5147,9 @@
     },
     {
       "name": "usage"
+    },
+    {
+      "name": "activity"
     },
     {
       "name": "audit"

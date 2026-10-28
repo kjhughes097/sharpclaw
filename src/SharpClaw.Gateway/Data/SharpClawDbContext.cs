@@ -75,6 +75,9 @@ public class SharpClawDbContext : DbContext
             e.HasIndex(x => new { x.AgentId, x.Role, x.Status, x.CreatedAt });
             e.HasIndex(x => new { x.ThreadId, x.Seq }).IsUnique();
             e.Property(x => x.Kind).HasDefaultValue("message");
+            e.Property(x => x.SentByUser).HasMaxLength(100);
+            // GET /api/activity: newest conversational rows across all threads.
+            e.HasIndex(x => new { x.Kind, x.CreatedAt });
             // One final assistant reply per user message; tool_request rows share the correlation id.
             e.HasIndex(x => x.CorrelationId)
                 .IsUnique()

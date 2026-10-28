@@ -69,6 +69,9 @@ public class Message
     /// <summary>On user messages: nobody will answer approvals, so they are denied at once.</summary>
     public bool Unattended { get; set; }
 
+    /// <summary>On user messages: who posted it (user name, or <c>admin_key</c>); null on older rows.</summary>
+    public string? SentByUser { get; set; }
+
     /// <summary>Per-thread order, assigned at insert as max+1 inside the write transaction.</summary>
     public int Seq { get; set; }
 
