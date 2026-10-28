@@ -30,7 +30,7 @@ public static class ChatEndpoints
     public sealed record ChatServices(
         SharpClawDbContext Db, TimeProvider Time, IChatProvider Provider, IEventPublisher Events,
         ActiveTurnBuffers Buffers, GatewayMetrics Metrics, IOptions<ChatOptions> Chat,
-        IOptions<ContextOptions> Context, ILoggerFactory LoggerFactory);
+        IOptions<ContextOptions> Context, IOptions<ModelsOptions> Models, ILoggerFactory LoggerFactory);
 
     private static async Task<IResult> Completions(HttpContext http, [AsParameters] ChatServices svc)
     {
@@ -54,6 +54,14 @@ public static class ChatEndpoints
         var ownershipError = await CheckOwnershipAsync(db, agent, threadId, correlationId, ct);
         if (ownershipError is not null)
             return ownershipError;
+
+        // The thread's model override, if still allowed, replaces the agent's model for this call:
+        // upstream, in llm_calls and in the metric labels.
+        var threadModel = await db.Threads.AsNoTracking().Where(t => t.Id == threadId).Select(t => t.Model).FirstAsync(ct);
+        var (model, ignored) = ModelOverride.Resolve(threadModel, agent.Model, svc.Models.Value.Allowed);
+        if (ignored)
+            logger.LogWarning("thread model override is no longer allowed; using the agent's model");
+        agent = agent with { Model = model };
 
         JsonDocument bodyDoc;
         try

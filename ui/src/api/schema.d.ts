@@ -506,6 +506,7 @@ export interface components {
     };
     CreateThreadRequest: {
       agentId: string;
+      model?: null | string;
       title: null | string;
     };
     CreateTokenRequest: {
@@ -654,6 +655,7 @@ export interface components {
     SystemInfoResponse: {
       /** Format: date-time */
       budgetResetAtUtc: string;
+      models: string[];
       provider: string;
       /** Format: date-time */
       utcNow: string;
@@ -687,6 +689,7 @@ export interface components {
       id: string;
       /** Format: date-time */
       lastMessageAt?: null | string;
+      model?: null | string;
       title: null | string;
     };
     ThreadListResponse: {
@@ -708,6 +711,7 @@ export interface components {
       inFlight: boolean;
       /** Format: date-time */
       lastMessageAt: string;
+      model?: null | string;
       /** Format: int32 */
       pendingApprovals: number;
       preview: null | string;
@@ -868,6 +872,7 @@ export interface components {
     };
     UpdateThreadRequest: {
       archived: null | boolean;
+      model?: null | string;
       title: null | string;
     };
     UpdateUserRequest: {

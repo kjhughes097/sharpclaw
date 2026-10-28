@@ -404,6 +404,12 @@
           "agentId": {
             "type": "string"
           },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "title": {
             "type": [
               "null",
@@ -910,6 +916,12 @@
             "format": "date-time",
             "type": "string"
           },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "provider": {
             "type": "string"
           },
@@ -925,7 +937,8 @@
           "version",
           "provider",
           "utcNow",
-          "budgetResetAtUtc"
+          "budgetResetAtUtc",
+          "models"
         ],
         "type": "object"
       },
@@ -1024,6 +1037,12 @@
               "string"
             ]
           },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "title": {
             "type": [
               "null",
@@ -1096,6 +1115,12 @@
           "lastMessageAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "pendingApprovals": {
             "format": "int32",
@@ -1701,6 +1726,12 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
             ]
           },
           "title": {

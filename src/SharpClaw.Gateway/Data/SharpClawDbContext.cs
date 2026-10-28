@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using SharpClaw.Gateway.Configuration;
 
 namespace SharpClaw.Gateway.Data;
 
@@ -66,6 +67,7 @@ public class SharpClawDbContext : DbContext
             e.HasOne(x => x.Agent).WithMany().HasForeignKey(x => x.AgentId);
             e.HasIndex(x => x.AgentId);
             e.HasIndex(x => new { x.Archived, x.LastMessageAt });
+            e.Property(x => x.Model).HasMaxLength(ModelsOptions.MaxModelIdChars);
         });
 
         b.Entity<Message>(e =>

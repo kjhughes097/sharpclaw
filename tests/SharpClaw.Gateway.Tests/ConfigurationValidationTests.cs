@@ -40,10 +40,22 @@ public class ConfigurationValidationTests
     [InlineData("Auth:Session:IdleTimeoutHours", "0", "IdleTimeoutHours")]
     [InlineData("Auth:Login:MaxFailures", "0", "MaxFailures")]
     [InlineData("Auth:ForwardedHeaders:KnownProxies:0", "not-an-ip", "KnownProxies")]
+    [InlineData("Models:Allowed:0", " ", "Models:Allowed must not contain empty entries")]
     public void Invalid_values_refuse_to_start(string key, string value, string expected)
     {
         var ex = Assert.Throws<OptionsValidationException>(() => Build(new() { [key] = value }));
         Assert.Contains(expected, ex.Message);
+    }
+
+    [Fact]
+    public void Duplicate_or_overlong_model_ids_refuse_to_start()
+    {
+        var dup = Assert.Throws<OptionsValidationException>(() =>
+            Build(new() { ["Models:Allowed:0"] = "a/b", ["Models:Allowed:1"] = "a/b" }));
+        Assert.Contains("duplicates", dup.Message);
+        var longId = Assert.Throws<OptionsValidationException>(() =>
+            Build(new() { ["Models:Allowed:0"] = new string('m', 201) }));
+        Assert.Contains("at most 200", longId.Message);
     }
 
     [Fact]

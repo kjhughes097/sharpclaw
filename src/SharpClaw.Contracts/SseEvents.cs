@@ -57,7 +57,8 @@ public sealed record ReadyEvent(Guid? ThreadId);
 
 public sealed record ThreadCreatedEvent(Guid ThreadId, Guid AgentId);
 
-public sealed record ThreadUpdatedEvent(Guid ThreadId, string? Title, bool Archived);
+/// <summary><c>Model</c>: the thread's model override, null for the agent's model.</summary>
+public sealed record ThreadUpdatedEvent(Guid ThreadId, string? Title, bool Archived, string? Model = null);
 
 public static class ResetReasons
 {

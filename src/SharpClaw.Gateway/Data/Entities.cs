@@ -50,6 +50,9 @@ public class ConversationThread
     public string? LastPreview { get; set; }
 
     public bool Archived { get; set; }
+
+    /// <summary>Model override for this thread (one of <c>Models:Allowed</c>); null uses the agent's model.</summary>
+    public string? Model { get; set; }
 }
 
 public class Message

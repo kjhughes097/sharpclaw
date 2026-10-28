@@ -161,6 +161,30 @@ public sealed class ContextOptions
     public int WindowFor(int? agentWindow) => agentWindow ?? DefaultWindowTokens;
 }
 
+/// <summary>
+/// Model ids a thread may switch to (3.3.1 spec section 3.3). Empty: no per-thread override, every
+/// thread uses its agent's model.
+/// </summary>
+public sealed class ModelsOptions
+{
+    public const string Section = "Models";
+    public const int MaxModelIdChars = 200;
+
+    public string[] Allowed { get; set; } = [];
+
+    /// <summary>Null when valid; otherwise the validation message.</summary>
+    public string? Problem()
+    {
+        if (Allowed.Any(string.IsNullOrWhiteSpace))
+            return "Models:Allowed must not contain empty entries.";
+        if (Allowed.Any(m => m.Length > MaxModelIdChars))
+            return $"Models:Allowed entries must be at most {MaxModelIdChars} characters.";
+        if (Allowed.Distinct(StringComparer.Ordinal).Count() != Allowed.Length)
+            return "Models:Allowed must not contain duplicates.";
+        return null;
+    }
+}
+
 public sealed class UiOptions
 {
     public const string Section = "Ui";
