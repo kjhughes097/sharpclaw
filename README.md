@@ -30,6 +30,7 @@ Specifications: [Phase 3.1](docs/sharpclaw-3.1-implementation-spec.md),
 | `src/SharpClaw.Gateway` | ASP.NET gateway: two listeners, EF Core/SQLite, providers, telemetry |
 | `src/SharpClaw.Agent` | The agent loop (console app, one per Docker container) |
 | `src/SharpClaw.Cli` | Admin and chat client (assembly name `sharpclaw`) |
+| `ui/` | Web UI (React + TypeScript + Vite), served by the gateway; see [docs/ui.md](docs/ui.md) |
 | `tests/SharpClaw.Gateway.Tests` | Gateway integration/unit tests (real Kestrel, fake provider, fake clock) |
 | `tests/SharpClaw.Agent.Tests` | Agent loop tests against a fake gateway |
 | `tests/SharpClaw.Cli.Tests` | CLI argument parsing and chat-ordering tests |
@@ -43,7 +44,8 @@ dotnet test
 
 The gateway tests start the real gateway on two ephemeral localhost ports, back it with a
 temporary SQLite file and the `FakeProvider`, and drive time with a `FakeTimeProvider` — no
-secrets or network required.
+secrets or network required. The web UI has its own checks (`cd ui && npm ci && npm run lint &&
+npm run typecheck && npm test && npm run check:api`); see [docs/ui.md](docs/ui.md).
 
 ## Architecture overview
 
@@ -167,7 +169,22 @@ Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
    ```
 
 Containers are started and stopped manually. The gateway never touches the Docker socket. Only the
-client port is published (to `127.0.0.1:8080`); the agent port 8081 is never published.
+client port is published (to `${CLIENT_BIND:-127.0.0.1}:8080`); the agent port 8081 is never published.
+
+## Using the web UI
+
+The gateway image builds and serves the web UI on the client port: open `http://<host>:8080`.
+
+- **Reach it from your LAN:** set `CLIENT_BIND` in `.env` to the host's LAN address (or `0.0.0.0`)
+  and recreate the gateway. It defaults to `127.0.0.1` (this machine only).
+- **First user:** `sharpclaw users create <name>` (user management stays in the CLI), then sign in.
+- **Plain HTTP:** your password and session cookie cross the LAN unencrypted. That's accepted for a
+  home network; **never port-forward 8080** from your router. A local TLS reverse proxy is the
+  future fix (see [docs/tech-debt.md](docs/tech-debt.md)).
+- Each browser tab holds one live connection; over plain HTTP about four tabs per browser is the
+  practical limit.
+
+UI development, the event stream and the CSP are described in [docs/ui.md](docs/ui.md).
 
 ## Running locally without Docker (fake provider)
 

@@ -119,3 +119,30 @@ as expected with no pending messages or rejections in that window.
 - [x] No prompt, reply, tool argument or result, password, cookie, CSRF token or key in logs or metric labels (tests).
 - [x] All automated tests pass, the isolation script passes, the dashboard imports, and the docs are updated.
 - [x] No out-of-scope features were added.
+
+## Phase 3.3 (2026-10-28)
+
+**Automated:** gateway 202, agent 77, CLI 25 tests pass; Release build 0 warnings. UI: 154 Vitest
+tests (unit, integration, jest-axe on each main view, run with `navigator.clipboard` and
+`crypto.randomUUID` undefined), `lint`, `typecheck`, `check:api` and `build` pass; initial JS
+193.7 KB gzipped, `index.html` has no inline script or style.
+
+**End-to-end (Playwright, isolated fake-provider stack from `ui/e2e/stack.sh`):** 17 tests pass on
+Chromium and the mobile viewport (Pixel 7, `@core` flows). Every test also asserts that all
+requests are same-origin and the console shows no CSP violation.
+
+| Area | Checks |
+|---|---|
+| Auth | Wrong password → generic error; login → `/chats`; sign-out → `/login`; disabling the user (revokes sessions) → next action lands on `/login?next=…` with nothing left on screen |
+| Chat | Reply streams progressively; reload mid-reply resumes from the snapshot with no duplicated text; offline 1.5 s then online, text complete and not duplicated; markdown: `<script>` inert, remote image shown as a text link and never fetched, `javascript:` link dropped |
+| Banners | Disabled agent, budget used up, dropped-turns banner and `/ 1.0k tokens` meter with a 1,000-token window |
+| Tools and approvals | Pending card in the thread and the Approvals page, tab title `(1) SharpClaw`; approve → turn continues and the tool card expands to plain-text arguments and result; deny → `denied`; approval decided in a second tab clears the first; unanswered approval expires (25 s) and the turn finishes |
+| Agents, audit, trace | Create agent → token shown once, gone after "I've saved it"; revoke a token; trace panel shows the turn; audit tabs list the LLM and tool calls |
+
+**Docker:** `docker/Dockerfile.gateway` builds with the Node 24 stage; the image serves the UI on
+the client port with the exact CSP, reports the git sha from `GET /api/system`, and runs as `app`.
+
+**Not yet done (needs the human):** the WebKit project (host libraries need root:
+`sudo npx playwright install-deps webkit`); redeploying the running Compose stack and re-running
+`scripts/verify-isolation.sh` against it; and the section 16 walk-through from a phone on the LAN
+with a real OpenRouter session.

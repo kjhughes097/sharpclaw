@@ -40,6 +40,20 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | A pending approval blocks the agent | It processes one message at a time, so it waits up to the approval timeout. |
 | No session list | Sessions are revoked only by logout, password change, an admin reset or disabling the user. |
 
+## Accepted by design (Phase 3.3 spec, section 15)
+
+| Item | Notes |
+|---|---|
+| Plain HTTP on the LAN | The password and session cookie are visible to anyone who can sniff the network. Fix: a local TLS reverse proxy, which also enables HTTP/2 and secure-context features (clipboard API, notifications, PWA). |
+| HTTP/1.1 connection limit | One SSE stream per tab, so about four tabs per browser before the six-connection limit bites. A cross-tab shared stream is a possible later improvement. |
+| No stop button, no thread deletion, drafts lost on reload | Out of scope for 3.3. |
+| Half-open streams heal only on visibility or online/offline changes | No server keep-alive detection in the UI. |
+| The context meter is the last computed value | From the gateway's last context build, not a live figure. |
+| Tool-card enrichment depends on the trace | Risk, decision and duration come from `tool_calls`, joined by the provider tool-call id. |
+| Thread previews duplicate content | `threads.last_preview` holds a 120-character slice of the last message. |
+| No list virtualisation | Very long threads rely on paging. |
+| No frontend error reporting | UI crashes are visible only in the browser console. |
+
 ## Code-level debt
 
 | # | Item | Severity | Why accepted | Fix when / how |
@@ -54,3 +68,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | 12 | **Durable events are persisted and published under one global lock** (`EventPublisher`), so streams can drop already-replayed ids safely. | Low | Simple and correct; event volume is tiny. | If event throughput ever matters, assign ids from a sequence and let streams reorder a small window instead. |
 | 13 | **Login rate-limit keys are only trimmed when touched.** Spraying many distinct usernames grows the in-memory map until restart. | Low | Single-user deployment behind a proxy; each entry is tiny. | Add a periodic sweep or a size cap when exposing the gateway more widely. |
 | 14 | **`seq` is assigned as `max(seq)+1` inside an immediate SQLite transaction.** Concurrent writers to one thread serialise on the database write lock. | Low | SQLite serialises writers anyway; threads have one agent. | Revisit with Postgres (use a per-thread counter row or a sequence). |
+| 15 | **`react-remove-scroll` is aliased to a local shim** (`ui/src/lib/removeScroll.tsx`) because the original injects a `<style>` element the CSP blocks. | Low | Keeps the CSP strict; the shim only locks body scroll (no scrollbar-gap compensation or touch-scroll isolation). | Revisit if Radix changes how it imports scroll locking, or if scrolling behind dialogs misbehaves on iOS. |
+| 16 | **No CI workflows**: the OpenAPI/fixture snapshot tests, `check:api` and the UI checks run only locally. | Medium | The repo has never had CI; adding it is a separate decision. | Add a workflow running `dotnet test`, and in `ui/` `npm ci`, `lint`, `typecheck`, `test`, `check:api`, `build`. |
+| 17 | **The WebKit Playwright project was not run** on the development host (missing system libraries). | Low | Chromium and the mobile viewport pass; installing host packages needs root. | Run `sudo npx playwright install-deps webkit` and the suite on a host with them, and check on a real iPhone. |
