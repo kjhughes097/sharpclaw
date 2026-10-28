@@ -338,6 +338,8 @@ namespace SharpClaw.Gateway.Data.Migrations
 
                     b.HasIndex("CorrelationId");
 
+                    b.HasIndex("CreatedAt");
+
                     b.HasIndex("AgentId", "CreatedAt");
 
                     b.ToTable("llm_calls", (string)null);

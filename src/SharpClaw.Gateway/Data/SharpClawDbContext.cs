@@ -88,6 +88,8 @@ public class SharpClawDbContext : DbContext
             e.Property(x => x.Purpose).HasDefaultValue("chat");
             e.HasIndex(x => new { x.AgentId, x.CreatedAt });
             e.HasIndex(x => x.CorrelationId);
+            // The all-agent usage window (GET /api/usage without an agent filter).
+            e.HasIndex(x => x.CreatedAt);
         });
 
         b.Entity<ToolCallRecord>(e =>

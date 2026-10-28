@@ -1646,6 +1646,188 @@
         ],
         "type": "object"
       },
+      "UsageBucketDto": {
+        "properties": {
+          "calls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "completionTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "costUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "promptTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "calls",
+          "promptTokens",
+          "completionTokens",
+          "costUsd"
+        ],
+        "type": "object"
+      },
+      "UsageByAgentDto": {
+        "properties": {
+          "agentId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "calls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "completionTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "costUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "promptTokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agentId",
+          "agentName",
+          "calls",
+          "promptTokens",
+          "completionTokens",
+          "costUsd"
+        ],
+        "type": "object"
+      },
+      "UsageByModelDto": {
+        "properties": {
+          "calls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "completionTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "costUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
+          "promptTokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model",
+          "calls",
+          "promptTokens",
+          "completionTokens",
+          "costUsd"
+        ],
+        "type": "object"
+      },
+      "UsageResponse": {
+        "properties": {
+          "bucketSeconds": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "buckets": {
+            "items": {
+              "$ref": "#/components/schemas/UsageBucketDto"
+            },
+            "type": "array"
+          },
+          "byAgent": {
+            "items": {
+              "$ref": "#/components/schemas/UsageByAgentDto"
+            },
+            "type": "array"
+          },
+          "byModel": {
+            "items": {
+              "$ref": "#/components/schemas/UsageByModelDto"
+            },
+            "type": "array"
+          },
+          "from": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "range": {
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "totals": {
+            "$ref": "#/components/schemas/UsageTotalsDto"
+          }
+        },
+        "required": [
+          "range",
+          "from",
+          "to",
+          "bucketSeconds",
+          "buckets",
+          "byModel",
+          "byAgent",
+          "totals"
+        ],
+        "type": "object"
+      },
+      "UsageTotalsDto": {
+        "properties": {
+          "calls": {
+            "format": "int32",
+            "type": "integer"
+          },
+          "completionTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "costUsd": {
+            "format": "double",
+            "type": "number"
+          },
+          "promptTokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "unknownUsageCalls": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calls",
+          "promptTokens",
+          "completionTokens",
+          "costUsd",
+          "unknownUsageCalls"
+        ],
+        "type": "object"
+      },
       "UserAdminDto": {
         "properties": {
           "createdAt": {
@@ -4265,6 +4447,102 @@
         ]
       }
     },
+    "/api/usage": {
+      "get": {
+        "operationId": "getUsage",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "range",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "tags": [
+          "usage"
+        ]
+      }
+    },
     "/api/users": {
       "get": {
         "operationId": "listUsers",
@@ -4678,6 +4956,9 @@
     },
     {
       "name": "system"
+    },
+    {
+      "name": "usage"
     },
     {
       "name": "audit"

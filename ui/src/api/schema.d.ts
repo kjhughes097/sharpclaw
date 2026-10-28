@@ -310,6 +310,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/usage': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['getUsage'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/users': {
     parameters: {
       query?: never;
@@ -818,6 +834,67 @@ export interface components {
     };
     UpdateUserRequest: {
       disabled: null | boolean;
+    };
+    UsageBucketDto: {
+      /** Format: int32 */
+      calls: number;
+      /** Format: int64 */
+      completionTokens: number;
+      /** Format: double */
+      costUsd: number;
+      /** Format: int64 */
+      promptTokens: number;
+      /** Format: date-time */
+      start: string;
+    };
+    UsageByAgentDto: {
+      /** Format: uuid */
+      agentId: string;
+      agentName: string;
+      /** Format: int32 */
+      calls: number;
+      /** Format: int64 */
+      completionTokens: number;
+      /** Format: double */
+      costUsd: number;
+      /** Format: int64 */
+      promptTokens: number;
+    };
+    UsageByModelDto: {
+      /** Format: int32 */
+      calls: number;
+      /** Format: int64 */
+      completionTokens: number;
+      /** Format: double */
+      costUsd: number;
+      model: string;
+      /** Format: int64 */
+      promptTokens: number;
+    };
+    UsageResponse: {
+      /** Format: int32 */
+      bucketSeconds: number;
+      buckets: components['schemas']['UsageBucketDto'][];
+      byAgent: components['schemas']['UsageByAgentDto'][];
+      byModel: components['schemas']['UsageByModelDto'][];
+      /** Format: date-time */
+      from: string;
+      range: string;
+      /** Format: date-time */
+      to: string;
+      totals: components['schemas']['UsageTotalsDto'];
+    };
+    UsageTotalsDto: {
+      /** Format: int32 */
+      calls: number;
+      /** Format: int64 */
+      completionTokens: number;
+      /** Format: double */
+      costUsd: number;
+      /** Format: int64 */
+      promptTokens: number;
+      /** Format: int32 */
+      unknownUsageCalls: number;
     };
     UserAdminDto: {
       /** Format: date-time */
@@ -2805,6 +2882,83 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TraceResponse'];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+    };
+  };
+  getUsage: {
+    parameters: {
+      query?: {
+        range?: string;
+        agent?: string;
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['UsageResponse'];
         };
       };
       /** @description Bad Request */

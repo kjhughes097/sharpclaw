@@ -18,6 +18,7 @@ public static class EndpointMapping
         AuditEndpoints.Map(client);
         ApprovalEndpoints.MapClient(client);
         SystemEndpoints.Map(client);
+        UsageEndpoints.Map(client);
 
         // Agent listener: everything needs an agent token.
         var agent = app.MapGroup("/agent").RequireListener(Listener.Agent).AddEndpointFilter<AgentAuthFilter>();
