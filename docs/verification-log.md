@@ -170,3 +170,13 @@ light, and at 360 px: tab strip scrolls, toolbar and status bar wrap, sessions o
 **Not yet done (needs the human):** the WebKit project (host libraries need root); the credits card
 against a real OpenRouter management key; and a walk-through of the spec's section 15 checklist
 with a real OpenRouter session.
+
+## Agent tools (2026-10-28)
+
+Verified with the fake provider and unit tests (no secrets or external network):
+
+- All automated tests passed: gateway 283, agent 192, CLI 25. Release build has 0 warnings.
+- **Time zones in the agent image:** `mcr.microsoft.com/dotnet/runtime:10.0` (Ubuntu 24.04) ships
+  `tzdata`; a .NET program run as the `app` user in that image resolved `Europe/London` with
+  `TimeZoneInfo.FindSystemTimeZoneById`, so `current_time` works in the container.
+- `docker/Dockerfile.agent` builds with the new tools.
