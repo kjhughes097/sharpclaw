@@ -18,9 +18,8 @@ obj/
 *.db-shm
 *.db-wal
 
-# Agent workspace contents (mounted read-write, not source)
-docker/agents/*/workspace/*
-!docker/agents/*/workspace/.gitkeep
+# Throwaway dev stack created by scripts/dev-stack.sh
+docker/.dev/
 
 # Fake provider local script
 docker/fake-provider/script.json

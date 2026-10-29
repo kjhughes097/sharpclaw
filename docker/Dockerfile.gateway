@@ -29,7 +29,7 @@ COPY --from=ui /ui/dist ./wwwroot
 # image default so we do not double-bind a port.
 ENV ASPNETCORE_HTTP_PORTS=
 
-# Non-root user; /data holds the SQLite file on a named volume.
+# Non-root user; /data holds the SQLite file (the install's ./data bind mount).
 # The .NET images ship a predefined non-root user named "app".
 RUN mkdir -p /data && chown app:app /data
 USER app

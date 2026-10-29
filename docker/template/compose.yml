@@ -1,0 +1,73 @@
+name: sharpclaw
+
+networks:
+  internal:
+    internal: true # no route to the outside world
+  external: {}
+
+x-agent: &agent
+  image: sharpclaw-agent:${SHARPCLAW_TAG:-latest}
+  # Run as the host user that owns ./agents/<name>/workspace so workspace tools can write there.
+  user: "${SHARPCLAW_UID:-1000}:${SHARPCLAW_GID:-1000}"
+  depends_on:
+    gateway: { condition: service_healthy }
+  networks: [internal] # internal only: never give an agent the external network
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+services:
+  gateway:
+    image: sharpclaw-gateway:${SHARPCLAW_TAG:-latest}
+    # Same host user as the agents so the gateway can write the ./data bind mount.
+    user: "${SHARPCLAW_UID:-1000}:${SHARPCLAW_GID:-1000}"
+    environment:
+      Auth__AdminKey: ${ADMIN_KEY}
+      OpenRouter__ApiKey: ${OPENROUTER_API_KEY:-}
+      OpenRouter__ManagementKey: ${OPENROUTER_MANAGEMENT_KEY:-}
+      Provider__Type: ${PROVIDER_TYPE:-OpenRouter}
+      Fake__ScriptPath: ${FAKE_SCRIPT_PATH:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: ${OTEL_METRICS_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_LOGS_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: cumulative
+      OTEL_SERVICE_NAME: sharpclaw-gateway
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=home
+      # Models a session may switch to, e.g.:
+      # Models__Allowed__0: openai/gpt-4o-mini
+    ports:
+      # Client API and web UI only; 8081 is never published. Never port-forward this port.
+      - "${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}:8080"
+    networks: [internal, external]
+    volumes:
+      - ./data:/data
+    healthcheck:
+      test: ["CMD", "dotnet", "SharpClaw.Gateway.dll", "--healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # One service per agent. To add one, copy a block, rename it, add its token to .env and create
+  # ./agents/<name>/config/{soul.md,agent.json} and ./agents/<name>/workspace/.
+  agent-assistant:
+    <<: *agent
+    environment:
+      GATEWAY_URL: http://gateway:8081
+      AGENT_TOKEN: ${AGENT_ASSISTANT_TOKEN}
+      AGENT_CONFIG_PATH: /config/agent.json
+    volumes:
+      - ./agents/assistant/config:/config:ro
+      - ./agents/assistant/workspace:/workspace
+
+  agent-coder:
+    <<: *agent
+    environment:
+      GATEWAY_URL: http://gateway:8081
+      AGENT_TOKEN: ${AGENT_CODER_TOKEN}
+      AGENT_CONFIG_PATH: /config/agent.json
+    volumes:
+      - ./agents/coder/config:/config:ro
+      - ./agents/coder/workspace:/workspace

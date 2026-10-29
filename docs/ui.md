@@ -53,17 +53,20 @@ npm run dev        # Vite on http://localhost:5173, proxying /api, /openapi, /he
 ```
 
 The dev server needs a gateway on `http://localhost:8080` (override with `SHARPCLAW_GATEWAY`). The
-easiest is the Compose stack with the dev override, which switches to the fake provider and allows
-the Vite origin for cookie-authenticated requests:
+easiest is the dev stack: `scripts/dev-stack.sh` builds `:dev` images from the checkout, creates a
+throwaway install in `docker/.dev/` (gitignored) with the `compose.dev.yml` override, which switches
+to the fake provider and allows the Vite origin for cookie-authenticated requests, and starts the
+gateway on port 8090 so it can run next to your personal install on 8080:
 
 ```bash
-cd docker
-docker compose --env-file ../.env -f compose.yml -f compose.dev.yml up -d gateway
-SHARPCLAW_URL=http://localhost:8080 sharpclaw users create kevin   # first user, once
+scripts/dev-stack.sh
+SHARPCLAW_URL=http://localhost:8090 SHARPCLAW_ADMIN_KEY=<ADMIN_KEY from docker/.dev/.env> \
+  sharpclaw users create kevin                                      # first user, once
+cd ui && SHARPCLAW_GATEWAY=http://localhost:8090 npm run dev
 ```
 
 `Auth__AllowedOrigins__0=http://localhost:5173` lives only in `compose.dev.yml`; never put it in
-the base Compose file.
+the template Compose file.
 
 ## Scripts
 

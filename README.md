@@ -152,33 +152,40 @@ Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 **CLI** (environment): `SHARPCLAW_URL` (default `http://localhost:8080`) and
 `SHARPCLAW_ADMIN_KEY` (required).
 
-## Bootstrap (Docker)
+## Install and run (Docker)
 
-1. Copy the example env and set values:
+The repo is for building; you run SharpClaw from a separate install directory (default
+`~/sharpclaw`) that holds your `compose.yml`, `.env`, agent souls and policies, workspaces and the
+SQLite database. The repo only ships a sample in [docker/template/](docker/template/) (two agents,
+`assistant` and `coder`).
+
+1. Build the images from the checkout (tags `sharpclaw-gateway`/`sharpclaw-agent` as
+   `:<git-sha>` and `:latest`):
    ```bash
-   cp .env.example docker/.env
-   # set ADMIN_KEY, and either OPENROUTER_API_KEY or PROVIDER_TYPE=Fake, plus the OTLP endpoints
+   scripts/build-images.sh
    ```
-2. Start the gateway:
+2. Create the install. It copies the template without overwriting anything, writes `.env`
+   (mode 600, generated `ADMIN_KEY`, your uid/gid) and creates `data/` and the workspaces:
    ```bash
-   cd docker && docker compose up -d gateway
+   scripts/install.sh            # or: scripts/install.sh /some/other/dir
    ```
-3. Create the agents and copy each token into `docker/.env` as `AGENT_ADE_TOKEN` /
-   `AGENT_CODY_TOKEN` (also set `AGENT_UID`/`AGENT_GID` to the owner of
-   `docker/agents/<name>/workspace` if it isn't 1000:1000, so workspace tools can write):
+3. In `~/sharpclaw`, set `OPENROUTER_API_KEY` (or `PROVIDER_TYPE=Fake`) and the OTLP endpoints in
+   `.env`, then start the gateway:
    ```bash
-   export SHARPCLAW_URL=http://localhost:8080 SHARPCLAW_ADMIN_KEY=<your admin key>
-   dotnet run --project src/SharpClaw.Cli -- agents create ade --model <id> --daily-budget 1
-   dotnet run --project src/SharpClaw.Cli -- agents create cody --model <id> --daily-budget 1
+   cd ~/sharpclaw && docker compose up -d gateway
    ```
-4. Start the agents:
+4. Create the agents and copy each token into `.env` as `AGENT_ASSISTANT_TOKEN` /
+   `AGENT_CODER_TOKEN`, then start everything:
    ```bash
-   cd docker && docker compose up -d agent-ade agent-cody
+   sharpclaw agents create assistant --model <id> --daily-budget 1
+   sharpclaw agents create coder --model <id> --daily-budget 1
+   docker compose up -d
    ```
-5. Chat:
-   ```bash
-   dotnet run --project src/SharpClaw.Cli -- chat ade
-   ```
+5. Chat: `sharpclaw chat assistant`
+
+The install's own `README.md` covers adding agents and upgrading (rebuild the images, then
+`docker compose up -d`; pin or roll back with `SHARPCLAW_TAG`). Re-running `install.sh` lists any
+of your files that differ from a newer template, for you to merge by hand.
 
 Containers are started and stopped manually. The gateway never touches the Docker socket. Only the
 client port is published (to `${CLIENT_BIND:-127.0.0.1}:8080`); the agent port 8081 is never published.
@@ -199,8 +206,8 @@ per agent), **Prompts** (pick an agent and model, sessions, chat), one tab per a
 - Each browser tab holds one live connection; over plain HTTP about four tabs per browser is the
   practical limit.
 - **Optional:** set `OPENROUTER_MANAGEMENT_KEY` in `.env` to show remaining credits. To let a
-  session switch models, add the allowed ids to the gateway's environment in
-  `docker/compose.yml` (`Models__Allowed__0: openai/gpt-4o-mini`, `Models__Allowed__1: …`).
+  session switch models, add the allowed ids to the gateway's environment in your install's
+  `compose.yml` (`Models__Allowed__0: openai/gpt-4o-mini`, `Models__Allowed__1: …`).
 
 UI development, the event stream and the CSP are described in [docs/ui.md](docs/ui.md).
 
@@ -227,11 +234,11 @@ To get a `sharpclaw` command on your PATH, publish the CLI and add a small launc
 dotnet publish src/SharpClaw.Cli -c Release -o ~/.local/share/sharpclaw-cli
 cat > ~/.local/bin/sharpclaw <<'EOF'
 #!/usr/bin/env bash
-SHARPCLAW_REPO="${SHARPCLAW_REPO:-$HOME/projects/sharpclaw}"
+SHARPCLAW_HOME="${SHARPCLAW_HOME:-$HOME/sharpclaw}"
 export SHARPCLAW_URL="${SHARPCLAW_URL:-http://localhost:8080}"
-# Fall back to the admin key in the repo's .env when SHARPCLAW_ADMIN_KEY isn't set.
-if [ -z "${SHARPCLAW_ADMIN_KEY:-}" ] && [ -f "$SHARPCLAW_REPO/.env" ]; then
-  SHARPCLAW_ADMIN_KEY="$(grep -E '^ADMIN_KEY=' "$SHARPCLAW_REPO/.env" | head -n1 | cut -d= -f2-)"
+# Fall back to the admin key in the install's .env when SHARPCLAW_ADMIN_KEY isn't set.
+if [ -z "${SHARPCLAW_ADMIN_KEY:-}" ] && [ -f "$SHARPCLAW_HOME/.env" ]; then
+  SHARPCLAW_ADMIN_KEY="$(grep -E '^ADMIN_KEY=' "$SHARPCLAW_HOME/.env" | head -n1 | cut -d= -f2-)"
   export SHARPCLAW_ADMIN_KEY
 fi
 exec dotnet "$HOME/.local/share/sharpclaw-cli/sharpclaw.dll" "$@"
@@ -269,7 +276,7 @@ approval, shows the request and asks `Allow? [y/N]` (anything but `y`/`yes` deni
 ## Agent tools (Phase 3.2)
 
 Each agent reads its tool policy once at startup from a read-only file (`/config/agent.json`,
-e.g. [docker/agents/ade/config/agent.json](docker/agents/ade/config/agent.json)):
+e.g. [docker/template/agents/assistant/config/agent.json](docker/template/agents/assistant/config/agent.json)):
 
 ```json
 {
@@ -353,10 +360,10 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment=home
 
 ## Isolation verification
 
-With the stack running:
+With the stack running, from the install directory:
 
 ```bash
-cd docker && bash ../scripts/verify-isolation.sh
+cd ~/sharpclaw && bash <repo>/scripts/verify-isolation.sh
 ```
 
 It checks that the agent network cannot reach the public internet but can reach the gateway agent
