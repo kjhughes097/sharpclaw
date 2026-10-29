@@ -68,11 +68,11 @@ public class AgentToolConfigTests : IDisposable
     }
 
     [Theory]
-    [InlineData("ade")]
-    [InlineData("cody")]
+    [InlineData("assistant")]
+    [InlineData("coder")]
     public void Shipped_agent_configs_load(string agent)
     {
-        var path = Path.Combine(RepoRoot(), "docker", "agents", agent, "config", "agent.json");
+        var path = Path.Combine(RepoRoot(), "docker", "template", "agents", agent, "config", "agent.json");
         var config = AgentToolConfig.Load(path, Known);
         Assert.NotNull(config);
         Assert.NotEmpty(config.Tools);
