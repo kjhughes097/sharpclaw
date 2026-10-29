@@ -276,7 +276,7 @@ e.g. [docker/agents/ade/config/agent.json](docker/agents/ade/config/agent.json))
   "allowedRiskLevel": "low",
   "smartMode": true,
   "maxToolIterations": 10,
-  "tools": ["workspace_list", "workspace_read", "workspace_write", "workspace_delete"]
+  "tools": ["workspace_list", "workspace_read", "workspace_search", "workspace_write", "current_time"]
 }
 ```
 
@@ -285,9 +285,19 @@ A missing file runs the agent without tools; an invalid one stops it (exit code 
 | Tool | Risk |
 |---|---|
 | `workspace_list` | low |
-| `workspace_read` | low (content is untrusted: later calls in the turn are scored one level higher) |
+| `workspace_read` | low (content is untrusted: later calls in the turn are scored one level higher); 64 KB per call, page with `offset` / `nextOffset` |
+| `workspace_search` | low (literal, case-insensitive; results are untrusted like `workspace_read`) |
+| `workspace_find` | low (glob such as `**/*.md`) |
 | `workspace_write` | new file low, overwrite medium; scripts, executables and dotfiles uncertain |
+| `workspace_edit` | medium (replaces text that occurs exactly once); scripts, executables and dotfiles uncertain |
+| `workspace_append` | low; scripts, executables and dotfiles uncertain |
+| `workspace_move` | medium, overwrite high; scripts, executables and dotfiles uncertain |
+| `workspace_copy` | low, overwrite medium; scripts, executables and dotfiles uncertain |
 | `workspace_delete` | high |
+| `current_time` | low (UTC, or an IANA zone such as `Europe/London`) |
+| `calculate` | low (arithmetic only: `+ - * / % ^`, `abs round floor ceil sqrt min max`) |
+
+The full rules and caps are in the [agent tools spec](docs/sharpclaw-agent-tools-spec.md).
 
 How a call is decided (all in the agent's `ToolDispatcher`):
 
@@ -306,7 +316,7 @@ How a call is decided (all in the agent's `ToolDispatcher`):
 5. **Thread history keeps the tool exchanges.** With its reply the agent posts each round's tool
    calls and results; they are stored as `tool_request` / `tool_result` rows (arguments and results
    truncated, see `Tools:*`), shown by `GET …/messages?includeTools=true`, and replayed to the
-   model on later turns, except results of tools that return untrusted content (`workspace_read`),
+   model on later turns, except results of tools that return untrusted content (`workspace_read`, `workspace_search`),
    which are replaced by a stub so injected text can't persist in the thread.
 
 No tool executes code or shell commands. The agent container (no network, read-only root

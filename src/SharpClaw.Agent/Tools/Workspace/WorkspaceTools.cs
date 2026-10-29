@@ -3,7 +3,9 @@ using System.Text.Json;
 
 namespace SharpClaw.Agent.Tools.Workspace;
 
-/// <summary>The four workspace tools (3.2 spec section 6). No tool here executes anything.</summary>
+/// <summary>
+/// The workspace tools (3.2 spec section 6, agent tools spec section 4). No tool here executes anything.
+/// </summary>
 public static class WorkspaceTools
 {
     public const int MaxListEntries = 200;
@@ -13,11 +15,20 @@ public static class WorkspaceTools
     public static IAgentTool[] All(string workspacePath)
     {
         var root = new WorkspaceRoot(workspacePath);
-        return new IAgentTool[] { new ListTool(root), new ReadTool(root), new WriteTool(root), new DeleteTool(root) };
+        return new IAgentTool[]
+        {
+            new ListTool(root), new ReadTool(root), new WriteTool(root), new DeleteTool(root),
+            new SearchTool(root), new FindTool(root), new EditTool(root), new AppendTool(root),
+            new MoveTool(root), new CopyTool(root),
+        };
     }
 
-    public static IReadOnlyCollection<string> Names { get; } =
-        new[] { "workspace_list", "workspace_read", "workspace_write", "workspace_delete" };
+    public static IReadOnlyCollection<string> Names { get; } = new[]
+    {
+        "workspace_list", "workspace_read", "workspace_write", "workspace_delete",
+        "workspace_search", "workspace_find", "workspace_edit", "workspace_append",
+        "workspace_move", "workspace_copy",
+    };
 
     private const string PathOnlySchema = """
         {"type":"object","properties":{"path":{"type":"string","description":"Path relative to the workspace root"}},"required":["path"]}
@@ -59,45 +70,87 @@ public static class WorkspaceTools
         }
     }
 
-    /// <summary>Reads a text file. File content is untrusted, so reading taints the rest of the turn.</summary>
+    /// <summary>
+    /// Reads a text file, a page of at most <see cref="MaxReadBytes"/> at a time (agent tools spec
+    /// section 4.6). File content is untrusted, so reading taints the rest of the turn.
+    /// </summary>
     private sealed class ReadTool(WorkspaceRoot root) : IAgentTool
     {
         public string Name => "workspace_read";
-        public string Description => $"Read a text file from the workspace (at most {MaxReadBytes / 1024} KB; longer files are truncated).";
-        public string ParametersJson => PathOnlySchema;
+        public string Description =>
+            $"Read a text file from the workspace, at most {MaxReadBytes / 1024} KB per call. " +
+            "When the result is truncated, call again with offset = nextOffset to read the next part.";
+        public string ParametersJson => """
+            {"type":"object","properties":{"path":{"type":"string","description":"File path relative to the workspace root"},"offset":{"type":"integer","minimum":0,"description":"Byte offset to start reading from (default 0); use nextOffset from a truncated result"}},"required":["path"]}
+            """;
         public bool ReturnsUntrustedContent => true;
 
-        public ToolAssessment Assess(JsonElement args) =>
-            root.Resolve(Args.String(args, "path")).Error is { } error
-                ? new ToolAssessment.Blocked(error)
-                : new ToolAssessment.Scored(RiskLevel.Low, "reads a file");
+        public ToolAssessment Assess(JsonElement args)
+        {
+            if (root.Resolve(Args.String(args, "path")).Error is { } error)
+                return new ToolAssessment.Blocked(error);
+            if (!TryOffset(args, out _))
+                return new ToolAssessment.Blocked("offset must be a non-negative integer");
+            return new ToolAssessment.Scored(RiskLevel.Low, "reads a file");
+        }
 
-        public string Summarize(JsonElement args) => $"read {Args.ShortPath(Args.String(args, "path"))}";
+        public string Summarize(JsonElement args) =>
+            TryOffset(args, out var offset) && offset > 0
+                ? $"read {Args.ShortPath(Args.String(args, "path"))} (from byte {offset})"
+                : $"read {Args.ShortPath(Args.String(args, "path"))}";
 
         public async Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
         {
             var (path, _) = root.Resolve(Args.String(args, "path"));
             if (!File.Exists(path!.FullPath))
                 return ToolResult.Error("not_found", $"No file at '{path.Relative}'.");
+            TryOffset(args, out var requested);
 
             await using var stream = File.OpenRead(path.FullPath);
-            var buffer = new byte[Math.Min(stream.Length, MaxReadBytes)];
+            var length = stream.Length;
+            var start = Math.Min(requested, length);
+            stream.Seek(start, SeekOrigin.Begin);
+
+            // Up to 3 extra bytes on each side let the page snap to UTF-8 character boundaries.
+            var buffer = new byte[Math.Min(length - start, MaxReadBytes + 6)];
             var read = await stream.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, ct);
-            var content = Encoding.UTF8.GetString(buffer, 0, read);
-            return ToolResult.Success(new { path = path.Relative, content, bytes = stream.Length, truncated = stream.Length > MaxReadBytes });
+
+            // Start at the first character boundary at or after the offset.
+            var skip = 0;
+            while (skip < 3 && skip < read && IsContinuation(buffer[skip]))
+                skip++;
+
+            // End before a character that wouldn't fit; the next page starts with it.
+            var end = Math.Min(read, skip + MaxReadBytes);
+            if (end < read)
+            {
+                var limit = end - 3;
+                while (end > skip && end > limit && IsContinuation(buffer[end]))
+                    end--;
+            }
+
+            var offset = start + skip;
+            var next = start + end;
+            var content = Encoding.UTF8.GetString(buffer, skip, end - skip);
+            return next < length
+                ? ToolResult.Success(new { path = path.Relative, content, bytes = length, offset, truncated = true, nextOffset = next })
+                : ToolResult.Success(new { path = path.Relative, content, bytes = length, offset, truncated = false });
+        }
+
+        private static bool IsContinuation(byte b) => (b & 0b1100_0000) == 0b1000_0000;
+
+        private static bool TryOffset(JsonElement args, out long offset)
+        {
+            offset = 0;
+            if (!args.TryGetProperty("offset", out var el) || el.ValueKind == JsonValueKind.Null)
+                return true;
+            return el.ValueKind == JsonValueKind.Number && el.TryGetInt64(out offset) && offset >= 0;
         }
     }
 
     /// <summary>Creates or overwrites a text file, atomically (temp file then rename).</summary>
     private sealed class WriteTool(WorkspaceRoot root) : IAgentTool
     {
-        // Script and executable types (and dotfiles such as .bashrc): nothing here runs them, but
-        // something else could later, so the rules don't score them confidently.
-        private static readonly HashSet<string> SensitiveExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".sh", ".bash", ".ps1", ".bat", ".cmd", ".exe", ".dll", ".so", ".py", ".js",
-        };
-
         public string Name => "workspace_write";
         public string Description => $"Create or overwrite a text file in the workspace (at most {MaxWriteBytes / 1024} KB).";
         public string ParametersJson => """
@@ -117,7 +170,7 @@ public static class WorkspaceTools
             if (Directory.Exists(path!.FullPath))
                 return new ToolAssessment.Blocked("path is a directory");
 
-            if (IsSensitive(path.Relative))
+            if (WorkspaceFiles.IsSensitive(path.Relative))
                 return new ToolAssessment.Uncertain("writes a script, executable or dotfile");
             return File.Exists(path.FullPath)
                 ? new ToolAssessment.Scored(RiskLevel.Medium, "overwrites an existing file")
@@ -138,26 +191,9 @@ public static class WorkspaceTools
             var content = Args.String(args, "content")!;
             var created = !File.Exists(path!.FullPath);
 
-            var dir = System.IO.Path.GetDirectoryName(path.FullPath)!;
-            Directory.CreateDirectory(dir);
-            var temp = System.IO.Path.Combine(dir, $".{System.IO.Path.GetFileName(path.FullPath)}.{Guid.NewGuid():N}.tmp");
-            try
-            {
-                await File.WriteAllTextAsync(temp, content, new UTF8Encoding(false), ct);
-                File.Move(temp, path.FullPath, overwrite: true);
-            }
-            finally
-            {
-                if (File.Exists(temp))
-                    File.Delete(temp);
-            }
-
+            await WorkspaceFiles.WriteAtomicAsync(path.FullPath, content, ct);
             return ToolResult.Success(new { path = path.Relative, bytes = Encoding.UTF8.GetByteCount(content), created });
         }
-
-        private static bool IsSensitive(string relative) =>
-            relative.Split('/').Any(segment => segment.StartsWith('.')) ||
-            SensitiveExtensions.Contains(System.IO.Path.GetExtension(relative));
     }
 
     /// <summary>Deletes a single file (never a directory). Always high risk.</summary>

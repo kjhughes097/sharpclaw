@@ -82,4 +82,8 @@ internal static class Args
     /// <summary>Paths in summaries are capped so a long path can't swamp the approval prompt.</summary>
     public static string ShortPath(string? path) =>
         string.IsNullOrEmpty(path) ? "." : path.Length <= 120 ? path : path[..117] + "...";
+
+    /// <summary>A directory argument for summaries: "notes/", or "./" for the root.</summary>
+    public static string DirectoryLabel(string? path) =>
+        string.IsNullOrWhiteSpace(path) || path.Trim() is "." or "./" ? "./" : ShortPath(path.TrimEnd('/', '\\')) + "/";
 }

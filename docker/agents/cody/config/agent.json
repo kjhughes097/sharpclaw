@@ -5,7 +5,15 @@
   "tools": [
     "workspace_list",
     "workspace_read",
+    "workspace_search",
+    "workspace_find",
     "workspace_write",
-    "workspace_delete"
+    "workspace_edit",
+    "workspace_append",
+    "workspace_move",
+    "workspace_copy",
+    "workspace_delete",
+    "current_time",
+    "calculate"
   ]
 }
