@@ -9,7 +9,7 @@ namespace SharpClaw.Agent.Tools.Workspace;
 public static class WorkspaceTools
 {
     public const int MaxListEntries = 200;
-    public const int MaxReadBytes = 64 * 1024;
+    public const int MaxReadBytes = TextPaging.MaxPageBytes;
     public const int MaxWriteBytes = 256 * 1024;
 
     public static IAgentTool[] All(string workspacePath)
@@ -111,45 +111,13 @@ public static class WorkspaceTools
             TryOffset(args, out var requested);
 
             await using var stream = NoFollow.OpenRead(root.Path, path.Relative);
-            var length = stream.Length;
-            var start = Math.Min(requested, length);
-            stream.Seek(start, SeekOrigin.Begin);
-
-            // Up to 3 extra bytes on each side let the page snap to UTF-8 character boundaries.
-            var buffer = new byte[Math.Min(length - start, MaxReadBytes + 6)];
-            var read = await stream.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, ct);
-
-            // Start at the first character boundary at or after the offset.
-            var skip = 0;
-            while (skip < 3 && skip < read && IsContinuation(buffer[skip]))
-                skip++;
-
-            // End before a character that wouldn't fit; the next page starts with it.
-            var end = Math.Min(read, skip + MaxReadBytes);
-            if (end < read)
-            {
-                var limit = end - 3;
-                while (end > skip && end > limit && IsContinuation(buffer[end]))
-                    end--;
-            }
-
-            var offset = start + skip;
-            var next = start + end;
-            var content = Encoding.UTF8.GetString(buffer, skip, end - skip);
-            return next < length
-                ? ToolResult.Success(new { path = path.Relative, content, bytes = length, offset, truncated = true, nextOffset = next })
-                : ToolResult.Success(new { path = path.Relative, content, bytes = length, offset, truncated = false });
+            var page = await TextPaging.ReadPageAsync(stream, requested, ct);
+            return page.Truncated
+                ? ToolResult.Success(new { path = path.Relative, content = page.Content, bytes = page.Length, offset = page.Offset, truncated = true, nextOffset = page.NextOffset })
+                : ToolResult.Success(new { path = path.Relative, content = page.Content, bytes = page.Length, offset = page.Offset, truncated = false });
         }
 
-        private static bool IsContinuation(byte b) => (b & 0b1100_0000) == 0b1000_0000;
-
-        private static bool TryOffset(JsonElement args, out long offset)
-        {
-            offset = 0;
-            if (!args.TryGetProperty("offset", out var el) || el.ValueKind == JsonValueKind.Null)
-                return true;
-            return el.ValueKind == JsonValueKind.Number && el.TryGetInt64(out offset) && offset >= 0;
-        }
+        private static bool TryOffset(JsonElement args, out long offset) => TextPaging.TryOffset(args, out offset);
     }
 
     /// <summary>Creates or overwrites a text file, atomically (temp file then rename).</summary>
