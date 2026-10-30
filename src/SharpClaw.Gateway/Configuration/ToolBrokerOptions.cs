@@ -78,3 +78,14 @@ public sealed class BrokerAgentOptions
     /// <summary>Service secret the gateway presents to the runner (<c>SANDBOX_&lt;NAME&gt;_SECRET</c>).</summary>
     public string? SandboxSecret { get; set; }
 }
+
+/// <summary><c>web_search</c> (external tools spec section 7.2): the cheap model that runs OpenRouter's web plugin.</summary>
+public sealed class WebSearchOptions
+{
+    public const string Section = "WebSearch";
+
+    [Required(ErrorMessage = "WebSearch:Model is required.")]
+    public string Model { get; set; } = "openai/gpt-4o-mini";
+
+    [Range(1, 600)] public int TimeoutSeconds { get; set; } = 60;
+}

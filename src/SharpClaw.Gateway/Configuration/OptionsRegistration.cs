@@ -41,6 +41,7 @@ public static class OptionsRegistration
         Add<CreditsOptions, CreditsOptionsValidator>(builder, CreditsOptions.Section);
         Add<ToolBrokerOptions, ToolBrokerOptionsValidator>(builder, ToolBrokerOptions.Section);
         builder.Services.AddSingleton<IValidateOptions<ToolBrokerOptions>, ProblemValidator<ToolBrokerOptions>>();
+        Add<WebSearchOptions, WebSearchOptionsValidator>(builder, WebSearchOptions.Section);
         Add<EgressOptions, EgressOptionsValidator>(builder, EgressOptions.Section);
         builder.Services.AddSingleton<IValidateOptions<EgressOptions>, ProblemValidator<EgressOptions>>();
         builder.Services.AddSingleton<IStartupCheck, SandboxSettingsCheck>();
@@ -81,6 +82,7 @@ public static class OptionsRegistration
 [OptionsValidator] public sealed partial class CreditsOptionsValidator : IValidateOptions<CreditsOptions>;
 [OptionsValidator] public sealed partial class ToolBrokerOptionsValidator : IValidateOptions<ToolBrokerOptions>;
 [OptionsValidator] public sealed partial class EgressOptionsValidator : IValidateOptions<EgressOptions>;
+[OptionsValidator] public sealed partial class WebSearchOptionsValidator : IValidateOptions<WebSearchOptions>;
 
 /// <summary>
 /// Rules across the sandbox settings: the egress listener gets its own port, and a sandbox's proxy

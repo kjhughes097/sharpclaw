@@ -48,9 +48,9 @@ public static class BrokerTestHelpers
         });
 
     /// <summary>Creates the agent and a claimed user message for it.</summary>
-    public static async Task<Turn> ClaimedTurnAsync(this GatewayFixture fx, string name = "assistant")
+    public static async Task<Turn> ClaimedTurnAsync(this GatewayFixture fx, string name = "assistant", double budget = 1.0)
     {
-        var (agent, token) = await fx.CreateAgentAsync(name);
+        var (agent, token) = await fx.CreateAgentAsync(name, budget: budget);
         var thread = await fx.CreateThreadAsync(agent.Id);
         await fx.PostUserMessageAsync(thread, "hello");
         var corr = (await fx.ClaimAsync(token))!.Id;

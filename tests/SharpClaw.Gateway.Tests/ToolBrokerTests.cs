@@ -134,12 +134,15 @@ public partial class ToolBrokerTests
     }
 
     [Fact]
-    public async Task A_tool_without_a_handler_is_unavailable()
+    public async Task A_tool_with_nothing_to_run_it_is_unavailable()
     {
-        await using var fx = await GatewayAsync(Config("assistant", BrokerTools.WebSearch));
+        // A sandbox tool for an agent whose sandbox isn't set up (no handler, or one with no sandbox).
+        var config = Config("assistant", BrokerTools.ExtractText);
+        config["ToolBroker:Agents:assistant:SandboxSecret"] = "";
+        await using var fx = await GatewayAsync(config);
         var t = await fx.ClaimedTurnAsync();
 
-        var resp = await t.InvokeAsync(BrokerTools.WebSearch, new { query = "x" });
+        var resp = await t.InvokeAsync(BrokerTools.ExtractText, new { path = "a.pdf" });
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, resp.StatusCode);
         Assert.Equal(ErrorCodes.ToolUnavailable, await ClientApiHelpers.ErrorCodeAsync(resp));

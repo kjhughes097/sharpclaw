@@ -68,6 +68,8 @@ services:
       ToolBroker__Agents__coder__SandboxUrl: http://sandbox-coder:8090
       ToolBroker__Agents__coder__SandboxSecret: ${SANDBOX_CODER_SECRET:-}
       Egress__Sandboxes__coder__Secret: ${SANDBOX_CODER_PROXY_SECRET:-}
+      # The cheap model that runs web_search (default openai/gpt-4o-mini), e.g.:
+      # WebSearch__Model: openai/gpt-4o-mini
       # Hosts whose http_fetch calls are low risk, e.g.:
       # ToolBroker__FetchAllowHosts__0: learn.microsoft.com
     ports:

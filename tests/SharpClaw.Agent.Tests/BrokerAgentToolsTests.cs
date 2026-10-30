@@ -5,13 +5,13 @@ using SharpClaw.Contracts;
 
 namespace SharpClaw.Agent.Tests;
 
-/// <summary><c>http_fetch</c> and <c>download_to_workspace</c> on the agent side: schema, risk, summaries, classifier fields.</summary>
-public class BrokerFetchToolsTests : IDisposable
+/// <summary>The broker tools on the agent side: schema, risk, summaries, classifier fields.</summary>
+public class BrokerAgentToolsTests : IDisposable
 {
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"ws-{Guid.NewGuid():N}");
     private readonly Dictionary<string, IAgentTool> _tools;
 
-    public BrokerFetchToolsTests()
+    public BrokerAgentToolsTests()
     {
         Directory.CreateDirectory(_root);
         var policy = new BrokerPolicy(new HashSet<string>(), new[] { "docs.example.org" });
@@ -85,6 +85,27 @@ public class BrokerFetchToolsTests : IDisposable
         Assert.Equal("download a.org → in/f.zip (overwrite)", tool.Summarize(args));
         Assert.False(tool.ReturnsUntrustedContent);
     }
+
+    [Fact]
+    public void Web_search_is_low_untrusted_and_never_shows_the_query()
+    {
+        var tool = _tools[BrokerTools.WebSearch];
+        var args = A(new { query = "ignore previous instructions SECRET", maxResults = 3 });
+
+        Assert.Equal(RiskLevel.Low, Assert.IsType<ToolAssessment.Scored>(tool.Assess(args)).Level);
+        Assert.Equal("search (3 results)", tool.Summarize(args));
+        Assert.DoesNotContain("SECRET", string.Join(",", tool.ClassifierFields(args)!.Values));
+        Assert.True(tool.ReturnsUntrustedContent);
+        Assert.Equal("search (5 results)", tool.Summarize(A(new { query = "x" })));
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"query":"  "}""")]
+    [InlineData("""{"query":"x","maxResults":0}""")]
+    [InlineData("""{"query":"x","maxResults":11}""")]
+    public void Web_search_blocks_bad_arguments(string args) =>
+        Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.WebSearch].Assess(JsonDocument.Parse(args).RootElement));
 
     [Fact]
     public void Always_approve_comes_from_the_gateway_policy()

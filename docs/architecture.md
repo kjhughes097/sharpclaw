@@ -182,6 +182,12 @@ arguments, which the gateway recomputes (`ToolArgsHash`); it is consumed by the 
 update that checks it (otherwise `403 approval_required`). The call goes to the tool's
 `IBrokerToolHandler` (none → `503 tool_unavailable`), anything agent-specific such as the sandbox
 comes from the agent's identity, and every call is recorded in `broker_calls`.
+`web_search` runs in the gateway (`WebSearchToolHandler`): a separate non-streaming OpenRouter call
+with the `web` plugin on `WebSearch:Model` (`IWebSearchProvider`; `FakeWebSearch` answers from
+fake-script `citations` rules), reduced to `{ title, url, excerpt }` results; it is recorded in
+`llm_calls` with purpose `web_search` and counts against the daily budget. The server-side search
+tool is never enabled on agent chat completions. Sandbox tools go to `SandboxToolHandler`, which
+forwards to the calling agent's own runner.
 
 ## 5. Events
 
@@ -209,7 +215,7 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), [contract
 | `agents`, `agent_tokens` | Agent config (model, daily budget, context window, enabled, last seen); hashed tokens. |
 | `threads` | Owner agent, title, archived, `last_message_at`/`last_preview`, last context figures, optional `model` override (must be in `Models:Allowed` to take effect). |
 | `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`) and `sent_by_user` (user name or `admin_key`). |
-| `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose, outcome). |
+| `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose `chat`/`risk_assessment`/`web_search`, outcome). |
 | `tool_calls` | Every tool call the model requested, plus the agent's report. |
 | `approvals` | Approval requests and decisions (`decided_by` = user/system; `decided_by_user` = which user, or `admin_key`); `args_hash` binds an approval to exact arguments, `used_at` marks it consumed by the broker. |
 | `broker_calls` | Append-only audit of every tool-broker call: agent, turn, tool, target host or repository, status, bytes, duration, approval. Never arguments or results. |

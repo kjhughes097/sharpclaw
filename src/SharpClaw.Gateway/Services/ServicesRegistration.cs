@@ -29,6 +29,7 @@ public static class ServicesRegistration
         // Broker tool handlers are added per tool (IBrokerToolHandler); a tool without one is unavailable.
         builder.Services.AddScoped<ToolBroker>();
         builder.Services.AddSingleton<IBrokerToolHandler, SandboxToolHandler>();
+        builder.Services.AddScoped<IBrokerToolHandler, WebSearchToolHandler>();
         // The runner is on the sandbox's own network: never through a proxy, never following redirects.
         builder.Services.AddHttpClient(SandboxToolHandler.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan)
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false });
