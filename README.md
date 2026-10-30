@@ -1,196 +1,157 @@
-# SharpClaw V3
+# SharpClaw
 
-A personal multi-agent system. Phase 3.1 proved the architecture end to end with the smallest
-possible system:
+A personal, self-hosted multi-agent system. You chat with your agents from a web UI or a CLI; each
+agent has its own persona ("soul"), model, daily budget and a private workspace it can read and
+write with a small set of file tools.
 
-> CLI → gateway → agent → gateway → OpenRouter → back to the CLI, streamed, with the agent
-> network-isolated, every LLM call audited, a daily spend cap enforced, and telemetry flowing to
-> Grafana.
+The design is built around one rule: **the gateway is the single trust boundary.** Agents are
+untrusted workloads. They run in locked-down containers with **no internet access**, hold **no
+provider keys**, and reach the outside world only through the gateway, which enforces budgets,
+asks you before risky tool calls, and audits every model and tool call.
 
-The **gateway** is the single trust boundary. Agents are untrusted workloads: they hold no
-provider keys, have no direct internet access, and reach the world only through the gateway.
+## Quick start
 
-Phase 3.2 adds **agent tools with policy and approval**: the agent scores each tool call's risk
-from its arguments and asks the user before running anything above its allowed risk level, and
-every tool call is audited (see [Agent tools](#agent-tools-phase-32)).
-
-The **pre-3.3 foundations** prepare for the web UI: browser login with session cookies, tool
-exchanges kept in thread history, per-agent context windows, replayable SSE events, and an
-approval queue that works with nobody watching.
-
-Phase 3.3 adds the **web UI**: login, streamed chat, inline tool activity and approvals,
-agents and tokens, audit and per-thread traces (see [Using the web UI](#using-the-web-ui)).
-
-How the system fits together today: [docs/architecture.md](docs/architecture.md).
-Specifications: [Phase 3.1](docs/sharpclaw-3.1-implementation-spec.md),
-[Phase 3.2](docs/sharpclaw-3.2-implementation-spec.md),
-[pre-3.3 foundations](docs/sharpclaw-pre-3.3-foundations-spec.md),
-[Phase 3.3](docs/sharpclaw-3.3-implementation-spec.md). Roadmap: [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md).
-
-## Projects
-
-| Project | Purpose |
-|---|---|
-| `src/SharpClaw.Contracts` | DTOs, error shapes and constants shared by all projects |
-| `src/SharpClaw.Gateway` | ASP.NET gateway: two listeners, EF Core/SQLite, providers, telemetry |
-| `src/SharpClaw.Agent` | The agent loop (console app, one per Docker container) |
-| `src/SharpClaw.Cli` | Admin and chat client (assembly name `sharpclaw`) |
-| `ui/` | Web UI (React + TypeScript + Vite), served by the gateway; see [docs/ui.md](docs/ui.md) |
-| `tests/SharpClaw.Gateway.Tests` | Gateway integration/unit tests (real Kestrel, fake provider, fake clock) |
-| `tests/SharpClaw.Agent.Tests` | Agent loop tests against a fake gateway |
-| `tests/SharpClaw.Cli.Tests` | CLI argument parsing and chat-ordering tests |
-
-## Build & test
+You need **Docker** (with Compose v2), `git`, `curl` and `openssl` on Linux or macOS. No .NET,
+Node or API key is needed to try it.
 
 ```bash
-dotnet build
-dotnet test
+git clone https://github.com/kjhughes097/sharpclaw.git && cd sharpclaw
+scripts/quickstart.sh
 ```
 
-The gateway tests start the real gateway on two ephemeral localhost ports, back it with a
-temporary SQLite file and the `FakeProvider`, and drive time with a `FakeTimeProvider` — no
-secrets or network required. The web UI has its own checks (`cd ui && npm ci && npm run lint &&
-npm run typecheck && npm test && npm run check:api`); see [docs/ui.md](docs/ui.md).
-GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the .NET build and
-tests, the UI checks and the Playwright suite (Chromium) on every pull request.
+Open **http://127.0.0.1:8080** and sign in with the user name and password the script prints
+(the password is shown once). Pick **Prompts**, choose an agent and say hello.
 
-## Architecture overview
+The script builds the images, creates your install in `~/sharpclaw`, starts the gateway, creates
+two sample agents (`assistant` and `coder`) and saves their tokens in `~/sharpclaw/.env`, creates
+your web UI user, and starts the agents. Once the images are built it takes under a minute (the
+first image build takes a few minutes). It's safe to re-run: it only fills in what's missing.
 
-- **Two listeners, one process.** The client API (default port 8080) and the agent API (default
-  port 8081) are separated by the **local port the connection arrived on**, never the `Host`
-  header. A request to the wrong listener returns `404`.
-- **Auth.** The client API accepts the admin key (`Authorization: Bearer <admin key>`,
-  constant-time compared; used by the CLI and scripts) or a browser session cookie. The agent API
-  uses per-agent tokens (`sc_…`); only a SHA-256 hash and an 8-char prefix are stored, and the full
-  value is shown exactly once at creation.
-- **Browser login.** `POST /api/auth/login` with a username and password (PBKDF2-SHA256, 600,000
-  iterations; at least 12 characters) sets an `HttpOnly`, `SameSite=Strict` session cookie and
-  returns a CSRF token. Cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` need a same-origin
-  `Origin` (or `Referer`) and `X-CSRF-Token`; otherwise `403 csrf_failed`. Failed logins are
-  rate limited per username and per IP (`429 rate_limited`). Sessions slide (7 days idle, 30 days
-  absolute). `/api/users*` accepts only the admin key. TLS is terminated by a reverse proxy; set
-  `Auth:ForwardedHeaders:*` so the gateway trusts its forwarded headers, and `Auth:AllowedOrigins`
-  if the browser's origin differs from what the gateway sees. No CORS. Create users with
-  `sharpclaw users create <name>`.
-- **Chat completions.** `POST /v1/chat/completions` is OpenAI-compatible and streaming only. The
-  gateway always uses the agent's configured model, enforces the daily budget before streaming,
-  records every call in `llm_calls`, and tees content deltas to the client's SSE stream.
-- **Messaging.** Clients post user messages to a thread; agents claim them via a long-poll inbox
-  (atomic single-statement claim), answer via the chat endpoint, and post a reply. Live output
-  reaches clients over SSE: `GET /api/threads/{id}/stream` for one thread, `GET /api/events` for
-  all threads.
-- **Event replay.** Durable events (`message.created`, `message.completed`, `error`,
-  `tool.requested`, `approval.requested`, `approval.decided`) are stored in `thread_events` and
-  carry an SSE `id:`. Reconnecting with `Last-Event-ID` (or `?lastEventId=`) replays what was
-  missed, then a `ready` event marks the baseline and a `snapshot` carries any reply streamed so
-  far. Deltas are not stored. Events are kept for `Events:RetentionDays`; a last id older than that
-  gets `reset` (reload history).
-- **Tools (3.2).** The agent owns its tool loop, risk scoring and approval decisions; its container
-  is the sandbox. The gateway forwards tools to the model, records every tool call the model
-  requests, brokers approvals to the CLI, and caps LLM calls per message.
-- **Budgets.** Each agent has a daily USD cap. Spend is the sum of `llm_calls.cost_usd` since the
-  start of the current UTC day; exceeding it returns `429` with `Retry-After` and records a
-  `rejected` call. Budgets reset at UTC midnight.
-- **Context window.** The agent gets its history from `GET /agent/threads/{id}/context`, which
-  fits whole turns, newest first, into the agent's window (`contextWindowTokens`, default
-  `Context:DefaultWindowTokens`) minus the agent's reserve for its soul and tool schemas and
-  `Context:ReplyReserveTokens`. Older turns are dropped and replaced by a note; the thread's
-  `context.droppedTurns` shows it. Tokens are estimated as characters / 4. A turn that alone
-  doesn't fit, a chat request over the window, or a provider context-length error fails with
-  `context_too_large`.
+**Without an API key it uses the fake provider:** canned replies such as `Fake reply to: hello`,
+at no cost, which is enough to explore the UI, approvals and audit.
 
-## Configuration
+### Use real models
 
-Gateway configuration comes from `appsettings.json` with environment-variable overrides (standard
-ASP.NET `__` syntax).
+SharpClaw talks to models through [OpenRouter](https://openrouter.ai/). For a new install, pass
+your key:
 
-| Key | Default | Notes |
-|---|---|---|
-| `Listeners:ClientPort` | `8080` | Client API |
-| `Listeners:AgentPort` | `8081` | Agent API; never published to the host |
-| `Database:Path` | `/data/sharpclaw.db` | SQLite file (WAL, `busy_timeout=5000`) |
-| `Auth:AdminKey` | (required) | `Auth__AdminKey`; the gateway refuses to start if empty |
-| `Auth:Session:CookieName` | `sharpclaw_session` | |
-| `Auth:Session:CookieSecure` | `Auto` | `Auto` (Secure when the request is HTTPS), `Always`, `Never` |
-| `Auth:Session:IdleTimeoutHours` / `AbsoluteTimeoutDays` | `168` / `30` | Session lifetime |
-| `Auth:Password:Pbkdf2Iterations` | `600000` | Never lower; hashes are upgraded on login |
-| `Auth:Login:MaxFailures` / `WindowMinutes` | `5` / `15` | Login rate limit (per username and per IP) |
-| `Auth:AllowedOrigins` | empty | Extra browser origins accepted (reverse proxy); not CORS |
-| `Auth:ForwardedHeaders:Enabled` / `KnownProxies` | `false` / empty | Trust `X-Forwarded-*` from these proxies only |
-| `Provider:Type` | `OpenRouter` | `OpenRouter` or `Fake` |
-| `OpenRouter:BaseUrl` | `https://openrouter.ai/api/v1` | |
-| `OpenRouter:ApiKey` | (required for OpenRouter) | `OpenRouter__ApiKey` |
-| `OpenRouter:ManagementKey` | empty | `OpenRouter__ManagementKey`; a [management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys), used only to show the remaining credits in the UI. Empty: the credits card says "not configured" |
-| `Credits:RefreshHours` / `LowThresholdUsd` | `24` / `5` | How often the credits balance is fetched (hourly while failing); below the threshold the UI shows it in red |
-| `Models:Allowed` | empty | Model ids a thread may switch to in the UI (e.g. `Models__Allowed__0=openai/gpt-4o-mini`); the agent's own model is always available. Empty: no per-thread model picker |
-| `Provider:ConnectTimeoutSeconds` | `10` | |
-| `Provider:IdleTimeoutSeconds` | `60` | Max gap between streamed chunks |
-| `Fake:ScriptPath` | (none) | Optional JSON script for the fake provider |
-| `Fake:CostPerTokenUsd` | `0.000001` | Default per-token cost |
-| `Inbox:MaxWaitSeconds` | `60` | Upper clamp for long-poll `wait` |
-| `Inbox:ClaimTimeoutSeconds` | `300` | Stale claims return to `pending` |
-| `Messages:MaxContentChars` | `32000` | |
-| `Approvals:TimeoutSeconds` | `300` | Pending approvals expire (count as denied) after this |
-| `Approvals:SweepIntervalSeconds` | `10` | How often overdue approvals are expired |
-| `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
-| `Events:RetentionDays` | `14` | Durable SSE events kept for replay |
-| `Events:SubscriberBufferSize` | `1000` | Live events buffered per SSE connection; a client that falls further behind is disconnected and catches up by reconnecting with `Last-Event-ID` |
-| `Tools:MaxStoredResultChars` | `4000` | Stored tool results are cut to this |
-| `Tools:MaxStoredArgumentStringChars` | `500` | Each string in stored tool arguments is cut to this |
-| `Tools:MaxExchangesPerReply` | `50` | Tool rounds accepted with one reply |
-| `Context:DefaultWindowTokens` | `32000` | Used when the agent has no `contextWindowTokens` |
-| `Context:ReplyReserveTokens` | `2000` | Kept free for the model's reply |
-| `Context:CharsPerToken` | `4` | Estimation heuristic |
-| `Context:MessageOverheadTokens` | `4` | Added per message |
+```bash
+OPENROUTER_API_KEY=sk-or-... scripts/quickstart.sh      # agents use openai/gpt-4o-mini, $1/day
+```
 
-Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
+`SHARPCLAW_MODEL` and `SHARPCLAW_BUDGET` change the model and daily budget for new agents.
 
-**Agent** (environment): `GATEWAY_URL` (required), `AGENT_TOKEN` (required), `SOUL_PATH`
-(`/config/soul.md`), `AGENT_CONFIG_PATH` (`/config/agent.json`, tool policy), `WORKSPACE_PATH`
-(`/workspace`), `LONG_POLL_SECONDS` (`30`), `LOG_LEVEL` (`Information`).
+To switch an install that started on the fake provider, set `OPENROUTER_API_KEY=…` and
+`PROVIDER_TYPE=OpenRouter` in `~/sharpclaw/.env`, run `docker compose up -d` in `~/sharpclaw`,
+then give each agent a real model on its tab in the web UI (**Settings → Model**).
 
-**CLI** (environment): `SHARPCLAW_URL` (default `http://localhost:8080`) and
-`SHARPCLAW_ADMIN_KEY` (required).
+### Day to day
 
-## Install and run (Docker)
+Everything you run lives in the install directory (`~/sharpclaw`), not the repo:
 
-The repo is for building; you run SharpClaw from a separate install directory (default
-`~/sharpclaw`) that holds your `compose.yml`, `.env`, agent souls and policies, workspaces and the
-SQLite database. The repo only ships a sample in [docker/template/](docker/template/) (two agents,
-`assistant` and `coder`).
+```bash
+cd ~/sharpclaw
+docker compose ps                    # what's running
+docker compose logs -f gateway       # gateway logs (agents: agent-assistant, agent-coder)
+docker compose down                  # stop (your data stays in data/)
+docker compose up -d                 # start again
+```
 
-1. Build the images from the checkout (tags `sharpclaw-gateway`/`sharpclaw-agent` as
-   `:<git-sha>` and `:latest`):
-   ```bash
-   scripts/build-images.sh
-   ```
-2. Create the install. It copies the template without overwriting anything, writes `.env`
-   (mode 600, generated `ADMIN_KEY`, your uid/gid) and creates `data/` and the workspaces:
-   ```bash
-   scripts/install.sh            # or: scripts/install.sh /some/other/dir
-   ```
-3. In `~/sharpclaw`, set `OPENROUTER_API_KEY` (or `PROVIDER_TYPE=Fake`) and the OTLP endpoints in
-   `.env`, then start the gateway:
-   ```bash
-   cd ~/sharpclaw && docker compose up -d gateway
-   ```
-4. Create the agents and copy each token into `.env` as `AGENT_ASSISTANT_TOKEN` /
-   `AGENT_CODER_TOKEN`, then start everything:
-   ```bash
-   sharpclaw agents create assistant --model <id> --daily-budget 1
-   sharpclaw agents create coder --model <id> --daily-budget 1
-   docker compose up -d
-   ```
-5. Chat: `sharpclaw chat assistant`
+To upgrade, rebuild the images in the repo (`git pull && scripts/build-images.sh`), then run
+`docker compose up -d` in `~/sharpclaw`. See [Your install](#your-install) for agents, souls,
+LAN access and pinning versions.
 
-The install's own `README.md` covers adding agents and upgrading (rebuild the images, then
-`docker compose up -d`; pin or roll back with `SHARPCLAW_TAG`). Re-running `install.sh` lists any
-of your files that differ from a newer template, for you to merge by hand.
+## How it works
 
-Containers are started and stopped manually. The gateway never touches the Docker socket. Only the
-client port is published (to `${CLIENT_BIND:-127.0.0.1}:8080`); the agent port 8081 is never published.
+```mermaid
+flowchart LR
+  subgraph you["You (this machine or your LAN)"]
+    browser["Web UI<br/>(browser)"]
+    cli["sharpclaw CLI"]
+  end
 
-## Using the web UI
+  subgraph install["Docker Compose install (~/sharpclaw)"]
+    subgraph gateway["Gateway: the only trust boundary"]
+      client[":8080 client listener<br/>/api/*, web UI"]
+      core["auth · budgets · message queue<br/>approvals · live events · audit"]
+      agentapi[":8081 agent listener<br/>/agent/*, /v1/chat/completions"]
+      db[("SQLite<br/>data/sharpclaw.db")]
+    end
+    subgraph internal["internal network: no internet"]
+      assistant["agent-assistant<br/>soul + tool policy (read-only)<br/>workspace (read-write)"]
+      coder["agent-coder<br/>…"]
+    end
+  end
+
+  llm["LLM provider<br/>OpenRouter, or the fake provider"]
+  otel["Grafana stack (optional)<br/>VictoriaMetrics · Loki"]
+
+  browser -- "session cookie + CSRF token" --> client
+  cli -- "admin key" --> client
+  client --> core
+  agentapi --> core
+  core --> db
+  assistant -- "agent token" --> agentapi
+  coder -- "agent token" --> agentapi
+  core -- "provider key" --> llm
+  core -. "OTLP metrics and logs" .-> otel
+```
+
+- **One gateway process, two listeners.** People use the client listener (`:8080`, the only port
+  published). Agents use the agent listener (`:8081`, internal network only). Routes are separated
+  by the port a connection arrived on, so an agent token is useless on `:8080` and vice versa.
+- **Agents are workers that pull work.** You post a message to a thread; the agent long-polls its
+  inbox, claims it, fetches the thread history that fits its context window, and calls the model
+  **through the gateway**. The gateway applies the agent's model and daily budget, records the
+  call, and streams the reply to the agent and to your browser at the same time.
+- **Tools are policed inside the agent, decided by you.** Each tool call is scored for risk; above
+  the agent's allowed level it waits in the approval queue until you approve or deny it in the web
+  UI or CLI. No tool can run code or shell commands, and the agent container can only touch its
+  own workspace.
+- **Live and durable.** The UI gets live text over Server-Sent Events. Important events are stored,
+  so a reconnecting tab replays what it missed.
+- **Everything is audited.** Every LLM call (tokens, cost, latency, outcome) and every tool call
+  is recorded in SQLite and visible on the **Audit** tab. Metrics and logs can go to Grafana.
+
+One turn, end to end:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor you as You (web UI / CLI)
+  participant gw as Gateway
+  participant agent as Agent
+  participant llm as LLM provider
+
+  you->>gw: open the live event stream (SSE)
+  you->>gw: post a message
+  agent->>gw: long-poll inbox, claim the message
+  agent->>gw: get context (history that fits the window)
+  loop until the model replies without tool calls
+    agent->>gw: chat completion request
+    gw->>gw: check budget, record the call
+    gw->>llm: stream with the provider key
+    llm-->>gw: text and tool calls
+    gw-->>agent: streamed response
+    gw-->>you: live text
+    opt a tool call above the agent's allowed risk
+      agent->>gw: request approval
+      gw-->>you: approval needed
+      you->>gw: approve or deny
+    end
+    agent->>agent: run the workspace tool
+    agent->>gw: report the tool call (audit)
+  end
+  agent->>gw: post the reply
+  gw-->>you: message completed
+```
+
+The full picture (endpoints, events, tables, invariants) is in
+[docs/architecture.md](docs/architecture.md).
+
+## Using SharpClaw
+
+### Web UI
 
 The gateway image builds and serves the web UI on the client port: open `http://<host>:8080`.
 It is tabbed: **Overview** (token and cost charts, cost by model, OpenRouter credits, a live card
@@ -199,7 +160,9 @@ per agent), **Prompts** (pick an agent and model, sessions, chat), one tab per a
 
 - **Reach it from your LAN:** set `CLIENT_BIND` in `.env` to the host's LAN address (or `0.0.0.0`)
   and recreate the gateway. It defaults to `127.0.0.1` (this machine only).
-- **First user:** `sharpclaw users create <name>` (user management stays in the CLI), then sign in.
+- **Users:** the quick start creates the first one. Add more with `sharpclaw users create <name>`
+  (user management stays in the CLI); change your own password under **Account**.
+- **Themes:** Default (dark), Light and LCARS, from the menu under your name.
 - **Plain HTTP:** your password and session cookie cross the LAN unencrypted. That's accepted for a
   home network; **never port-forward 8080** from your router. A local TLS reverse proxy is the
   future fix (see [docs/tech-debt.md](docs/tech-debt.md)).
@@ -211,21 +174,7 @@ per agent), **Prompts** (pick an agent and model, sessions, chat), one tab per a
 
 UI development, the event stream and the CSP are described in [docs/ui.md](docs/ui.md).
 
-## Running locally without Docker (fake provider)
-
-```bash
-Auth__AdminKey=dev Provider__Type=Fake Database__Path=/tmp/sharpclaw.db \
-  Listeners__ClientPort=8080 Listeners__AgentPort=8081 \
-  dotnet run --project src/SharpClaw.Gateway
-
-export SHARPCLAW_URL=http://localhost:8080 SHARPCLAW_ADMIN_KEY=dev
-dotnet run --project src/SharpClaw.Cli -- agents create assistant --model test/model --daily-budget 1
-# copy the token, then:
-GATEWAY_URL=http://localhost:8081 AGENT_TOKEN=<token> dotnet run --project src/SharpClaw.Agent &
-dotnet run --project src/SharpClaw.Cli -- ask assistant "hello"
-```
-
-## CLI
+### CLI
 
 To get a `sharpclaw` command on your PATH, publish the CLI and add a small launcher (assumes
 `~/.local/bin` is on your PATH, as it is by default on Ubuntu):
@@ -273,7 +222,7 @@ printing each character once. During
 `chat` and `ask` it prints a `[tool] <name>` line for each tool call and, when the agent needs
 approval, shows the request and asks `Allow? [y/N]` (anything but `y`/`yes` denies).
 
-## Agent tools (Phase 3.2)
+### Agent tools
 
 Each agent reads its tool policy once at startup from a read-only file (`/config/agent.json`,
 e.g. [docker/template/agents/assistant/config/agent.json](docker/template/agents/assistant/config/agent.json)):
@@ -329,6 +278,114 @@ How a call is decided (all in the agent's `ToolDispatcher`):
 No tool executes code or shell commands. The agent container (no network, read-only root
 filesystem, only its own `/workspace`) contains anything a tool does.
 
+## Your install
+
+The repo is for building; you run SharpClaw from a separate install directory (default
+`~/sharpclaw`) that holds your `compose.yml`, `.env`, agent souls and policies, workspaces and the
+SQLite database. The repo ships a sample in [docker/template/](docker/template/) (two agents,
+`assistant` and `coder`); the install's own `README.md` is a short operating guide.
+
+| Path in the install | What it is |
+|---|---|
+| `.env` | Secrets and settings (mode 600): admin key, OpenRouter keys, agent tokens, port, image tag |
+| `compose.yml` | The gateway and one service per agent; yours to edit |
+| `agents/<name>/config/soul.md` | The agent's persona (system prompt) |
+| `agents/<name>/config/agent.json` | The agent's tool policy (see [Agent tools](#agent-tools)) |
+| `agents/<name>/workspace/` | The only files the agent can read and write |
+| `data/` | The gateway's SQLite database |
+
+**Manual setup.** `scripts/quickstart.sh` runs these steps for you; to do them by hand:
+
+1. Build the images (`sharpclaw-gateway` and `sharpclaw-agent`, tagged `:<git-sha>` and `:latest`):
+   `scripts/build-images.sh`
+2. Create the install: `scripts/install.sh [dir]`. It copies the template without overwriting
+   anything, writes `.env` (mode 600, a generated `ADMIN_KEY`, your uid/gid) and creates `data/`
+   and the workspaces.
+3. In the install, set `OPENROUTER_API_KEY` (or `PROVIDER_TYPE=Fake`) in `.env`, then
+   `docker compose up -d gateway`.
+4. Create the agents, copy each token into `.env` as `AGENT_ASSISTANT_TOKEN` / `AGENT_CODER_TOKEN`,
+   and start everything:
+   ```bash
+   sharpclaw agents create assistant --model <id> --daily-budget 1
+   sharpclaw agents create coder --model <id> --daily-budget 1
+   docker compose up -d
+   ```
+5. Create your web UI user: `sharpclaw users create <name>`.
+
+**Adding an agent.** Copy an `agent-*` service in `compose.yml` and rename it, its token variable
+and its mount paths; create `agents/<name>/config/soul.md`, `agent.json` and an empty
+`workspace/`; then `sharpclaw agents create <name> …`, put the token in `.env` and
+`docker compose up -d`. (Re-running `scripts/quickstart.sh` also creates the agent and fills in an
+empty `AGENT_<NAME>_TOKEN=` line for you.)
+
+**Upgrading.** `git pull && scripts/build-images.sh` in the repo, then `docker compose up -d` in
+the install. To pin or roll back, set `SHARPCLAW_TAG` in `.env` to an image tag
+(`docker images sharpclaw-gateway`). The installer never updates your files; re-running
+`scripts/install.sh` lists any that differ from a newer template so you can merge by hand.
+
+**From other devices on your LAN.** Set `CLIENT_BIND` in `.env` to the host's LAN address (or
+`0.0.0.0`) and run `docker compose up -d`. It defaults to `127.0.0.1` (this machine only). It's
+plain HTTP, so **never port-forward it** from your router.
+
+**One install per host.** The template's compose project is named `sharpclaw`; a second install
+on the same host needs its own `COMPOSE_PROJECT_NAME` and `CLIENT_PORT`.
+
+Containers are started and stopped by you. The gateway never touches the Docker socket, and the
+agent port 8081 is never published.
+
+## Configuration
+
+Gateway configuration comes from `appsettings.json` with environment-variable overrides (standard
+ASP.NET `__` syntax).
+
+| Key | Default | Notes |
+|---|---|---|
+| `Listeners:ClientPort` | `8080` | Client API |
+| `Listeners:AgentPort` | `8081` | Agent API; never published to the host |
+| `Database:Path` | `/data/sharpclaw.db` | SQLite file (WAL, `busy_timeout=5000`) |
+| `Auth:AdminKey` | (required) | `Auth__AdminKey`; the gateway refuses to start if empty |
+| `Auth:Session:CookieName` | `sharpclaw_session` | |
+| `Auth:Session:CookieSecure` | `Auto` | `Auto` (Secure when the request is HTTPS), `Always`, `Never` |
+| `Auth:Session:IdleTimeoutHours` / `AbsoluteTimeoutDays` | `168` / `30` | Session lifetime |
+| `Auth:Password:Pbkdf2Iterations` | `600000` | Never lower; hashes are upgraded on login |
+| `Auth:Login:MaxFailures` / `WindowMinutes` | `5` / `15` | Login rate limit (per username and per IP) |
+| `Auth:AllowedOrigins` | empty | Extra browser origins accepted (reverse proxy); not CORS |
+| `Auth:ForwardedHeaders:Enabled` / `KnownProxies` | `false` / empty | Trust `X-Forwarded-*` from these proxies only |
+| `Provider:Type` | `OpenRouter` | `OpenRouter` or `Fake` |
+| `OpenRouter:BaseUrl` | `https://openrouter.ai/api/v1` | |
+| `OpenRouter:ApiKey` | (required for OpenRouter) | `OpenRouter__ApiKey` |
+| `OpenRouter:ManagementKey` | empty | `OpenRouter__ManagementKey`; a [management key](https://openrouter.ai/docs/guides/overview/auth/management-api-keys), used only to show the remaining credits in the UI. Empty: the credits card says "not configured" |
+| `Credits:RefreshHours` / `LowThresholdUsd` | `24` / `5` | How often the credits balance is fetched (hourly while failing); below the threshold the UI shows it in red |
+| `Models:Allowed` | empty | Model ids a thread may switch to in the UI (e.g. `Models__Allowed__0=openai/gpt-4o-mini`); the agent's own model is always available. Empty: no per-thread model picker |
+| `Provider:ConnectTimeoutSeconds` | `10` | |
+| `Provider:IdleTimeoutSeconds` | `60` | Max gap between streamed chunks |
+| `Fake:ScriptPath` | (none) | Optional JSON script for the fake provider |
+| `Fake:CostPerTokenUsd` | `0.000001` | Default per-token cost |
+| `Inbox:MaxWaitSeconds` | `60` | Upper clamp for long-poll `wait` |
+| `Inbox:ClaimTimeoutSeconds` | `300` | Stale claims return to `pending` |
+| `Messages:MaxContentChars` | `32000` | |
+| `Approvals:TimeoutSeconds` | `300` | Pending approvals expire (count as denied) after this |
+| `Approvals:SweepIntervalSeconds` | `10` | How often overdue approvals are expired |
+| `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
+| `Events:RetentionDays` | `14` | Durable SSE events kept for replay |
+| `Events:SubscriberBufferSize` | `1000` | Live events buffered per SSE connection; a client that falls further behind is disconnected and catches up by reconnecting with `Last-Event-ID` |
+| `Tools:MaxStoredResultChars` | `4000` | Stored tool results are cut to this |
+| `Tools:MaxStoredArgumentStringChars` | `500` | Each string in stored tool arguments is cut to this |
+| `Tools:MaxExchangesPerReply` | `50` | Tool rounds accepted with one reply |
+| `Context:DefaultWindowTokens` | `32000` | Used when the agent has no `contextWindowTokens` |
+| `Context:ReplyReserveTokens` | `2000` | Kept free for the model's reply |
+| `Context:CharsPerToken` | `4` | Estimation heuristic |
+| `Context:MessageOverheadTokens` | `4` | Added per message |
+
+Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
+
+**Agent** (environment): `GATEWAY_URL` (required), `AGENT_TOKEN` (required), `SOUL_PATH`
+(`/config/soul.md`), `AGENT_CONFIG_PATH` (`/config/agent.json`, tool policy), `WORKSPACE_PATH`
+(`/workspace`), `LONG_POLL_SECONDS` (`30`), `LOG_LEVEL` (`Information`).
+
+**CLI** (environment): `SHARPCLAW_URL` (default `http://localhost:8080`) and
+`SHARPCLAW_ADMIN_KEY` (required).
+
 ## Telemetry
 
 The gateway is the authoritative telemetry source (agents only write JSON logs to stdout; they
@@ -370,12 +427,73 @@ It checks that the agent network cannot reach the public internet but can reach 
 listener, that port 8081 is not published to the host, that each route group returns `404` on the
 wrong port, and that the agent container's root filesystem and `/config` are read-only.
 
-## Verification results
+## Development
 
-Dated manual and live verification (Phase 3.1, Phase 3.2, pre-3.3 foundations) is recorded in
-[docs/verification-log.md](docs/verification-log.md).
+| Project | Purpose |
+|---|---|
+| `src/SharpClaw.Contracts` | DTOs, error shapes and constants shared by all projects |
+| `src/SharpClaw.Gateway` | ASP.NET gateway: two listeners, EF Core/SQLite, providers, telemetry |
+| `src/SharpClaw.Agent` | The agent loop (console app, one per Docker container) |
+| `src/SharpClaw.Cli` | Admin and chat client (assembly name `sharpclaw`) |
+| `ui/` | Web UI (React + TypeScript + Vite), served by the gateway; see [docs/ui.md](docs/ui.md) |
+| `tests/SharpClaw.Gateway.Tests` | Gateway integration/unit tests (real Kestrel, fake provider, fake clock) |
+| `tests/SharpClaw.Agent.Tests` | Agent loop tests against a fake gateway |
+| `tests/SharpClaw.Cli.Tests` | CLI argument parsing and chat-ordering tests |
 
-## Known gaps and tech debt
+### Build and test
 
-Accepted design limits (Phase 3.1, 3.2 and the pre-3.3 foundations) and known code-level debt are
-tracked in [docs/tech-debt.md](docs/tech-debt.md).
+```bash
+dotnet build
+dotnet test
+```
+
+The gateway tests start the real gateway on two ephemeral localhost ports, back it with a
+temporary SQLite file and the `FakeProvider`, and drive time with a `FakeTimeProvider` — no
+secrets or network required. The web UI has its own checks (`cd ui && npm ci && npm run lint &&
+npm run typecheck && npm test && npm run check:api`); see [docs/ui.md](docs/ui.md).
+GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the .NET build and
+tests, the UI checks and the Playwright suite (Chromium) on every pull request.
+
+### Run from source
+
+**A throwaway dev stack in Docker** (fake provider, `http://127.0.0.1:8090`, next to your install
+on 8080): `scripts/dev-stack.sh`. For UI work, then run
+`cd ui && SHARPCLAW_GATEWAY=http://localhost:8090 npm run dev`; see [docs/ui.md](docs/ui.md).
+
+**Without Docker** (fake provider; needs the .NET 10 SDK):
+
+```bash
+Auth__AdminKey=dev Provider__Type=Fake Database__Path=/tmp/sharpclaw.db \
+  Listeners__ClientPort=8080 Listeners__AgentPort=8081 \
+  dotnet run --project src/SharpClaw.Gateway
+
+export SHARPCLAW_URL=http://localhost:8080 SHARPCLAW_ADMIN_KEY=dev
+dotnet run --project src/SharpClaw.Cli -- agents create assistant --model test/model --daily-budget 1
+# copy the token, then:
+GATEWAY_URL=http://localhost:8081 AGENT_TOKEN=<token> dotnet run --project src/SharpClaw.Agent &
+dotnet run --project src/SharpClaw.Cli -- ask assistant "hello"
+```
+
+Contributor conventions (branches, tests, contract snapshots) are in
+[.github/copilot-instructions.md](.github/copilot-instructions.md).
+
+## Documentation
+
+| Document | What's in it |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | **Start here.** The system as it is now: components, listeners, request flow, endpoints, events, tables, invariants |
+| [docs/ui.md](docs/ui.md) | Web UI: structure, live events, styling and themes, CSP, testing |
+| [docs/telemetry-notes.md](docs/telemetry-notes.md) | Telemetry backends and the metric names as they land |
+| [docs/tech-debt.md](docs/tech-debt.md) | Known gaps and accepted debt, and when to pay them down |
+| [docs/verification-log.md](docs/verification-log.md) | Dated manual and live verification results |
+| [docs/sharpclaw-v3-plan.md](docs/sharpclaw-v3-plan.md) | The V3 roadmap |
+
+Behaviour is specified phase by phase; later specs win where they differ:
+[3.1](docs/sharpclaw-3.1-implementation-spec.md) (gateway, agent, CLI, budgets, telemetry) →
+[3.2](docs/sharpclaw-3.2-implementation-spec.md) (tools, risk and approvals) →
+[pre-3.3 foundations](docs/sharpclaw-pre-3.3-foundations-spec.md) (browser auth, replayable events) →
+[3.3](docs/sharpclaw-3.3-implementation-spec.md) (web UI) →
+[3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign), plus the
+[agent tools spec](docs/sharpclaw-agent-tools-spec.md). The orientation notes
+([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the
+[post-3.3 codebase review](docs/post-phase-3.3-codebase-review.md) are historical working notes.
