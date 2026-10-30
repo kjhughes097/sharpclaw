@@ -46,9 +46,9 @@ configuration, single dispatch path) still applies.
 | # | Question | Proposed answer |
 |---|---|---|
 | Q1 | The approval prompt for `sandbox_run` is useless without the command, but summaries must never contain model-supplied text. | The approval **detail** (`GET /api/approvals/{id}`) shows the command, capped at 1,000 characters. The event, the list view, logs and the smart-mode classifier only ever see `run (412 chars) in repo/`. |
-| Q2 | Which tools does the gateway always require an approval for, whatever the agent's `allowedRiskLevel`? | `sandbox_run` and every GitHub write. Configured in gateway options (`ToolBroker:AlwaysApprove`), never by the agent. |
+| Q2 | Which tools does the gateway always require an approval for, whatever the agent's `allowedRiskLevel`? | `sandbox_run`, `github_create_pr` and every GitHub write. Configured in gateway options (`ToolBroker:AlwaysApprove`), never by the agent. |
 | Q3 | `http_fetch` host policy: allow-list only, or open with approval for unknown hosts? | Open, matching sandbox egress. Hosts on an operator allow-list are `low`, others `medium`. |
-| Q4 | GitHub write scope. | Comment on an issue or PR, create an issue, add or remove labels. No push, no PR creation, no merges, no repository settings. |
+| Q4 | GitHub write scope. | Comment on an issue or PR, create an issue, add or remove labels, and **create a PR from a fork** (`github_create_pr`, section 7.7). No push to upstream, no same-repo branches, no merges, no repository settings. |
 | Q5 | Do package caches persist between runs (NuGet, npm, pip)? | Yes, in a per-agent named volume mounted at `/cache`. It is never shared between agents. |
 | Q6 | Sandbox limits. | 2 CPUs, 2 GB memory, 256 processes, 10 minutes per run (operator-configurable, capped at 30), 1 MB of combined stdout and stderr returned (the rest goes to a file in the workspace). |
 | Q7 | Egress proxy limits. | 32 concurrent connections per sandbox, 60 s idle timeout, 30 s to complete the request head, 1 GB per connection, 64 KB maximum request head. |
@@ -67,7 +67,7 @@ can do:
 
 | Asset | Where it lives | Protection |
 |---|---|---|
-| OpenRouter keys, GitHub token, admin key, DB | Gateway | No untrusted code and no rendering or conversion of untrusted content in the gateway. It parses only provider and GitHub JSON into typed DTOs, plus bounded proxy request heads (never tunnelled or body bytes). Each credential is used only by its own `HttpClient` with a fixed host. Nothing new can reach the gateway except through authenticated listeners. |
+| OpenRouter keys, GitHub tokens, admin key, DB | Gateway | No untrusted code and no rendering or conversion of untrusted content in the gateway. It parses only provider and GitHub JSON into typed DTOs, plus bounded proxy request heads (never tunnelled or body bytes). Each credential is used only by its own `HttpClient` with a fixed host. Nothing new can reach the gateway except through authenticated listeners. |
 | Other agents' workspaces | Host bind mounts | Each sandbox mounts only its own agent's workspace and sits on its own network. |
 | Home LAN, Docker networks, cloud metadata | Network | Sandboxes are on `internal: true` networks with no route out. Their only exit is the gateway's egress listener, which blocks private and reserved address ranges after DNS resolution. |
 | Gateway availability | Gateway | Sandbox traffic shares the gateway process, so the egress proxy enforces per-sandbox connection, time and byte limits (Q7) and never buffers bodies. |
@@ -88,7 +88,7 @@ flowchart LR
   subgraph sbxnet["sbx-&lt;name&gt; (no egress), one per agent"]
     sandbox["sandbox-&lt;name&gt;<br/>/workspace (rw), /cache"]
   end
-  gateway["gateway<br/>OpenRouter keys, GitHub token, DB<br/>:8082 egress proxy"]
+  gateway["gateway<br/>OpenRouter keys, GitHub tokens, DB<br/>:8082 egress proxy"]
 
   agent -- "agent token" --> gateway
   gateway -- "service secret" --> sandbox
@@ -214,11 +214,12 @@ strings, headers or bodies. Metrics `sharpclaw.egress.connections` (labels: agen
 | `sandbox_run` | sandbox | `command` (string), `cwd`, `timeoutSeconds` | `high` | **yes** | **yes** |
 | `github_read` | gateway | `operation`, `owner`, `repo`, `number`… | `low` | no | **yes** |
 | `github_write` | gateway | `operation`, `owner`, `repo`, `number`, `body`… | `high` | **yes** | no |
+| `github_create_pr` | gateway + sandbox | `clonePath`, `title`, `body`, `branch` | `high` | **yes** | no |
 
 Summaries follow the existing rule (paths, hosts, sizes and flags only; never queries, bodies or
 commands), except for the approval detail in Q1. Examples: `fetch example.com (markdown)`,
 `search (5 results)`, `clone github.com/owner/repo → repos/repo`, `run (412 chars) in repos/repo`,
-`comment on owner/repo#12 (840 B)`.
+`comment on owner/repo#12 (840 B)`, `PR to owner/repo from sharpclaw-bot (7 files, +120 −35)`.
 
 ### 7.1 `http_fetch` and `download_to_workspace`
 
@@ -249,10 +250,16 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 ### 7.4 `git_clone`
 
 - `https://` URLs on an operator allow-list of hosts (default `github.com`, `gitlab.com`), public
-  repositories only, with no token available.
+  repositories only, with no token available. Anonymous HTTPS is GitHub's recommended way to clone
+  public repositories. What GitHub removed was password authentication over HTTPS (2021) and the
+  unauthenticated `git://` protocol (2022). SSH is not supported because the proxy carries only
+  ports 80 and 443.
 - Fixed invocation: `git -c core.hooksPath=/dev/null -c protocol.allow=never -c
   protocol.https.allow=always clone --depth 1 --no-recurse-submodules --single-branch -- <url>
   <path>`.
+- The runner records the clone's origin (`owner/repo`) and base commit SHA in a runner-owned file
+  **outside** the workspace (`/cache/clones/<path-hash>.json`), so code in the sandbox can't forge
+  them. `github_create_pr` relies on this record.
 - Repo size cap enforced by a timeout and a post-clone size check (default 500 MB, then delete).
 
 ### 7.5 `sandbox_run`
@@ -267,10 +274,15 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 
 ### 7.6 `github_read` and `github_write`
 
-- The gateway holds one fine-grained GitHub token (`GITHUB_TOKEN` in `.env`), scoped by the
-  operator to the repositories it should touch. It is used only by a dedicated named `HttpClient`
-  whose base address is fixed to `https://api.github.com`, with redirects disabled so the token
-  can't follow a redirect to another host. The gateway never fetches arbitrary URLs with it.
+- The gateway holds two fine-grained GitHub tokens, each used only by its own named `HttpClient`
+  whose base address is fixed to `https://api.github.com`, with redirects disabled so a token can't
+  follow a redirect to another host. The gateway never fetches arbitrary URLs with either token.
+  - **Owner token** (`GITHUB_TOKEN`): the operator's account, **selected repositories only**.
+    Permissions: contents read, issues write, pull requests write. Used by `github_read`,
+    `github_write` and the final "open PR" step of `github_create_pr`.
+  - **Fork token** (`GITHUB_FORK_TOKEN`): a separate machine-user account (e.g. `sharpclaw-bot`)
+    that owns the forks, limited to that account's forks. Permission: contents write. Used only to
+    build branches in the fork (section 7.7). It has no access to upstream repositories.
 - `operation` is a fixed enum per tool (e.g. `get_issue`, `list_issues`, `get_pull`, `get_pull_diff`,
   `list_comments`, `get_file`. For writes: `comment`, `create_issue`, `add_labels`,
   `remove_labels`). There is no generic "call any URL" operation.
@@ -280,6 +292,50 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
   converts or executes them.
 - Results are reduced to the fields the model needs (titles, bodies, authors, state, diff text)
   and capped at 64 KB.
+
+### 7.7 `github_create_pr`
+
+Opens a PR on the upstream repository from a branch in the machine user's **fork**, so the PR's CI
+runs as a fork PR: no repository secrets and a read-only `GITHUB_TOKEN`. GitHub also holds a first
+run for approval, because the bot is a first-time contributor. **Neither token ever enters a
+sandbox, and nothing runs `git push`.**
+
+Why a fork in another account: GitHub doesn't let an account fork its own repository, and
+fine-grained tokens can't contribute to public repositories where the account isn't a member.
+So a machine user owns the forks, and the operator's own token opens the PR.
+
+**One-time setup per repository (operator, by hand):** fork `owner/repo` into the machine user's
+account and add it to `GitHub:Repos`. The gateway checks at call time that
+`<forkOwner>/<repo>` is a fork whose parent is `owner/repo`; otherwise `fork_missing`.
+
+**Flow:**
+
+1. The broker asks the agent's sandbox runner for the **change set** of `clonePath`: the origin and
+   base SHA from the runner's clone record (section 7.4), plus every added, modified or deleted
+   file compared with the base commit, with content and mode. The runner runs `git` with
+   `-c core.hooksPath=/dev/null -c core.fsmonitor=` and returns data only.
+2. The gateway validates the change set (hardline → `403`, never offered for approval):
+   - The origin is in `GitHub:Repos`.
+   - No file under `.github/workflows/**` is added, changed or deleted. The pattern list is
+     operator-configurable (`GitHub:BlockedPaths`) and defaults to that one pattern.
+   - No symbolic links (mode `120000`), no submodules (`160000`), no `..` or absolute paths.
+   - At most 100 files, 1 MB per file, 5 MB in total.
+   - `branch` matches `[a-z0-9][a-z0-9._/-]{0,60}` and is prefixed by the gateway with
+     `sharpclaw/<agent>/`.
+3. Gateway-enforced approval (Q2). The args hash covers the arguments **and** a hash of the
+   change set, so the files can't change between approval and creation. The approval detail lists
+   the files with line counts (`+120 −35`), the target repository and the branch. It never shows
+   file contents.
+4. With the **fork token**: create a ref `refs/heads/sharpclaw/<agent>/<branch>` at the base SHA. If
+   the fork can't see that commit, sync the fork's default branch once (`merge-upstream`) and
+   retry; otherwise `base_not_found`. Then create the blobs, a tree on top of the base tree, and a
+   commit authored as the machine user, and move the ref to it. **The ref MUST NOT already exist**
+   (`branch_exists`). The gateway never updates or force-moves an existing ref.
+5. With the **owner token**: `POST /repos/<owner>/<repo>/pulls` with
+   `head = <forkOwner>:sharpclaw/<agent>/<branch>`, `base` = the upstream default branch, and the
+   title and body. The body gets a fixed footer naming the agent.
+6. Return `{ url, number, branch, files, additions, deletions }`. Record it in `broker_calls` with
+   the repository, PR number and counts, never contents.
 
 ## 8. Prerequisites (debt that comes due)
 
@@ -295,12 +351,14 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 - Agent: new tool names in `agent.json`, as today. Unknown names still fail startup.
 - Gateway: `ToolBroker:Agents:<name>:Tools`, `ToolBroker:AlwaysApprove`, `ToolBroker:SandboxUrl`
   per agent, `ToolBroker:FetchAllowHosts`, `Egress:*` (listener port, limits, deny-list, per-sandbox
-  credentials), `GitHub:Repos`, `WebSearch:Model`. All validated at startup like every other options
-  class.
+  credentials), `GitHub:Repos`, `GitHub:ForkOwner`, `GitHub:BlockedPaths`, `WebSearch:Model`. All
+  validated at startup like every other options class.
 - Secrets: `SANDBOX_<NAME>_SECRET` (gateway → runner), `SANDBOX_<NAME>_PROXY_SECRET` (sandbox →
-  egress), `GITHUB_TOKEN`, in `.env` only. The two sandbox secrets MUST differ.
-- Nothing is enabled by default. A stack without sandboxes or a GitHub token still runs, and the
-  affected broker tools return `503 tool_unavailable`.
+  egress), `GITHUB_TOKEN` (owner), `GITHUB_FORK_TOKEN` (machine user), in `.env` only. The two
+  sandbox secrets MUST differ.
+- Nothing is enabled by default. A stack without sandboxes or GitHub tokens still runs, and the
+  affected broker tools return `503 tool_unavailable`. `github_create_pr` needs both tokens and
+  `GitHub:ForkOwner`.
 
 ## 10. Tests
 
@@ -317,8 +375,14 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
   rules, git invocation flags, size cap.
 - **Agent tools:** schema, `Assess`, `Summarize` (no free text), taint, approval flow with args
   hash.
-- **GitHub client:** fixed base address, redirects not followed, token never sent to another host,
-  only enum operations, repo allow-list.
+- **GitHub client:** fixed base address, redirects not followed, tokens never sent to another host,
+  the fork token used only for fork-ref and Git Data calls on `<forkOwner>/*`, only enum operations,
+  repo allow-list.
+- **`github_create_pr`:** blocked paths (including deletion of a workflow), symlinks and
+  submodules rejected, caps, branch-name rule and prefix, existing ref → `branch_exists` (never
+  moved), missing or non-matching fork → `fork_missing`, a change set that differs from the approved
+  one → `403`, a forged origin in the workspace ignored in favour of the runner's record, PR head
+  is `<forkOwner>:sharpclaw/<agent>/…`.
 - **`verify-isolation.sh`:** agents can't reach the sandboxes, and get `407` from `:8082`. `:8082`
   is not published to the host. A sandbox can't reach another sandbox, can't reach the internet
   except through the proxy, gets `401` from the client and agent listeners without credentials,
@@ -342,11 +406,13 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 | 9 | `sandbox_run` |
 | 10 | `github_read` (gateway) |
 | 11 | `github_write` |
-| 12 | Docs: architecture, README tool table, ui.md (approval detail for commands), dashboard panels |
+| 12 | `github_create_pr` (runner change set, fork-token client, approval over the change set) |
+| 13 | Docs: architecture, README tool table and machine-user setup, ui.md (approval detail for commands and PR file lists), dashboard panels |
 
 ## 12. Out of scope
 
-Per-job or ephemeral containers and the Docker socket; private repositories and `git push`; PR
-creation or merging; SSH; credentials of any kind inside a sandbox; a shared sandbox across agents;
+Per-job or ephemeral containers and the Docker socket; private repositories; `git push` from
+anywhere; PRs from same-repository branches; updating an existing PR branch; merging PRs; SSH;
+credentials of any kind inside a sandbox; a shared sandbox across agents;
 browser automation and headless browsers; MCP; agent-to-agent calls; scheduling; "always allow"
 approval memory.
