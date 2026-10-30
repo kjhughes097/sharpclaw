@@ -50,6 +50,8 @@ public static class ApprovalEndpoints
             return ApiResults.ValidationFailed($"risk must be one of: {string.Join(", ", RiskLevels.All)}.");
         if (body.Reason is null || body.Reason.Length > MaxReasonChars)
             return ApiResults.ValidationFailed($"reason is required and must be at most {MaxReasonChars} characters.");
+        if (body.ArgsHash is not null && !ToolArgsHash.IsValid(body.ArgsHash))
+            return ApiResults.ValidationFailed("argsHash must be a lowercase hex SHA-256.");
 
         var userMsg = await TurnGuard.FindClaimedAsync(db, agent.Id, body.CorrelationId, body.ThreadId, ct);
         if (userMsg is null)
@@ -71,6 +73,7 @@ public static class ApprovalEndpoints
             Summary = body.Summary,
             Risk = body.Risk,
             Reason = body.Reason,
+            ArgsHash = body.ArgsHash,
             Status = unattended ? ApprovalStatuses.Denied : ApprovalStatuses.Pending,
             DecidedBy = unattended ? ApprovalDecidedBy.System : null,
             DecidedAt = unattended ? now : null,

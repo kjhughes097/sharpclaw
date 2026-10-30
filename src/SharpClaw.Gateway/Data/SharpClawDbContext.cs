@@ -19,6 +19,7 @@ public class SharpClawDbContext : DbContext
     public DbSet<EventLogState> EventLogState => Set<EventLogState>();
     public DbSet<User> Users => Set<User>();
     public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<BrokerCall> BrokerCalls => Set<BrokerCall>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -111,6 +112,16 @@ public class SharpClawDbContext : DbContext
             e.ToTable("approvals");
             e.HasKey(x => x.Id);
             e.Property(x => x.DecidedByUser).HasMaxLength(100);
+            e.Property(x => x.ArgsHash).HasMaxLength(64);
+            e.HasIndex(x => x.CorrelationId);
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
+        });
+
+        b.Entity<BrokerCall>(e =>
+        {
+            e.ToTable("broker_calls");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.AgentId, x.CreatedAt });
             e.HasIndex(x => x.CorrelationId);
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
         });

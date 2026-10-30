@@ -107,4 +107,14 @@ public interface IAgentTool
 
     /// <summary>Runs the call without any policy checks. Only <see cref="ToolDispatcher"/> may call this.</summary>
     Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct);
+
+    /// <summary>
+    /// As above, with the call's identity and approval, which broker tools pass on to the gateway.
+    /// Local tools don't need them. Only <see cref="ToolDispatcher"/> may call this.
+    /// </summary>
+    Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, ToolCallContext context, CancellationToken ct) =>
+        ExecuteUncheckedAsync(args, ct);
 }
+
+/// <summary>Who a tool call belongs to, and the approval the human gave for it (if one was needed).</summary>
+public sealed record ToolCallContext(Guid CorrelationId, Guid ThreadId, string ToolCallId, Guid? ApprovalId);

@@ -255,6 +255,9 @@ public class AgentLoopTests
         public Task<string?> ClassifyRiskAsync(
             IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct) =>
             Task.FromResult<string?>(null);
+
+        public Task<SharpClaw.Agent.Tools.ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct) =>
+            throw new NotSupportedException();
     }
 
     private sealed class FixedSoul : ISoulProvider

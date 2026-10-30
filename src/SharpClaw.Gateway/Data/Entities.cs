@@ -205,4 +205,43 @@ public class Approval
     public DateTime CreatedAt { get; set; }
     public DateTime ExpiresAt { get; set; }
     public DateTime? DecidedAt { get; set; }
+
+    /// <summary>
+    /// SHA-256 of the call's canonical arguments (<c>ToolArgsHash</c>), sent by the agent. The broker
+    /// accepts the approval only for a call whose recomputed hash matches.
+    /// </summary>
+    public string? ArgsHash { get; set; }
+
+    /// <summary>When the broker consumed this approval; each approval allows one broker call.</summary>
+    public DateTime? UsedAt { get; set; }
+}
+
+/// <summary>
+/// One call through the tool broker (external tools spec section 4). Append-only, and never holds
+/// arguments or results: only who, what, where (host or repository) and how it went.
+/// </summary>
+public class BrokerCall
+{
+    public Guid Id { get; set; }
+    public Guid AgentId { get; set; }
+    public Guid ThreadId { get; set; }
+    public Guid CorrelationId { get; set; }
+    public string ToolCallId { get; set; } = "";
+    public string Tool { get; set; } = "";
+
+    /// <summary>The host contacted (e.g. <c>example.com</c>, <c>api.github.com</c>), when there is one.</summary>
+    public string? TargetHost { get; set; }
+
+    /// <summary>A content-free target description, e.g. <c>owner/repo#12</c>.</summary>
+    public string? Target { get; set; }
+
+    /// <summary><c>succeeded</c>, <c>failed</c> (the tool reported an error), <c>refused</c> or <c>error</c>.</summary>
+    public string Status { get; set; } = "";
+    public string? ErrorCode { get; set; }
+
+    /// <summary>Size of the result returned to the agent.</summary>
+    public long Bytes { get; set; }
+    public int DurationMs { get; set; }
+    public Guid? ApprovalId { get; set; }
+    public DateTime CreatedAt { get; set; }
 }

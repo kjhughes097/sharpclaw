@@ -41,6 +41,11 @@ public class ConfigurationValidationTests
     [InlineData("Auth:Login:MaxFailures", "0", "MaxFailures")]
     [InlineData("Auth:ForwardedHeaders:KnownProxies:0", "not-an-ip", "KnownProxies")]
     [InlineData("Models:Allowed:0", " ", "Models:Allowed must not contain empty entries")]
+    [InlineData("ToolBroker:AlwaysApprove:0", "rm_rf", "ToolBroker:AlwaysApprove: unknown tool 'rm_rf'")]
+    [InlineData("ToolBroker:Agents:cody:Tools:0", "shell", "ToolBroker:Agents:cody:Tools: unknown tool 'shell'")]
+    [InlineData("ToolBroker:Agents:cody:SandboxUrl", "ftp://sandbox", "SandboxUrl must be an absolute http(s) URL")]
+    [InlineData("ToolBroker:Agents:cody:SandboxUrl", "http://sandbox-cody:8090", "SandboxSecret must be at least 16")]
+    [InlineData("ToolBroker:MaxResponseBytes", "10", "MaxResponseBytes")]
     public void Invalid_values_refuse_to_start(string key, string value, string expected)
     {
         var ex = Assert.Throws<OptionsValidationException>(() => Build(new() { [key] = value }));

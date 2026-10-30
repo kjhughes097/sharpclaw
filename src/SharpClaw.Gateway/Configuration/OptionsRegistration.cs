@@ -39,6 +39,8 @@ public static class OptionsRegistration
                 "Context:ReplyReserveTokens must be smaller than Context:DefaultWindowTokens.");
         Add<ModelsOptions, ModelsOptionsValidator>(builder, ModelsOptions.Section);
         Add<CreditsOptions, CreditsOptionsValidator>(builder, CreditsOptions.Section);
+        Add<ToolBrokerOptions, ToolBrokerOptionsValidator>(builder, ToolBrokerOptions.Section);
+        builder.Services.AddSingleton<IValidateOptions<ToolBrokerOptions>, ProblemValidator<ToolBrokerOptions>>();
         builder.Services.AddOptions<UiOptions>().Bind(builder.Configuration.GetSection(UiOptions.Section));
         return builder;
     }
@@ -74,6 +76,21 @@ public static class OptionsRegistration
 [OptionsValidator] public sealed partial class ToolsOptionsValidator : IValidateOptions<ToolsOptions>;
 [OptionsValidator] public sealed partial class ContextOptionsValidator : IValidateOptions<ContextOptions>;
 [OptionsValidator] public sealed partial class CreditsOptionsValidator : IValidateOptions<CreditsOptions>;
+[OptionsValidator] public sealed partial class ToolBrokerOptionsValidator : IValidateOptions<ToolBrokerOptions>;
+
+/// <summary>Options whose cross-field rules are a single <c>Problem()</c> check.</summary>
+public interface IHasProblem
+{
+    /// <summary>Null when valid; otherwise the validation message.</summary>
+    string? Problem();
+}
+
+/// <summary>Runs <see cref="IHasProblem.Problem"/> alongside the generated DataAnnotations validator.</summary>
+public sealed class ProblemValidator<T> : IValidateOptions<T> where T : class, IHasProblem
+{
+    public ValidateOptionsResult Validate(string? name, T options) =>
+        options.Problem() is { } problem ? ValidateOptionsResult.Fail(problem) : ValidateOptionsResult.Success;
+}
 
 /// <summary>Hand-written: the rules are about the list as a whole, which DataAnnotations can't express.</summary>
 public sealed class ModelsOptionsValidator : IValidateOptions<ModelsOptions>

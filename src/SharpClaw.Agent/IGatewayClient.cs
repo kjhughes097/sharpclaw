@@ -64,6 +64,12 @@ public interface IGatewayClient
     Task ReportToolCallAsync(ToolCallReportRequest report, CancellationToken ct);
 
     /// <summary>
+    /// Runs a broker tool in the gateway or the agent's sandbox (<c>POST /agent/tools/{tool}</c>).
+    /// Returns the tool result for the model; a gateway refusal becomes an error result.
+    /// </summary>
+    Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct);
+
+    /// <summary>
     /// Smart mode: asks the LLM to classify a call's risk (purpose <c>risk_assessment</c>, never
     /// shown to the user). Returns the reply text, or null if the call failed.
     /// </summary>

@@ -75,6 +75,15 @@ internal sealed class RecordingGateway : IGatewayClient
         return Task.FromResult(ClassifierReply);
     }
 
+    public List<(string Tool, InvokeToolRequest Request)> ToolInvocations { get; } = new();
+    public Func<string, InvokeToolRequest, ToolResult> ToolReply { get; set; } = (_, _) => ToolResult.Success(new { done = true });
+
+    public Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct)
+    {
+        ToolInvocations.Add((tool, request));
+        return Task.FromResult(ToolReply(tool, request));
+    }
+
     public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => throw new NotSupportedException();
     public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct) => throw new NotSupportedException();
     public Task<ChatOutcome> StreamChatAsync(IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,

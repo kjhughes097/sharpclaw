@@ -2,7 +2,11 @@ namespace SharpClaw.Contracts;
 
 // ----- Approvals (3.2) -----
 
-/// <summary>The agent asks the human to allow a tool call. <c>Summary</c> never contains content.</summary>
+/// <summary>
+/// The agent asks the human to allow a tool call. <c>Summary</c> never contains content.
+/// <c>ArgsHash</c> (<see cref="ToolArgsHash"/>) binds the approval to exactly these arguments; the
+/// broker only accepts an approval whose hash matches the call it is asked to run.
+/// </summary>
 public sealed record CreateApprovalRequest(
     Guid CorrelationId,
     Guid ThreadId,
@@ -10,7 +14,8 @@ public sealed record CreateApprovalRequest(
     string ToolName,
     string Summary,
     string Risk,
-    string Reason);
+    string Reason,
+    string? ArgsHash = null);
 
 public sealed record ApprovalDto(Guid Id, string Status, string? DecidedBy, DateTime ExpiresAt);
 

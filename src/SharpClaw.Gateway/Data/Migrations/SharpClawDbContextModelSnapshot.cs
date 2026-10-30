@@ -120,6 +120,11 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("agent_id");
 
+                    b.Property<string>("ArgsHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("args_hash");
+
                     b.Property<Guid>("CorrelationId")
                         .HasColumnType("TEXT")
                         .HasColumnName("correlation_id");
@@ -179,6 +184,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("tool_name");
 
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("used_at");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AgentId");
@@ -186,6 +195,77 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.HasIndex("CorrelationId");
 
                     b.ToTable("approvals", (string)null);
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.BrokerCall", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("agent_id");
+
+                    b.Property<Guid?>("ApprovalId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("approval_id");
+
+                    b.Property<long>("Bytes")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("bytes");
+
+                    b.Property<Guid>("CorrelationId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("correlation_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("duration_ms");
+
+                    b.Property<string>("ErrorCode")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Target")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("target");
+
+                    b.Property<string>("TargetHost")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("target_host");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("thread_id");
+
+                    b.Property<string>("Tool")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool");
+
+                    b.Property<string>("ToolCallId")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool_call_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CorrelationId");
+
+                    b.HasIndex("AgentId", "CreatedAt");
+
+                    b.ToTable("broker_calls", (string)null);
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.ConversationThread", b =>
@@ -667,6 +747,15 @@ namespace SharpClaw.Gateway.Data.Migrations
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.Approval", b =>
+                {
+                    b.HasOne("SharpClaw.Gateway.Data.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.BrokerCall", b =>
                 {
                     b.HasOne("SharpClaw.Gateway.Data.Agent", null)
                         .WithMany()

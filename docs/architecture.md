@@ -156,7 +156,19 @@ The committed contract is [contracts/openapi/sharpclaw-client.v1.json](../contra
 
 Agent listener: `GET /agent/inbox`, `GET /agent/threads/{id}/messages`,
 `GET /agent/threads/{id}/context`, `POST /agent/threads/{id}/messages`, `POST /agent/messages/{id}/fail`,
-`POST /agent/approvals`, `GET /agent/approvals/{id}`, `POST /agent/tool-calls`, `POST /v1/chat/completions`.
+`POST /agent/approvals`, `GET /agent/approvals/{id}`, `POST /agent/tool-calls`, `POST /agent/tools/{tool}`,
+`POST /v1/chat/completions`.
+
+**Tool broker** (`POST /agent/tools/{tool}`, [external tools spec](sharpclaw-external-tools-spec.md)
+section 4): runs a broker tool for the agent, inside a turn it holds. The tool must be enabled for
+the agent in gateway config (`ToolBroker:Agents:<name>:Tools`, otherwise `404`). Tools in
+`ToolBroker:AlwaysApprove` (default `sandbox_run`, `github_write`, `github_create_pr`) need an
+`approvalId` that is this agent's, for this turn and tool, approved within
+`ToolBroker:ApprovalUseSeconds`, unused, and whose `args_hash` matches the SHA-256 of the canonical
+arguments, which the gateway recomputes (`ToolArgsHash`); it is consumed by the same conditional
+update that checks it (otherwise `403 approval_required`). The call goes to the tool's
+`IBrokerToolHandler` (none → `503 tool_unavailable`), anything agent-specific such as the sandbox
+comes from the agent's identity, and every call is recorded in `broker_calls`.
 
 ## 5. Events
 
@@ -186,7 +198,8 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), [contract
 | `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`) and `sent_by_user` (user name or `admin_key`). |
 | `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose, outcome). |
 | `tool_calls` | Every tool call the model requested, plus the agent's report. |
-| `approvals` | Approval requests and decisions (`decided_by` = user/system; `decided_by_user` = which user, or `admin_key`). |
+| `approvals` | Approval requests and decisions (`decided_by` = user/system; `decided_by_user` = which user, or `admin_key`); `args_hash` binds an approval to exact arguments, `used_at` marks it consumed by the broker. |
+| `broker_calls` | Append-only audit of every tool-broker call: agent, turn, tool, target host or repository, status, bytes, duration, approval. Never arguments or results. |
 | `thread_events`, `event_log_state` | Durable SSE events and the retention watermark. |
 | `users`, `sessions` | Browser users (PBKDF2 passwords) and hashed session tokens with CSRF tokens. |
 
@@ -201,6 +214,7 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 | `Configuration/` | Options classes (DataAnnotations) and `OptionsRegistration` (source-generated validators plus cross-field rules, `IStartupCheck`). |
 | `Auth/` | Client and agent auth filters, sessions, login rate limiter, password hashing, auth/user endpoints. |
 | `Endpoints/` | Minimal-API endpoint classes per area: thin HTTP adapters (validate input, call a service, map the outcome to a result). |
+| `Services/Broker/` | `ToolBroker` (gateway-enforced approval, routing, response cap, `broker_calls`) and `IBrokerToolHandler`, one per broker tool. |
 | `Services/` | `MessageTurns` (post/complete/fail/release of a turn) and `TurnGuard` (the one agent-ownership rule); inbox, message queries, context building, events (publisher, bus, turn buffers), approvals, background services. |
 | `Services/Chat/` | Chat-completion helpers: request parsing, OpenAI-style chunk writing, `llm_calls` recording. |
 | `Providers/` | `IChatProvider` with `OpenRouterProvider` and the scripted `FakeProvider`. |

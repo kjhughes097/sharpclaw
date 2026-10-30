@@ -249,6 +249,36 @@ public sealed class GatewayHttpClient : IGatewayClient
         resp.EnsureSuccessStatusCode();
     }
 
+    public async Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct)
+    {
+        using var resp = await _http.PostAsJsonAsync(
+            $"{_baseUrl}/agent/tools/{Uri.EscapeDataString(tool)}", request, SharpClawJson.Options, ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            // The gateway's error shape: pass its code and (content-free) message to the model.
+            ApiErrorResponse? error = null;
+            try
+            {
+                error = await resp.Content.ReadFromJsonAsync<ApiErrorResponse>(SharpClawJson.Options, ct);
+            }
+            catch (JsonException)
+            {
+            }
+            return ToolResult.Error(error?.Error.Code ?? ErrorCodes.ToolFailed,
+                error?.Error.Message ?? $"The gateway refused the call ({(int)resp.StatusCode}).");
+        }
+
+        var json = await resp.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(json);
+        var ok = doc.RootElement.ValueKind == JsonValueKind.Object &&
+                 doc.RootElement.TryGetProperty("ok", out var okEl) && okEl.ValueKind == JsonValueKind.True;
+        var code = !ok && doc.RootElement.ValueKind == JsonValueKind.Object &&
+                   doc.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String
+            ? e.GetString()
+            : null;
+        return new ToolResult(ok, json, ok ? null : code ?? ErrorCodes.ToolFailed);
+    }
+
     public async Task<string?> ClassifyRiskAsync(
         IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct)
     {
