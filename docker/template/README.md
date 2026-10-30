@@ -10,7 +10,8 @@ Images are built from the repo checkout (`scripts/build-images.sh`), not here.
 ## First run
 
 If you ran `scripts/quickstart.sh` from the repo, this is already done: the agents' tokens are in
-`.env`, your web UI user exists, and everything is running. Open `http://localhost:8080`.
+`.env`, your web UI user exists, and everything is running. Open `http://localhost:8080`. Re-run it
+(pointing at this directory) to switch provider or add agents.
 
 By hand:
 
@@ -39,9 +40,9 @@ By hand:
 `docker compose ps` (status), `docker compose logs -f gateway` (logs), `docker compose down` /
 `docker compose up -d` (stop / start; your data stays in `data/`).
 
-To switch from the fake provider to real models: set `OPENROUTER_API_KEY` and
-`PROVIDER_TYPE=OpenRouter` here, `docker compose up -d`, then give each agent a real model on its
-tab in the web UI (Settings → Model).
+To switch from the fake provider to real models, re-run `scripts/quickstart.sh` from the repo and
+choose OpenRouter. By hand: set `OPENROUTER_API_KEY` and `PROVIDER_TYPE=OpenRouter` here,
+`docker compose up -d`, then give each agent a real model on its tab in the web UI (Settings → Model).
 
 ## Upgrading
 

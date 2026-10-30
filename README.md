@@ -19,31 +19,30 @@ git clone https://github.com/kjhughes097/sharpclaw.git && cd sharpclaw
 scripts/quickstart.sh
 ```
 
-Open **http://127.0.0.1:8080** and sign in with the user name and password the script prints
-(the password is shown once). Pick **Prompts**, choose an agent and say hello.
+It asks a few questions (press Enter for the default):
 
-The script builds the images, creates your install in `~/sharpclaw`, starts the gateway, creates
-two sample agents (`assistant` and `coder`) and saves their tokens in `~/sharpclaw/.env`, creates
-your web UI user, and starts the agents. Once the images are built it takes under a minute (the
-first image build takes a few minutes). It's safe to re-run: it only fills in what's missing.
+| Question | Default | Notes |
+|---|---|---|
+| Install location | `~/sharpclaw` | Where your config, agents and database live (outside the repo) |
+| Model provider | `1` Fake | **Fake:** canned replies such as `Fake reply to: hello`, no account or cost, enough to explore the UI, approvals and audit. **OpenRouter:** real models; it asks for your [API key](https://openrouter.ai/keys) (checked on the spot) and a model for new agents (`openai/gpt-4o-mini`) |
+| Agents | `assistant` | Name your first agent, then keep adding names; Enter on an empty line when you're done |
+| Web UI user name | your login name | A password is generated and shown once at the end |
 
-**Without an API key it uses the fake provider:** canned replies such as `Fake reply to: hello`,
-at no cost, which is enough to explore the UI, approvals and audit.
+After a summary and a confirmation it builds the images, creates the install, starts the gateway,
+creates each agent ($1/day budget) with its token saved in `.env`, creates your user and starts
+every agent in its own container. Once the images are built that takes under a minute (the first
+image build takes a few minutes).
 
-### Use real models
+Open **http://127.0.0.1:8080**, sign in with the printed user name and password, pick **Prompts**,
+choose an agent and say hello. Each agent's persona is `agents/<name>/config/soul.md` in the
+install: edit it and `docker compose restart agent-<name>`.
 
-SharpClaw talks to models through [OpenRouter](https://openrouter.ai/). For a new install, pass
-your key:
+### Use real models, add agents
 
-```bash
-OPENROUTER_API_KEY=sk-or-... scripts/quickstart.sh      # agents use openai/gpt-4o-mini, $1/day
-```
-
-`SHARPCLAW_MODEL` and `SHARPCLAW_BUDGET` change the model and daily budget for new agents.
-
-To switch an install that started on the fake provider, set `OPENROUTER_API_KEY=…` and
-`PROVIDER_TYPE=OpenRouter` in `~/sharpclaw/.env`, run `docker compose up -d` in `~/sharpclaw`,
-then give each agent a real model on its tab in the web UI (**Settings → Model**).
+Re-run `scripts/quickstart.sh` and point it at the same install. It keeps your existing agents,
+tokens and user, lets you switch to OpenRouter (agents still on the fake model are moved to the
+model you pick), and asks for any more agents to add. Budgets and models can also be changed per
+agent on its tab in the web UI (**Settings**).
 
 ### Day to day
 
@@ -52,7 +51,7 @@ Everything you run lives in the install directory (`~/sharpclaw`), not the repo:
 ```bash
 cd ~/sharpclaw
 docker compose ps                    # what's running
-docker compose logs -f gateway       # gateway logs (agents: agent-assistant, agent-coder)
+docker compose logs -f gateway       # gateway logs (an agent: agent-<name>)
 docker compose down                  # stop (your data stays in data/)
 docker compose up -d                 # start again
 ```
@@ -315,8 +314,7 @@ SQLite database. The repo ships a sample in [docker/template/](docker/template/)
 **Adding an agent.** Copy an `agent-*` service in `compose.yml` and rename it, its token variable
 and its mount paths; create `agents/<name>/config/soul.md`, `agent.json` and an empty
 `workspace/`; then `sharpclaw agents create <name> …`, put the token in `.env` and
-`docker compose up -d`. (Re-running `scripts/quickstart.sh` also creates the agent and fills in an
-empty `AGENT_<NAME>_TOKEN=` line for you.)
+`docker compose up -d`. Or just re-run `scripts/quickstart.sh`, which does all of that for you.
 
 **Upgrading.** `git pull && scripts/build-images.sh` in the repo, then `docker compose up -d` in
 the install. To pin or roll back, set `SHARPCLAW_TAG` in `.env` to an image tag

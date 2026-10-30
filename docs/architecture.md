@@ -219,8 +219,8 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 
 Docker Compose runs from an install directory outside the repo (default `~/sharpclaw`), created by
 `scripts/install.sh` from [docker/template/](../docker/template/) and running images built by
-`scripts/build-images.sh`; `scripts/quickstart.sh` does both, then creates the agents, their tokens
-and the first user through the client API. `scripts/dev-stack.sh` runs a throwaway fake-provider
+`scripts/build-images.sh`; `scripts/quickstart.sh` asks for the location, provider and agent names, does both, adds a compose
+service per agent, then creates the agents, their tokens and the first user through the client API. `scripts/dev-stack.sh` runs a throwaway fake-provider
 stack on port 8090 for development. The gateway publishes only the client port
 (`${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}`) and keeps SQLite in the install's `data/`.
 Agents run read-only on an internal network with no egress; check this with `scripts/verify-isolation.sh`.
