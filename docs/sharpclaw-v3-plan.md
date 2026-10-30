@@ -99,7 +99,7 @@ Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in d
 - Loop limits (agent iteration cap; gateway backstop)
 
 **Deferred:** network tools (`download_to_workspace`, `http_fetch`) — designed in the 3.2 spec,
-built in a later phase. Superseded by the accepted
+built in a later phase. Superseded by the (now implemented)
 [external tools spec](sharpclaw-external-tools-spec.md) (credentialed tools in the gateway; network
 access, cloning and code execution in a per-agent `sandbox-<agent>` whose only exit is an egress
 proxy built into the gateway).

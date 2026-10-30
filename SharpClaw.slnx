@@ -4,10 +4,12 @@
     <Project Path="src/SharpClaw.Cli/SharpClaw.Cli.csproj" />
     <Project Path="src/SharpClaw.Contracts/SharpClaw.Contracts.csproj" />
     <Project Path="src/SharpClaw.Gateway/SharpClaw.Gateway.csproj" />
+    <Project Path="src/SharpClaw.Sandbox/SharpClaw.Sandbox.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SharpClaw.Agent.Tests/SharpClaw.Agent.Tests.csproj" />
     <Project Path="tests/SharpClaw.Cli.Tests/SharpClaw.Cli.Tests.csproj" />
     <Project Path="tests/SharpClaw.Gateway.Tests/SharpClaw.Gateway.Tests.csproj" />
+    <Project Path="tests/SharpClaw.Sandbox.Tests/SharpClaw.Sandbox.Tests.csproj" />
   </Folder>
 </Solution>

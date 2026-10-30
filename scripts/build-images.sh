@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the gateway and agent images from this checkout.
+# Builds the gateway, agent and sandbox images from this checkout.
 #   scripts/build-images.sh            -> tags :<short-sha>[-dirty] and :latest
 #   scripts/build-images.sh --tag dev  -> tags :dev only
 # An install's compose.yml runs sharpclaw-*:${SHARPCLAW_TAG:-latest}.
@@ -20,10 +20,10 @@ elif [ -n "${1:-}" ]; then
   exit 2
 fi
 
-for IMAGE in gateway agent; do
+for IMAGE in gateway agent sandbox; do
   ARGS=()
   for TAG in "${TAGS[@]}"; do ARGS+=(-t "sharpclaw-$IMAGE:$TAG"); done
   docker build -f "$REPO/docker/Dockerfile.$IMAGE" --build-arg "GIT_SHA=$SHA" "${ARGS[@]}" "$REPO"
 done
 
-echo "Built sharpclaw-gateway and sharpclaw-agent: ${TAGS[*]}"
+echo "Built sharpclaw-gateway, sharpclaw-agent and sharpclaw-sandbox: ${TAGS[*]}"

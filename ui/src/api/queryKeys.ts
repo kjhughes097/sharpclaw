@@ -16,6 +16,8 @@ export const keys = {
   trace: (id: string) => ['trace', id] as const,
   approvals: ['approvals'] as const,
   approvalList: (status: string) => ['approvals', status] as const,
+  /** One approval with its detail (a command, a file list); lists never carry the detail. */
+  approval: (id: string) => ['approvals', 'detail', id] as const,
   audit: ['audit'] as const,
   auditList: (tab: 'llm' | 'tools', filters: Record<string, string | undefined>) =>
     ['audit', tab, filters] as const,

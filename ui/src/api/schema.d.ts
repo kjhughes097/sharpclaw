@@ -470,6 +470,7 @@ export interface components {
       decidedAt: null | string;
       decidedBy: null | string;
       decidedByUser?: null | string;
+      detail?: null | string;
       /** Format: date-time */
       expiresAt: string;
       /** Format: uuid */

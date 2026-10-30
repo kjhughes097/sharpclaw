@@ -209,6 +209,12 @@
               "string"
             ]
           },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "expiresAt": {
             "format": "date-time",
             "type": "string"

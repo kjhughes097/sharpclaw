@@ -43,6 +43,9 @@ public sealed class FakeRule
     public FakeUsageSpec? Usage { get; init; }
 
     public FakeErrorSpec? Error { get; init; }
+
+    /// <summary>For web search: the citations a matching query returns (null: not a web search rule).</summary>
+    public IReadOnlyList<WebSearchResult>? Citations { get; init; }
 }
 
 public sealed class FakeScript
@@ -113,8 +116,15 @@ public sealed class FakeScript
                 }
             }
 
+            List<WebSearchResult>? citations = null;
+            if (r["citations"] is JsonArray cites)
+                citations = cites.OfType<JsonObject>()
+                    .Select(c => new WebSearchResult((string?)c["title"] ?? "", (string?)c["url"] ?? "", (string?)c["content"] ?? ""))
+                    .ToList();
+
             rules.Add(new FakeRule
             {
+                Citations = citations,
                 Match = new Regex(match, RegexOptions.Compiled),
                 Role = (string?)r["role"],
                 ToolCalls = toolCalls,

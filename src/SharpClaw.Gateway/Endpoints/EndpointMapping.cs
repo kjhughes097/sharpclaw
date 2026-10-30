@@ -27,6 +27,7 @@ public static class EndpointMapping
         AgentEndpoints.Map(agent);
         ToolCallEndpoints.Map(agent);
         ApprovalEndpoints.MapAgent(agent);
+        ToolBrokerEndpoints.Map(agent);
 
         var v1 = app.MapGroup("/v1").RequireListener(Listener.Agent).AddEndpointFilter<AgentAuthFilter>();
         ChatEndpoints.Map(v1);

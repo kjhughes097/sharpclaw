@@ -60,6 +60,18 @@ Confirmed live in VictoriaMetrics on 2026-10-27 (the dashboard panels use these 
 | `sharpclaw.approval.decision_time` | `sharpclaw.approval.decision_time_bucket` / `_sum` / `_count` | agent, status |
 | `sharpclaw.tool.unreported` | `sharpclaw.tool.unreported` | agent (tool calls older than 5 min never reported) |
 
+### Added by the external tools spec
+
+Expected names (dots kept, as above); not yet confirmed live.
+
+| OTel instrument | Landed name(s) | Labels |
+|---|---|---|
+| `sharpclaw.broker.calls` | `sharpclaw.broker.calls` | agent, tool, status (`succeeded`, `failed`, `refused`, `error`) |
+| `sharpclaw.broker.duration` | `sharpclaw.broker.duration_bucket` / `_sum` / `_count` | agent, tool |
+| `sharpclaw.egress.connections` | `sharpclaw.egress.connections` | agent, type (`connect`, `http`), status (`allowed`, `bad_request`, `auth_failed`, `blocked`, `limited`, `timeout`, `upstream_error`, `closed`) |
+| `sharpclaw.egress.bytes` | `sharpclaw.egress.bytes` | agent |
+| `sharpclaw.auth.failures` (extended) | `sharpclaw.auth.failures` | listener `egress`, method `proxy_credential` |
+
 Because the names contain dots, PromQL/MetricsQL must select them as
 `{__name__="sharpclaw.llm.calls", agent="assistant"}`.
 

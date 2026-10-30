@@ -54,11 +54,18 @@ internal static partial class NoFollow
     /// Writes via a temporary file in the same directory and a rename, so a crash never leaves a
     /// partial file. Missing parent directories are created (each one without following links).
     /// </summary>
-    public static async Task WriteAtomicAsync(string root, string relative, ReadOnlyMemory<byte> content, CancellationToken ct)
+    public static Task WriteAtomicAsync(string root, string relative, ReadOnlyMemory<byte> content, CancellationToken ct) =>
+        WriteAtomicAsync(root, relative, (stream, token) => stream.WriteAsync(content, token).AsTask(), ct);
+
+    /// <summary>
+    /// As above, with the content streamed by <paramref name="write"/>. If it throws, the temporary
+    /// file is removed and the destination is left as it was.
+    /// </summary>
+    public static async Task WriteAtomicAsync(string root, string relative, Func<Stream, CancellationToken, Task> write, CancellationToken ct)
     {
         if (!Native)
         {
-            await ManagedWriteAtomicAsync(Path.Combine(root, relative), content, ct);
+            await ManagedWriteAtomicAsync(Path.Combine(root, relative), write, ct);
             return;
         }
 
@@ -68,7 +75,7 @@ internal static partial class NoFollow
         try
         {
             await using (var stream = new FileStream(new SafeFileHandle(fd, ownsHandle: true), FileAccess.Write))
-                await stream.WriteAsync(content, ct);
+                await write(stream, ct);
             // rename(2) replaces the final name itself; it never follows a link there.
             Check(renameat2(Fd(parent), temp, Fd(parent), name, 0), relative);
         }
@@ -106,6 +113,17 @@ internal static partial class NoFollow
         Check(renameat2(Fd(fromParent), fromName, Fd(toParent), toName, overwrite ? 0 : RENAME_NOREPLACE), to);
     }
 
+    /// <summary>Creates a directory and any missing parents, none of which may be a link.</summary>
+    public static void CreateDirectory(string root, string relative)
+    {
+        if (!Native)
+        {
+            Directory.CreateDirectory(Path.Combine(root, relative));
+            return;
+        }
+        using var _ = OpenDirectoryHandle(root, relative.Split('/'), create: true, relative);
+    }
+
     /// <summary>
     /// Opens a directory (no component may be a link) and returns a path that names exactly that
     /// directory while the handle is open: <c>/proc/self/fd/N</c> on Linux, otherwise the plain path.
@@ -118,7 +136,7 @@ internal static partial class NoFollow
         return (dir, $"/proc/self/fd/{Fd(dir)}");
     }
 
-    private static async Task ManagedWriteAtomicAsync(string fullPath, ReadOnlyMemory<byte> content, CancellationToken ct)
+    private static async Task ManagedWriteAtomicAsync(string fullPath, Func<Stream, CancellationToken, Task> write, CancellationToken ct)
     {
         var dir = Path.GetDirectoryName(fullPath)!;
         Directory.CreateDirectory(dir);
@@ -126,7 +144,7 @@ internal static partial class NoFollow
         try
         {
             await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write))
-                await stream.WriteAsync(content, ct);
+                await write(stream, ct);
             File.Move(temp, fullPath, overwrite: true);
         }
         finally

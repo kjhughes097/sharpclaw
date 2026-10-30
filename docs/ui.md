@@ -54,6 +54,17 @@ bar (`components/AppShell.tsx`, `components/TabBar.tsx`). Every tab is a link:
 - **Tool rows** pair each tool call with its model round through the trace's `llmCallId`, and match
   a turn's approvals by tool name (approvals carry no tool-call id).
 
+## Approval details (external tools)
+
+Approvals for `sandbox_run`, `github_write` and `github_create_pr` carry a gateway-rendered
+**detail**: the command (capped at 1,000 characters), the text and labels to be posted, or the
+target repository, branch and every changed file with its line counts (never file contents). Only
+`GET /api/approvals/{id}` returns it; the list, the `approval.requested` event and the logs keep the
+content-free summary. `ApprovalCard` fetches it with `ApprovalDetail`
+(`features/approvals/ApprovalDetail.tsx`, query key `keys.approval(id)`, never refetched) for those
+three tools and shows it as plain text in a scrollable `<pre>` — React escapes it, nothing is
+rendered as Markdown or HTML.
+
 ## Setup
 
 Node 24 LTS (pinned in `ui/.nvmrc` and the Docker build stage), npm with the committed lockfile.

@@ -122,7 +122,7 @@ public sealed class ToolDispatcher
             Guid? approvalId = null;
             if (risk > _config.AllowedRiskLevel || tool.AlwaysRequiresApproval)
             {
-                var (approval, refusal) = await RequestApprovalAsync(call, tool, summary, risk, reason, turn, ct);
+                var (approval, refusal) = await RequestApprovalAsync(call, tool, args, summary, risk, reason, turn, ct);
                 approvalId = approval?.Id;
                 if (refusal is not null)
                     return refusal with { Risk = risk, Tainted = tainted, ApprovalId = approvalId };
@@ -134,7 +134,8 @@ public sealed class ToolDispatcher
             ToolResult result;
             try
             {
-                result = await tool.ExecuteUncheckedAsync(args, ct);
+                var context = new ToolCallContext(turn.CorrelationId, turn.ThreadId, call.Id, approvalId);
+                result = await tool.ExecuteUncheckedAsync(args, context, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -158,15 +159,18 @@ public sealed class ToolDispatcher
     /// when the call must not run; null refusal means approved. Fails closed on any error.
     /// </summary>
     private async Task<(ApprovalDto? Approval, Outcome? Refusal)> RequestApprovalAsync(
-        ToolCallRequest call, IAgentTool tool, string summary, RiskLevel risk, string reason,
+        ToolCallRequest call, IAgentTool tool, JsonElement args, string summary, RiskLevel risk, string reason,
         TurnContext turn, CancellationToken ct)
     {
         ApprovalDto approval;
         try
         {
+            // The args hash binds the approval to exactly these arguments; the gateway's broker
+            // recomputes it and refuses a call that doesn't match.
             approval = await _gateway.RequestApprovalAsync(new CreateApprovalRequest(
                 turn.CorrelationId, turn.ThreadId, call.Id, tool.Name,
-                Truncate(summary, 200), risk.ToWire(), Truncate(reason, 200)), ct);
+                Truncate(summary, 200), risk.ToWire(), Truncate(reason, 200), ToolArgsHash.Compute(args),
+                tool.ApprovalNeedsArguments ? args.Clone() : null), ct);
 
             while (approval.Status == ApprovalStatuses.Pending)
                 approval = await _gateway.PollApprovalAsync(approval.Id, ApprovalPollSeconds, ct);
@@ -174,6 +178,11 @@ public sealed class ToolDispatcher
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
+        }
+        catch (ApprovalRefusedException refused)
+        {
+            // The gateway's hardline rules (e.g. a PR touching a blocked path): never offered to the human.
+            return (null, Refused(refused.Code, refused.Message, ToolCallStatuses.Blocked, ToolDecisions.Blocked));
         }
         catch (Exception ex)
         {

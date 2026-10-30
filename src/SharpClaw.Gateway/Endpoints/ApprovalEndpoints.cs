@@ -7,6 +7,7 @@ using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Infrastructure;
 using SharpClaw.Gateway.Services;
+using SharpClaw.Gateway.Services.Broker;
 using SharpClaw.Gateway.Telemetry;
 
 namespace SharpClaw.Gateway.Endpoints;
@@ -39,7 +40,7 @@ public static class ApprovalEndpoints
     private static async Task<IResult> Create(
         CreateApprovalRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
         IEventPublisher events, IApprovalNotifier notifier, GatewayMetrics metrics, IOptions<ApprovalsOptions> options,
-        ILoggerFactory loggerFactory, CancellationToken ct)
+        ApprovalDetails details, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         if (body is null || string.IsNullOrWhiteSpace(body.ToolName) || string.IsNullOrWhiteSpace(body.ToolCallId))
@@ -50,10 +51,19 @@ public static class ApprovalEndpoints
             return ApiResults.ValidationFailed($"risk must be one of: {string.Join(", ", RiskLevels.All)}.");
         if (body.Reason is null || body.Reason.Length > MaxReasonChars)
             return ApiResults.ValidationFailed($"reason is required and must be at most {MaxReasonChars} characters.");
+        if (body.ArgsHash is not null && !ToolArgsHash.IsValid(body.ArgsHash))
+            return ApiResults.ValidationFailed("argsHash must be a lowercase hex SHA-256.");
 
         var userMsg = await TurnGuard.FindClaimedAsync(db, agent.Id, body.CorrelationId, body.ThreadId, ct);
         if (userMsg is null)
             return ApiResults.NotFound("Correlation message not found.");
+
+        // For broker calls: the gateway's own hash of the arguments, and the detail for the human.
+        var prepared = await details.PrepareAsync(agent, body.ToolName, body.ArgsHash, body.Arguments, ct);
+        if (prepared.Error is not null)
+            return prepared.ErrorCode is { } code
+                ? ApiResults.Error(prepared.ErrorStatus ?? 400, code, prepared.Error)
+                : ApiResults.ValidationFailed(prepared.Error);
 
         var now = time.GetUtcNow().UtcDateTime;
         await InboxRepository.TouchClaimAsync(db, agent.Id, body.CorrelationId, now, ct);
@@ -71,6 +81,8 @@ public static class ApprovalEndpoints
             Summary = body.Summary,
             Risk = body.Risk,
             Reason = body.Reason,
+            ArgsHash = prepared.ArgsHash,
+            Detail = prepared.Detail,
             Status = unattended ? ApprovalStatuses.Denied : ApprovalStatuses.Pending,
             DecidedBy = unattended ? ApprovalDecidedBy.System : null,
             DecidedAt = unattended ? now : null,
@@ -191,7 +203,7 @@ public static class ApprovalEndpoints
         if (approval is null)
             return ApiResults.NotFound("Approval not found.");
         var names = await AgentNamesAsync(db, new[] { approval }, ct);
-        return Results.Json(new ApprovalDetailResponse(ToDetail(approval, names)), SharpClawJson.Options);
+        return Results.Json(new ApprovalDetailResponse(ToDetail(approval, names, includeDetail: true)), SharpClawJson.Options);
     }
 
     private static async Task<IResult> Decide(
@@ -239,7 +251,9 @@ public static class ApprovalEndpoints
 
     private static ApprovalDto ToDto(Approval a) => new(a.Id, a.Status, a.DecidedBy, a.ExpiresAt);
 
-    private static ApprovalDetailDto ToDetail(Approval a, IReadOnlyDictionary<Guid, string> names) => new(
+    /// <summary>The detail (a command, a file list) is only for the single-approval view, never lists.</summary>
+    private static ApprovalDetailDto ToDetail(Approval a, IReadOnlyDictionary<Guid, string> names, bool includeDetail = false) => new(
         a.Id, names.GetValueOrDefault(a.AgentId, ""), a.ThreadId, a.CorrelationId, a.ToolName, a.Summary, a.Risk,
-        a.Reason, a.Status, a.CreatedAt, a.ExpiresAt, a.DecidedBy, a.DecidedAt, a.DecidedByUser);
+        a.Reason, a.Status, a.CreatedAt, a.ExpiresAt, a.DecidedBy, a.DecidedAt, a.DecidedByUser,
+        includeDetail ? a.Detail : null);
 }

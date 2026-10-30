@@ -1,5 +1,8 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharpClaw.Gateway.Services;
+using SharpClaw.Gateway.Egress;
+using SharpClaw.Gateway.GitHub;
+using SharpClaw.Gateway.Services.Broker;
 
 namespace SharpClaw.Gateway;
 
@@ -24,6 +27,26 @@ public static class ServicesRegistration
         builder.Services.AddSingleton<CreditsState>();
         builder.Services.AddHttpClient(CreditsRefresher.HttpClientName, c => c.Timeout = CreditsRefresher.RequestTimeout);
         builder.Services.AddHostedService<CreditsRefresher>();
+        // Broker tool handlers are added per tool (IBrokerToolHandler); a tool without one is unavailable.
+        builder.Services.AddScoped<ToolBroker>();
+        builder.Services.AddScoped<ApprovalDetails>();
+        builder.Services.AddSingleton<SandboxClient>();
+        builder.Services.AddSingleton<IBrokerToolHandler, SandboxToolHandler>();
+        builder.Services.AddScoped<IBrokerToolHandler, WebSearchToolHandler>();
+        builder.Services.AddScoped<IBrokerToolHandler, GitCloneToolHandler>();
+        builder.Services.AddSingleton<IBrokerToolHandler, SandboxRunToolHandler>();
+        GitHubClient.Register(builder.Services);
+        builder.Services.AddSingleton<GitHubClient>();
+        builder.Services.AddSingleton<IBrokerToolHandler, GitHubReadToolHandler>();
+        builder.Services.AddSingleton<IBrokerToolHandler, GitHubWriteToolHandler>();
+        builder.Services.AddScoped<PullRequestBuilder>();
+        builder.Services.AddScoped<IBrokerToolHandler, GitHubCreatePrToolHandler>();
+        // The runner is on the sandbox's own network: never through a proxy, never following redirects.
+        builder.Services.AddHttpClient(SandboxClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan)
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false });
+        // Egress proxy network seams; tests register fakes first.
+        builder.Services.TryAddSingleton<IEgressResolver, DnsEgressResolver>();
+        builder.Services.TryAddSingleton<IEgressConnector, SocketEgressConnector>();
         return builder;
     }
 }

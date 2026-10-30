@@ -63,6 +63,90 @@ for SVC in $(docker compose config --services | grep '^agent-'); do
   fi
 done
 
+# ----- External tools: the egress proxy and sandboxes (external tools spec section 10) -----
+
+# Secrets for the proxy checks come from the install's .env.
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+curl_on() { local NETWORK="$1"; shift; docker run --rm --network "$NETWORK" "$CURL_IMAGE" -s --max-time 10 "$@"; }
+upper() { echo "$1" | tr 'a-z-' 'A-Z_'; }
+SANDBOXES=$(docker compose ps --services --status running | sed -n 's/^sandbox-//p')
+
+echo "== 5a. Egress port 8082 is NOT published to the host =="
+if curl -sS --max-time 3 http://127.0.0.1:8082 >/dev/null 2>&1; then
+  fail "127.0.0.1:8082 is reachable from the host (the egress port must not be published)"
+else
+  pass "127.0.0.1:8082 is not reachable from the host"
+fi
+
+if [ -z "$SANDBOXES" ]; then
+  echo "(no sandbox-* services running: skipping sandbox checks; start them with COMPOSE_PROFILES=sandboxes)"
+else
+  echo "== 5b. Agents get 407 from the egress proxy (they have no proxy credential) =="
+  CODE=$(curl_on "$NET" -o /dev/null -w "%{http_connect}" -x http://gateway:8082 https://example.com)
+  if [ "$CODE" = "407" ]; then pass "CONNECT via gateway:8082 from $NET returned 407"; else fail "CONNECT via gateway:8082 from $NET returned '$CODE' (expected 407)"; fi
+
+  for N in $SANDBOXES; do
+    SBX_NET="${PROJECT}_sbx-$N"
+    SECRET_VAR="SANDBOX_$(upper "$N")_PROXY_SECRET"
+    PROXY="http://sbx-$N:${!SECRET_VAR:-}@gateway:8082"
+    CID=$(docker compose ps -q "sandbox-$N")
+
+    echo "== 6. sandbox-$N =="
+    if curl_on "$NET" -o /dev/null http://sandbox-$N:8090/healthz; then
+      fail "an agent-network container reached sandbox-$N"
+    else
+      pass "sandbox-$N is unreachable from the agent network"
+    fi
+
+    NETS=$(docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CID" | xargs)
+    if [ "$NETS" = "$SBX_NET" ]; then pass "sandbox-$N is only on $SBX_NET"; else fail "sandbox-$N is on: $NETS (expected only $SBX_NET)"; fi
+
+    if curl_on "$SBX_NET" -o /dev/null --noproxy '*' https://example.com; then
+      fail "$SBX_NET reached https://example.com without the proxy"
+    else
+      pass "$SBX_NET has no direct route to the internet"
+    fi
+
+    CODE=$(curl_on "$SBX_NET" -o /dev/null -w "%{http_code}" -x "$PROXY" https://example.com)
+    if [ "$CODE" = "200" ]; then pass "sandbox-$N credential reaches https://example.com through the proxy"; else fail "proxy fetch of https://example.com returned '$CODE' (expected 200)"; fi
+
+    for TARGET in http://169.254.169.254/latest/meta-data/ http://gateway/ http://192.168.1.1/ http://10.0.0.1/; do
+      CODE=$(curl_on "$SBX_NET" -o /dev/null -w "%{http_code}" -x "$PROXY" "$TARGET")
+      if [ "$CODE" = "403" ]; then pass "proxy refuses $TARGET"; else fail "proxy answered '$CODE' for $TARGET (expected 403)"; fi
+    done
+    CODE=$(curl_on "$SBX_NET" -o /dev/null -w "%{http_connect}" -x "$PROXY" https://gateway:8080/)
+    if [ "$CODE" = "403" ]; then pass "proxy refuses CONNECT gateway:8080"; else fail "CONNECT gateway:8080 returned '$CODE' (expected 403)"; fi
+
+    for URL in http://gateway:8080/api/agents http://gateway:8081/agent/inbox; do
+      CODE=$(curl_on "$SBX_NET" -o /dev/null -w "%{http_code}" "$URL")
+      if [ "$CODE" = "401" ]; then pass "$URL from $SBX_NET needs credentials (401)"; else fail "$URL from $SBX_NET returned '$CODE' (expected 401)"; fi
+    done
+
+    for M in $SANDBOXES; do
+      [ "$M" = "$N" ] && continue
+      if curl_on "$SBX_NET" -o /dev/null http://sandbox-$M:8090/healthz; then
+        fail "sandbox-$N's network reached sandbox-$M"
+      else
+        pass "sandbox-$N can't reach sandbox-$M"
+      fi
+    done
+
+    MOUNTS=$(docker inspect -f '{{range .Mounts}}{{.Destination}}={{.Source}} {{end}}' "$CID" | xargs -n1 | sort | xargs)
+    BAD=$(echo "$MOUNTS" | xargs -n1 | grep -vE "^/workspace=.*/agents/$N/workspace$|^/cache=|^/skills=" || true)
+    if [ -z "$BAD" ] && echo "$MOUNTS" | grep -qE "/workspace=.*/agents/$N/workspace"; then
+      pass "sandbox-$N mounts only its own workspace (and its cache)"
+    else
+      fail "sandbox-$N mounts: $MOUNTS"
+    fi
+
+    if docker compose exec -T "sandbox-$N" sh -c 'touch /rootfs-write-test' 2>/dev/null; then
+      fail "sandbox-$N root filesystem is writable"
+    else
+      pass "sandbox-$N root filesystem is read-only"
+    fi
+  done
+fi
+
 echo
 if [ "$FAILURES" -eq 0 ]; then
   echo "All isolation checks passed."

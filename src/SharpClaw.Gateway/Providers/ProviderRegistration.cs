@@ -14,10 +14,12 @@ public static class ProviderRegistration
         if (string.Equals(providerType, "Fake", StringComparison.OrdinalIgnoreCase))
         {
             builder.Services.AddSingleton<IChatProvider, FakeProvider>();
+            builder.Services.AddSingleton<IWebSearchProvider, FakeWebSearch>();
         }
         else
         {
             builder.Services.AddHttpClient<IChatProvider, OpenRouterProvider>();
+            builder.Services.AddHttpClient<IWebSearchProvider, OpenRouterWebSearch>(c => c.Timeout = Timeout.InfiniteTimeSpan);
             builder.Services.AddSingleton<IStartupCheck, OpenRouterKeyValidator>();
         }
         return builder;

@@ -199,6 +199,18 @@ public sealed class GatewayHttpClient : IGatewayClient
         return ChatOutcome.Ok(content.ToString(), toolCalls);
     }
 
+    private static async Task<ApiError?> ReadErrorAsync(HttpResponseMessage resp, CancellationToken ct)
+    {
+        try
+        {
+            return (await resp.Content.ReadFromJsonAsync<ApiErrorResponse>(SharpClawJson.Options, ct))?.Error;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage resp, CancellationToken ct)
     {
         try
@@ -230,6 +242,9 @@ public sealed class GatewayHttpClient : IGatewayClient
     public async Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/agent/approvals", request, SharpClawJson.Options, ct);
+        // A 403 is the gateway's own hardline refusal of the call (its message is written for the model).
+        if (resp.StatusCode == HttpStatusCode.Forbidden && await ReadErrorAsync(resp, ct) is { } refusal)
+            throw new ApprovalRefusedException(refusal.Code, refusal.Message);
         resp.EnsureSuccessStatusCode();
         var body = await resp.Content.ReadFromJsonAsync<ApprovalResponse>(SharpClawJson.Options, ct);
         return body?.Approval ?? throw new InvalidOperationException("empty approval response");
@@ -247,6 +262,44 @@ public sealed class GatewayHttpClient : IGatewayClient
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/agent/tool-calls", report, SharpClawJson.Options, ct);
         resp.EnsureSuccessStatusCode();
+    }
+
+    public async Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct)
+    {
+        using var resp = await _http.PostAsJsonAsync(
+            $"{_baseUrl}/agent/tools/{Uri.EscapeDataString(tool)}", request, SharpClawJson.Options, ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            // The gateway's error shape: pass its code and (content-free) message to the model.
+            ApiErrorResponse? error = null;
+            try
+            {
+                error = await resp.Content.ReadFromJsonAsync<ApiErrorResponse>(SharpClawJson.Options, ct);
+            }
+            catch (JsonException)
+            {
+            }
+            return ToolResult.Error(error?.Error.Code ?? ErrorCodes.ToolFailed,
+                error?.Error.Message ?? $"The gateway refused the call ({(int)resp.StatusCode}).");
+        }
+
+        var json = await resp.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(json);
+        var ok = doc.RootElement.ValueKind == JsonValueKind.Object &&
+                 doc.RootElement.TryGetProperty("ok", out var okEl) && okEl.ValueKind == JsonValueKind.True;
+        var code = !ok && doc.RootElement.ValueKind == JsonValueKind.Object &&
+                   doc.RootElement.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String
+            ? e.GetString()
+            : null;
+        return new ToolResult(ok, json, ok ? null : code ?? ErrorCodes.ToolFailed);
+    }
+
+    public async Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct)
+    {
+        using var resp = await _http.GetAsync($"{_baseUrl}/agent/tools", ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<AgentToolPolicyResponse>(SharpClawJson.Options, ct)
+            ?? throw new InvalidOperationException("empty tool policy response");
     }
 
     public async Task<string?> ClassifyRiskAsync(

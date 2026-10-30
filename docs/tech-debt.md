@@ -25,7 +25,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Item | Notes |
 |---|---|
 | Agent-reported tool outcomes are self-reported | The gateway independently records every tool call the model requested, so a missing report is visible (`status = requested`), but what a local tool actually did is only what the agent says. Docker isolation limits the damage. |
-| No network tools yet | Designed in the 3.2 spec (gateway fetches under fixed rules), built in a later phase. |
 | No "always allow" for approvals | Every call above the allowed level asks again. |
 
 ## Accepted by design (pre-3.3 foundations, section 15)
@@ -74,6 +73,9 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 |---|---|
 | Credentialed integrations live in the gateway | The GitHub token sits next to the OpenRouter keys, and the gateway makes fixed, typed calls to `api.github.com`. A separate credentials container (`toolhost`) was considered and dropped: it would only protect the token from a compromised gateway, which already holds more valuable keys. Fix: split them out into their own container when several credentialed integrations (Jira, Slack, email…) start crowding the gateway, or when one needs more than typed JSON calls. |
 | Sandboxed code can send its agent's workspace to the internet | Sandbox egress is open (private and LAN addresses blocked). Mitigated by gateway-enforced approval for every `sandbox_run` and one workspace per sandbox. Fix: an egress allow-list per agent if workspaces start holding sensitive data. |
+| `sandbox_run` returns up to 1 MB of output (Q6) | A large output can overflow a small model's context and fail the turn with `context_too_large`; the rest is in `logPath` either way. Fix: a lower, operator-set cap if it bites in practice. |
+| The agent reads the broker policy once at startup | `GET /agent/tools` (always-approve list, fetch and clone hosts) is read when the agent starts; changing `ToolBroker:*` needs an agent restart to change its risk scoring. The gateway's own checks apply immediately either way. |
+| `github_create_pr` is tested against a fake GitHub only | The fork, Git Data and PR calls follow GitHub's REST docs and are covered by a fake api.github.com; no live PR has been opened yet. Fix: a manual run on a scratch repository, recorded in [verification-log.md](verification-log.md). |
 | The egress proxy runs inside the gateway | Sandbox traffic (package restores, downloads) shares the process that streams chats, and a proxy bug would sit next to the keys. Kept small: a raw connection handler, TLS tunnels are never parsed, plain HTTP is one rewritten request per connection, with per-sandbox limits. Fix: move `EgressConnectionHandler` into its own container if heavy builds make chat slow, or if the proxy needs to grow (caching, TLS inspection, other protocols). |
 
 ## Accepted by design (skills spec)

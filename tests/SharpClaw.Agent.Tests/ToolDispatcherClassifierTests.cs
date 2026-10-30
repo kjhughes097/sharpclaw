@@ -63,7 +63,7 @@ public class ToolDispatcherClassifierTests
 
         await d.DispatchAsync(new ToolCallRequest("c1", "sandbox_run", "{}"), Turn(), default);
 
-        Assert.Single(gw.ApprovalRequests);
+        Assert.Null(Assert.Single(gw.ApprovalRequests).Arguments); // local tools never send their arguments
         Assert.Equal(1, tool.Executions);
         Assert.Equal(ToolDecisions.Approved, Assert.Single(gw.Reports).Decision);
     }

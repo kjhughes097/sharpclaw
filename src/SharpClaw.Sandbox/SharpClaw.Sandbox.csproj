@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- LibraryImport (no-follow workspace I/O, process groups) generates unsafe marshalling code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SharpClaw.Contracts\SharpClaw.Contracts.csproj" />
+  </ItemGroup>
+
+  <!-- The workspace path rules and no-follow I/O are the agent's own, shared by source so the
+       sandbox can never write anywhere the agent's tools couldn't. -->
+  <ItemGroup>
+    <Compile Include="..\SharpClaw.Agent\Tools\Workspace\WorkspaceRoot.cs" Link="Workspace\WorkspaceRoot.cs" />
+    <Compile Include="..\SharpClaw.Agent\Tools\Workspace\NoFollow.cs" Link="Workspace\NoFollow.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharpClaw.Sandbox.Tests" />
+  </ItemGroup>
+
+</Project>
