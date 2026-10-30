@@ -47,6 +47,7 @@ internal sealed class RecordingGateway : IGatewayClient
     public List<IReadOnlyList<ChatMessage>> Classifications { get; } = new();
     public string? ClassifierReply { get; set; }
     public bool FailApprovals { get; set; }
+    public Exception? ApprovalException { get; set; }
 
     public static ApprovalDto Approval(string status, string? decidedBy = null) =>
         new(Guid.NewGuid(), status, decidedBy, TestClock.Now.AddMinutes(5));
@@ -54,6 +55,8 @@ internal sealed class RecordingGateway : IGatewayClient
     public Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct)
     {
         ApprovalRequests.Add(request);
+        if (ApprovalException is not null)
+            throw ApprovalException;
         if (FailApprovals)
             throw new HttpRequestException("gateway down");
         return Task.FromResult(ApprovalReplies.Dequeue());

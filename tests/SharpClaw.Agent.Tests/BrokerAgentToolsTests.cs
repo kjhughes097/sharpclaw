@@ -209,6 +209,31 @@ public class BrokerAgentToolsTests : IDisposable
     }
 
     [Fact]
+    public void Create_pr_is_high_and_names_the_clone_and_branch_only()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "repos", "repo"));
+        var tool = _tools[BrokerTools.GitHubCreatePr];
+        var args = A(new { clonePath = "repos/repo", title = "SECRET title", body = "SECRET body", branch = "fix-bug" });
+
+        Assert.Equal(RiskLevel.High, Assert.IsType<ToolAssessment.Scored>(tool.Assess(args)).Level);
+        Assert.Equal("pull request from repos/repo/ (branch fix-bug)", tool.Summarize(args));
+        Assert.DoesNotContain("SECRET", string.Join(",", tool.ClassifierFields(args)!.Values));
+        Assert.True(tool.ApprovalNeedsArguments);
+    }
+
+    [Theory]
+    [InlineData("missing", "t", "fix")]
+    [InlineData("../x", "t", "fix")]
+    [InlineData("repos/repo", "", "fix")]
+    [InlineData("repos/repo", "t", "Fix")]
+    [InlineData("repos/repo", "t", "a..b")]
+    public void Create_pr_blocks_bad_arguments(string clonePath, string title, string branch)
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "repos", "repo"));
+        Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.GitHubCreatePr].Assess(A(new { clonePath, title, branch })));
+    }
+
+    [Fact]
     public void Always_approve_comes_from_the_gateway_policy()
     {
         var gw = new RecordingGateway();

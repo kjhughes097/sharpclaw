@@ -55,12 +55,14 @@ public sealed class ToolBroker(
         if (handler is null)
             return BrokerResult.Unavailable($"{call.Tool} is not available on this gateway.");
 
-        if (options.Value.AlwaysApproveSet.Contains(call.Tool) && !await ConsumeApprovalAsync(call, ct))
-            return BrokerResult.Refused(403, ErrorCodes.ApprovalRequired,
-                "This tool needs an approved, unused approval for exactly these arguments.");
-
         try
         {
+            var (approvalHash, refusal) = await handler.PrepareAsync(call, ct);
+            if (refusal is not null)
+                return refusal;
+            if (options.Value.AlwaysApproveSet.Contains(call.Tool) && !await ConsumeApprovalAsync(call, approvalHash!, ct))
+                return BrokerResult.Refused(403, ErrorCodes.ApprovalRequired,
+                    "This tool needs an approved, unused approval for exactly these arguments.");
             return await handler.InvokeAsync(call, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -78,14 +80,13 @@ public sealed class ToolBroker(
     /// <summary>
     /// Gateway-enforced approval (spec section 4, step 3): the approval must belong to this agent and
     /// turn, be approved for this tool, be recent enough, be unused, and carry the hash of exactly
-    /// these arguments, which the gateway recomputes. It is marked used by the same conditional
+    /// these arguments (and, for a PR, its change set), which the gateway recomputes. It is marked used by the same conditional
     /// update that checks it, so two calls can never share one approval.
     /// </summary>
-    private async Task<bool> ConsumeApprovalAsync(BrokerInvocation call, CancellationToken ct)
+    private async Task<bool> ConsumeApprovalAsync(BrokerInvocation call, string hash, CancellationToken ct)
     {
         if (call.ApprovalId is not { } id)
             return false;
-        var hash = ToolArgsHash.Compute(call.Arguments);
         var now = time.GetUtcNow().UtcDateTime;
         var decidedAfter = now.AddSeconds(-options.Value.ApprovalUseSeconds);
 

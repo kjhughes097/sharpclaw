@@ -36,6 +36,7 @@ public static class RunnerApp
         builder.Services.AddSingleton<IRunnerOp, ExtractTextOp>();
         builder.Services.AddSingleton<IRunnerOp, GitCloneOp>();
         builder.Services.AddSingleton<IRunnerOp, SandboxRunOp>();
+        builder.Services.AddSingleton<IRunnerOp, GitChangesOp>();
         builder.Services.AddSingleton(TimeProvider.System);
         configure?.Invoke(builder);
 

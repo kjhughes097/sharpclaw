@@ -21,8 +21,10 @@ public sealed class SandboxClient(IHttpClientFactory httpFactory, IOptions<ToolB
 
     /// <param name="op">The runner operation (usually the tool name).</param>
     /// <param name="targetHost">For the audit only.</param>
+    /// <param name="maxBytes">The largest answer accepted; the broker's response cap unless the gateway reads it itself.</param>
     public async Task<BrokerResult> CallAsync(
-        BrokerAgentOptions config, string op, JsonElement arguments, TimeSpan timeout, string? targetHost, CancellationToken ct)
+        BrokerAgentOptions config, string op, JsonElement arguments, TimeSpan timeout, string? targetHost, CancellationToken ct,
+        int? maxBytes = null)
     {
         if (!IsConfigured(config))
             return BrokerResult.Unavailable("This agent has no sandbox configured.");
@@ -51,7 +53,7 @@ public sealed class SandboxClient(IHttpClientFactory httpFactory, IOptions<ToolB
                 return BrokerResult.Refused(502, ErrorCodes.ToolFailed, $"The sandbox refused the call ({(int)response.StatusCode}).", targetHost);
 
             // Read one byte past the cap so an oversized answer is refused rather than cut.
-            var max = options.Value.MaxResponseBytes;
+            var max = maxBytes ?? options.Value.MaxResponseBytes;
             await using var body = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
             var buffer = new byte[max + 1];
             var read = await body.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, timeoutCts.Token);

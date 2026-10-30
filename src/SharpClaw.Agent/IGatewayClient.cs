@@ -80,6 +80,15 @@ public interface IGatewayClient
         IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct);
 }
 
+/// <summary>
+/// The gateway refused to put a call in front of the human (e.g. a PR touching a blocked path):
+/// a hardline refusal with a code and message the model may see.
+/// </summary>
+public sealed class ApprovalRefusedException(string code, string message) : Exception(message)
+{
+    public string Code { get; } = code;
+}
+
 public interface ISoulProvider
 {
     /// <summary>Reads the soul (system prompt) fresh each turn.</summary>

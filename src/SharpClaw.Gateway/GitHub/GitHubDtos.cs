@@ -26,6 +26,13 @@ public sealed record GhContent(string Type, string Name, string Path, long Size,
 
 public sealed record GhRepository(string FullName, bool Fork, GhRepoRef? Parent, string DefaultBranch);
 
+public sealed record GhSha(string Sha);
+public sealed record GhGitCommit(string Sha, GhSha Tree);
+public sealed record GhRefObject(string Ref, GhSha Object);
+
+/// <summary>One entry of a new tree; a null <c>Sha</c> deletes the path.</summary>
+public sealed record GhTreeEntry(string Path, string Mode, string Type, string? Sha);
+
 internal static class GitHubJson
 {
     public static readonly JsonSerializerOptions Options = new()

@@ -17,6 +17,13 @@ public interface IBrokerToolHandler
     IReadOnlyCollection<string> Tools { get; }
 
     Task<BrokerResult> InvokeAsync(BrokerInvocation call, CancellationToken ct);
+
+    /// <summary>
+    /// Runs before the approval check: the hash an approval for this call must carry (the arguments'
+    /// hash, unless the approval also covers other data such as a PR's change set), or a refusal.
+    /// </summary>
+    Task<(string? ApprovalHash, BrokerResult? Refusal)> PrepareAsync(BrokerInvocation call, CancellationToken ct) =>
+        Task.FromResult<(string?, BrokerResult?)>((ToolArgsHash.Compute(call.Arguments), null));
 }
 
 /// <summary>

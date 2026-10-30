@@ -195,6 +195,19 @@ a fixed enum, owner/repo names are validated and checked against the optional `G
 allow-list before anything is sent (`403 repo_not_allowed`), and answers are parsed into typed DTOs
 and reduced (64 KB). Broker results use relaxed JSON escaping (they never go into HTML).
 
+`github_create_pr` (`PullRequestBuilder`): the gateway takes the clone's origin and base commit
+from `sandbox_clones`, asks the agent's runner for the change set (`git_changes`, gateway-only),
+and refuses outright (never offered for approval) anything off `GitHub:Repos`, touching
+`GitHub:BlockedPaths` (default `.github/workflows/**`), containing links or submodules, over 100
+files / 1 MB per file / 5 MB, or with a bad branch name. The approval's hash covers the arguments
+**and** the change set, and its detail lists every file with line counts (never contents). The broker
+asks the handler for that hash before consuming the approval (`IBrokerToolHandler.PrepareAsync`) and
+uses the very same plan to build: with the fork token, a new ref `sharpclaw/<agent>/<branch>` in
+`<ForkOwner>/<repo>` at the base (syncing the fork once if needed; an existing ref is refused, never
+moved), blobs, a tree on the base tree, a commit, then a fast-forward of that new ref; with the
+owner token, the PR from `<ForkOwner>:sharpclaw/<agent>/<branch>` to the upstream default branch.
+The fork token is refused for any path outside `repos/<ForkOwner>/`.
+
 ## 5. Events
 
 `IEventPublisher` is the single path for client events.

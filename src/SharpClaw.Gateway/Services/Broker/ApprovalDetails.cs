@@ -1,6 +1,8 @@
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Auth;
+using SharpClaw.Gateway.Configuration;
 
 namespace SharpClaw.Gateway.Services.Broker;
 
@@ -19,22 +21,40 @@ public static class ApprovalDetailLimits
 /// sees in <c>GET /api/approvals/{id}</c> (Q1). Only the hash and the detail are stored, never the
 /// arguments.
 /// </summary>
-public sealed class ApprovalDetails
+public sealed class ApprovalDetails(PullRequestBuilder pullRequests, IOptions<ToolBrokerOptions> broker)
 {
-    public sealed record Prepared(string? ArgsHash, string? Detail, string? Error);
+    /// <summary>The stored hash and detail, or a refusal (<c>ErrorStatus</c> and <c>ErrorCode</c>; 400 when null).</summary>
+    public sealed record Prepared(string? ArgsHash, string? Detail, string? Error, int? ErrorStatus = null, string? ErrorCode = null);
 
-    public Task<Prepared> PrepareAsync(
+    public async Task<Prepared> PrepareAsync(
         AuthenticatedAgent agent, string tool, string? argsHash, JsonElement? arguments, CancellationToken ct)
     {
         if (arguments is not { } args || args.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
-            return Task.FromResult(new Prepared(argsHash, null, null));
+            return new Prepared(argsHash, null, null);
         if (args.ValueKind != JsonValueKind.Object)
-            return Task.FromResult(new Prepared(null, null, "arguments must be a JSON object."));
+            return new Prepared(null, null, "arguments must be a JSON object.");
 
         var computed = ToolArgsHash.Compute(args);
         if (argsHash is not null && argsHash != computed)
-            return Task.FromResult(new Prepared(null, null, "argsHash does not match arguments."));
-        return Task.FromResult(new Prepared(computed, Render(tool, args), null));
+            return new Prepared(null, null, "argsHash does not match arguments.");
+
+        // A PR's approval also covers its change set: the gateway gathers and checks it now, and
+        // anything against the hardline rules is refused here, never offered to the human.
+        if (tool == BrokerTools.GitHubCreatePr && broker.Value.ForAgent(agent.Name) is { } config)
+        {
+            var (plan, refusal) = await pullRequests.PlanAsync(agent, config, args, ct);
+            return plan is null ? Refusal(refusal!) : new Prepared(plan.Hash, PullRequestBuilder.Detail(plan), null);
+        }
+        return new Prepared(computed, Render(tool, args), null);
+    }
+
+    /// <summary>A broker refusal, or a tool error (from the sandbox or argument checks), as an approval refusal.</summary>
+    private static Prepared Refusal(BrokerResult r)
+    {
+        if (r.HttpStatus != 200)
+            return new Prepared(null, null, r.ErrorMessage, r.HttpStatus, r.ErrorCode);
+        var e = r.Result!.Value;
+        return new Prepared(null, null, Str(e, "message") ?? "The pull request can't be prepared.", 400, Str(e, "error") ?? ErrorCodes.InvalidArguments);
     }
 
     /// <summary>The detail text for tools that need one; null for the rest.</summary>

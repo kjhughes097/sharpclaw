@@ -179,6 +179,11 @@ public sealed class ToolDispatcher
         {
             throw;
         }
+        catch (ApprovalRefusedException refused)
+        {
+            // The gateway's hardline rules (e.g. a PR touching a blocked path): never offered to the human.
+            return (null, Refused(refused.Code, refused.Message, ToolCallStatuses.Blocked, ToolDecisions.Blocked));
+        }
         catch (Exception ex)
         {
             _logger.LogWarning("approval request failed: {Error}", ex.GetType().Name);

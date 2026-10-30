@@ -93,6 +93,47 @@ public sealed class GitHubClient(IHttpClientFactory factory, IOptions<GitHubOpti
     public Task<GitHubResponse<List<GhLabel>>> RemoveLabelAsync(string owner, string repo, int number, string label, CancellationToken ct) =>
         SendAsync<List<GhLabel>>(OwnerClient, HttpMethod.Delete, $"{Repo(owner, repo)}/issues/{number}/labels/{Uri.EscapeDataString(label)}", null, ct);
 
+    // ----- Repositories -----
+
+    /// <summary>A repository's metadata: with the owner token for upstream, the fork token for the fork.</summary>
+    public Task<GitHubResponse<GhRepository>> GetRepositoryAsync(string client, string owner, string repo, CancellationToken ct) =>
+        GetJsonAsync<GhRepository>(client, Repo(owner, repo), ct);
+
+    public Task<GitHubResponse<GhPull>> CreatePullAsync(
+        string owner, string repo, string title, string body, string head, string @base, CancellationToken ct) =>
+        SendAsync<GhPull>(OwnerClient, HttpMethod.Post, $"{Repo(owner, repo)}/pulls", new { title, body, head, @base }, ct);
+
+    // ----- The fork (fork token, <ForkOwner>/<repo> only) -----
+
+    public Task<GitHubResponse<GhGitCommit>> GetForkCommitAsync(string repo, string sha, CancellationToken ct) =>
+        GetJsonAsync<GhGitCommit>(ForkClient, $"{Fork(repo)}/git/commits/{sha}", ct);
+
+    public Task<GitHubResponse<bool>> MergeUpstreamAsync(string repo, string branch, CancellationToken ct) =>
+        SendAsync<bool>(ForkClient, HttpMethod.Post, $"{Fork(repo)}/merge-upstream", new { branch }, ct);
+
+    public Task<GitHubResponse<GhRefObject>> GetForkRefAsync(string repo, string branch, CancellationToken ct) =>
+        GetJsonAsync<GhRefObject>(ForkClient, $"{Fork(repo)}/git/ref/heads/{EscapeBranch(branch)}", ct);
+
+    public Task<GitHubResponse<GhRefObject>> CreateForkRefAsync(string repo, string branch, string sha, CancellationToken ct) =>
+        SendAsync<GhRefObject>(ForkClient, HttpMethod.Post, $"{Fork(repo)}/git/refs", new { @ref = $"refs/heads/{branch}", sha }, ct);
+
+    /// <summary>Moves the ref the gateway just created, fast-forward only: never forced.</summary>
+    public Task<GitHubResponse<GhRefObject>> FastForwardForkRefAsync(string repo, string branch, string sha, CancellationToken ct) =>
+        SendAsync<GhRefObject>(ForkClient, HttpMethod.Patch, $"{Fork(repo)}/git/refs/heads/{EscapeBranch(branch)}", new { sha, force = false }, ct);
+
+    public Task<GitHubResponse<GhSha>> CreateBlobAsync(string repo, byte[] content, CancellationToken ct) =>
+        SendAsync<GhSha>(ForkClient, HttpMethod.Post, $"{Fork(repo)}/git/blobs", new { content = Convert.ToBase64String(content), encoding = "base64" }, ct);
+
+    public Task<GitHubResponse<GhSha>> CreateTreeAsync(string repo, string baseTree, IReadOnlyList<GhTreeEntry> tree, CancellationToken ct) =>
+        SendAsync<GhSha>(ForkClient, HttpMethod.Post, $"{Fork(repo)}/git/trees", new { base_tree = baseTree, tree }, ct);
+
+    public Task<GitHubResponse<GhSha>> CreateCommitAsync(string repo, string message, string tree, string parent, CancellationToken ct) =>
+        SendAsync<GhSha>(ForkClient, HttpMethod.Post, $"{Fork(repo)}/git/commits", new { message, tree, parents = new[] { parent } }, ct);
+
+    private string Fork(string repo) => Repo(options.Value.ForkOwner, repo);
+
+    private static string EscapeBranch(string branch) => string.Join('/', branch.Split('/').Select(Uri.EscapeDataString));
+
     // ----- Plumbing -----
 
     internal static string Repo(string owner, string repo) =>
@@ -111,6 +152,10 @@ public sealed class GitHubClient(IHttpClientFactory factory, IOptions<GitHubOpti
         var uri = new Uri(Base, path);
         if (uri.Host != Base.Host || uri.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException("GitHub requests go to api.github.com only.");
+        // The fork token only ever touches the machine user's own repositories.
+        if (client == ForkClient && (options.Value.ForkOwner.Length == 0 ||
+                !path.StartsWith($"repos/{Uri.EscapeDataString(options.Value.ForkOwner)}/", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("The fork token is only used on the fork owner's repositories.");
 
         using var request = new HttpRequestMessage(method, uri);
         if (accept is not null)

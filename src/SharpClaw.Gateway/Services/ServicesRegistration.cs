@@ -39,6 +39,8 @@ public static class ServicesRegistration
         builder.Services.AddSingleton<GitHubClient>();
         builder.Services.AddSingleton<IBrokerToolHandler, GitHubReadToolHandler>();
         builder.Services.AddSingleton<IBrokerToolHandler, GitHubWriteToolHandler>();
+        builder.Services.AddScoped<PullRequestBuilder>();
+        builder.Services.AddScoped<IBrokerToolHandler, GitHubCreatePrToolHandler>();
         // The runner is on the sandbox's own network: never through a proxy, never following redirects.
         builder.Services.AddHttpClient(SandboxClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan)
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false });

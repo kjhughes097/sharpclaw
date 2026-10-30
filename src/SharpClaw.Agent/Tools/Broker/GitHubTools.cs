@@ -116,3 +116,47 @@ internal sealed class GitHubWriteTool(IGatewayClient gateway, BrokerPolicy polic
     private static int Labels(JsonElement args) =>
         args.TryGetProperty("labels", out var l) && l.ValueKind == JsonValueKind.Array ? l.GetArrayLength() : 0;
 }
+
+/// <summary>
+/// <c>github_create_pr</c> (external tools spec section 7.7): proposes the changes in a clone made
+/// with <c>git_clone</c> as a pull request on the upstream repository, from a branch in the
+/// operator's machine-user fork. Always high and always approved; the gateway shows the human the
+/// target, branch and every changed file (never contents), and refuses outright anything touching
+/// blocked paths, links or submodules.
+/// </summary>
+internal sealed class GitHubCreatePrTool(IGatewayClient gateway, BrokerPolicy policy, WorkspaceRoot root) : BrokerTool(gateway, policy)
+{
+    public override string Name => BrokerTools.GitHubCreatePr;
+    public override string Description =>
+        "Open a pull request with the changes you made in a clone (from git_clone). Needs the user's approval. " +
+        "The branch is created as sharpclaw/<agent>/<branch> in a fork; workflow files can't be changed.";
+    public override string ParametersJson => """
+        {"type":"object","properties":{"clonePath":{"type":"string","description":"The clone's workspace folder, as given to git_clone"},"title":{"type":"string"},"body":{"type":"string","description":"Markdown description"},"branch":{"type":"string","description":"Short branch name: lowercase letters, digits, . _ / -"}},"required":["clonePath","title","branch"]}
+        """;
+    public override bool ReturnsUntrustedContent => false;
+
+    public override ToolAssessment Assess(JsonElement args)
+    {
+        var (clone, error) = root.Resolve(Args.String(args, "clonePath"));
+        if (clone is null)
+            return new ToolAssessment.Blocked($"clonePath: {error}");
+        if (!Directory.Exists(clone.FullPath))
+            return new ToolAssessment.Blocked($"clonePath: no folder at '{clone.Relative}'");
+        if (Args.String(args, "title")?.Trim() is not { Length: > 0 and <= 256 })
+            return new ToolAssessment.Blocked("title must be 1-256 characters");
+        if (!IsBranch(Args.String(args, "branch")))
+            return new ToolAssessment.Blocked("branch must be lowercase letters, digits and . _ / - (at most 61), starting with a letter or digit");
+        return new ToolAssessment.Scored(RiskLevel.High, "opens a pull request as the user");
+    }
+
+    public override string Summarize(JsonElement args) =>
+        $"pull request from {Args.DirectoryLabel(Args.String(args, "clonePath"))} (branch {(IsBranch(Args.String(args, "branch")) ? Args.String(args, "branch") : "?")})";
+
+    public override IReadOnlyDictionary<string, string>? ClassifierFields(JsonElement args) =>
+        new Dictionary<string, string> { ["clonePath"] = Args.DirectoryLabel(Args.String(args, "clonePath")) };
+
+    private static bool IsBranch(string? b) =>
+        b is { Length: > 0 and <= 61 } && (char.IsAsciiLetterLower(b[0]) || char.IsAsciiDigit(b[0])) &&
+        b.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c is '.' or '_' or '/' or '-') &&
+        !b.Contains("..") && !b.Contains("//") && !b.EndsWith('/') && !b.EndsWith(".lock");
+}

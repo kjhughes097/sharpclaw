@@ -80,6 +80,33 @@ public class BrokerToolTests
         Assert.Equal(ToolCallStatuses.Failed, Assert.Single(gw.Reports).Status);
     }
 
+    [Fact]
+    public async Task A_gateway_refusal_of_the_approval_reaches_the_model_as_blocked()
+    {
+        var (d, gw) = Create(alwaysApprove: true);
+        gw.ApprovalException = new ApprovalRefusedException("blocked_path", ".github/workflows/ci.yml matches a blocked pattern.");
+
+        var result = await d.DispatchAsync(new ToolCallRequest("c", "sandbox_run", "{}"), new TurnContext(Guid.NewGuid(), Guid.NewGuid()), default);
+
+        var json = JsonDocument.Parse(result.Content).RootElement;
+        Assert.Equal("blocked_path", json.GetProperty("error").GetString());
+        Assert.Contains("blocked pattern", json.GetProperty("message").GetString());
+        Assert.Empty(gw.ToolInvocations);
+        var report = Assert.Single(gw.Reports);
+        Assert.Equal((ToolCallStatuses.Blocked, ToolDecisions.Blocked), (report.Status, report.Decision));
+    }
+
+    [Fact]
+    public async Task Http_client_turns_a_403_approval_answer_into_a_refusal()
+    {
+        var client = Client(HttpStatusCode.Forbidden, """{"error":{"code":"symlink_not_allowed","message":"link is a symbolic link."}}""");
+
+        var ex = await Assert.ThrowsAsync<ApprovalRefusedException>(() => client.RequestApprovalAsync(
+            new CreateApprovalRequest(Guid.NewGuid(), Guid.NewGuid(), "c", "github_create_pr", "pr", "high", "r"), default));
+
+        Assert.Equal("symlink_not_allowed", ex.Code);
+    }
+
     // ----- GatewayHttpClient.InvokeToolAsync -----
 
     private static GatewayHttpClient Client(HttpStatusCode status, string body, List<HttpRequestMessage>? seen = null) =>

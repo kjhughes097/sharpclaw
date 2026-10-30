@@ -10,7 +10,7 @@ public static class AgentBrokerTools
     [
         BrokerTools.HttpFetch, BrokerTools.DownloadToWorkspace, BrokerTools.WebSearch, BrokerTools.ExtractText,
         BrokerTools.GitClone, BrokerTools.SandboxRun, BrokerTools.GitHubRead,
-        BrokerTools.GitHubWrite,
+        BrokerTools.GitHubWrite, BrokerTools.GitHubCreatePr,
     ];
 
     public static IAgentTool[] All(IGatewayClient gateway, BrokerPolicy policy, string workspacePath)
@@ -26,6 +26,7 @@ public static class AgentBrokerTools
             new SandboxRunTool(gateway, policy, root),
             new GitHubReadTool(gateway, policy),
             new GitHubWriteTool(gateway, policy),
+            new GitHubCreatePrTool(gateway, policy, root),
         ];
     }
 }

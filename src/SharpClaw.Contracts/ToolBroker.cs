@@ -204,3 +204,16 @@ public static class GitHubOperations
     public static bool IsRepo(string? s) =>
         s is { Length: > 0 and <= 100 } && s is not ("." or "..") && s.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
 }
+
+/// <summary>Limits on a <c>github_create_pr</c> change set (spec section 7.7).</summary>
+public static class ChangeSetLimits
+{
+    public const int MaxFiles = 100;
+    public const int MaxFileBytes = 1024 * 1024;
+    public const int MaxTotalBytes = 5 * 1024 * 1024;
+
+    public const string ModeFile = "100644";
+    public const string ModeExecutable = "100755";
+    public const string ModeSymlink = "120000";
+    public const string ModeSubmodule = "160000";
+}

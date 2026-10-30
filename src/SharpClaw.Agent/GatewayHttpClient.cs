@@ -199,6 +199,18 @@ public sealed class GatewayHttpClient : IGatewayClient
         return ChatOutcome.Ok(content.ToString(), toolCalls);
     }
 
+    private static async Task<ApiError?> ReadErrorAsync(HttpResponseMessage resp, CancellationToken ct)
+    {
+        try
+        {
+            return (await resp.Content.ReadFromJsonAsync<ApiErrorResponse>(SharpClawJson.Options, ct))?.Error;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     private static async Task<string?> ReadErrorCodeAsync(HttpResponseMessage resp, CancellationToken ct)
     {
         try
@@ -230,6 +242,9 @@ public sealed class GatewayHttpClient : IGatewayClient
     public async Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/agent/approvals", request, SharpClawJson.Options, ct);
+        // A 403 is the gateway's own hardline refusal of the call (its message is written for the model).
+        if (resp.StatusCode == HttpStatusCode.Forbidden && await ReadErrorAsync(resp, ct) is { } refusal)
+            throw new ApprovalRefusedException(refusal.Code, refusal.Message);
         resp.EnsureSuccessStatusCode();
         var body = await resp.Content.ReadFromJsonAsync<ApprovalResponse>(SharpClawJson.Options, ct);
         return body?.Approval ?? throw new InvalidOperationException("empty approval response");

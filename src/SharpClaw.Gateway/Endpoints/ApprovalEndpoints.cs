@@ -61,7 +61,9 @@ public static class ApprovalEndpoints
         // For broker calls: the gateway's own hash of the arguments, and the detail for the human.
         var prepared = await details.PrepareAsync(agent, body.ToolName, body.ArgsHash, body.Arguments, ct);
         if (prepared.Error is not null)
-            return ApiResults.ValidationFailed(prepared.Error);
+            return prepared.ErrorCode is { } code
+                ? ApiResults.Error(prepared.ErrorStatus ?? 400, code, prepared.Error)
+                : ApiResults.ValidationFailed(prepared.Error);
 
         var now = time.GetUtcNow().UtcDateTime;
         await InboxRepository.TouchClaimAsync(db, agent.Id, body.CorrelationId, now, ct);
