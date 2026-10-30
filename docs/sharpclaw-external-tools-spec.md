@@ -199,7 +199,8 @@ strings, headers or bodies. Metrics `sharpclaw.egress.connections` (labels: agen
   `sandbox_run`), in its own process group, with a timeout. On timeout or completion the whole group
   is killed so nothing lingers between runs.
 - **Mounts:** `./agents/<name>/workspace` → `/workspace` (rw), a named volume → `/cache` (Q5),
-  nothing else. Runs as the same host UID as the agent so files stay editable.
+  nothing else. (The [skills spec](sharpclaw-skills-spec.md) §8 later adds `./skills` → `/skills`
+  read-only, so skill scripts can run through `sandbox_run`.) Runs as the same host UID as the agent so files stay editable.
 - **Environment:** proxy variables (including the sandbox's proxy credential, which only lets it use
   egress as itself), `HOME=/tmp/home`, cache paths under `/cache`, `GIT_TERMINAL_PROMPT=0`,
   `DOTNET_CLI_TELEMETRY_OPTOUT=1`. No other secrets.

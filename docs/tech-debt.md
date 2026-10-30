@@ -76,6 +76,14 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Sandboxed code can send its agent's workspace to the internet | Sandbox egress is open (private and LAN addresses blocked). Mitigated by gateway-enforced approval for every `sandbox_run` and one workspace per sandbox. Fix: an egress allow-list per agent if workspaces start holding sensitive data. |
 | The egress proxy runs inside the gateway | Sandbox traffic (package restores, downloads) shares the process that streams chats, and a proxy bug would sit next to the keys. Kept small: a raw connection handler, TLS tunnels are never parsed, plain HTTP is one rewritten request per connection, with per-sandbox limits. Fix: move `EgressConnectionHandler` into its own container if heavy builds make chat slow, or if the proxy needs to grow (caching, TLS inspection, other protocols). |
 
+## Accepted by design (skills spec)
+
+| Item | Notes |
+|---|---|
+| Skill contents are trusted | `skill_read` results don't taint the turn: skills are operator-curated and mounted read-only, like `soul.md`. A third-party skill could carry prompt injection; the README warns operators to review skills before adding them. Fix: mark skills as untrusted (or per-skill trust) if operators start importing skills they don't review. |
+| One shared skill library for every agent | No per-agent selection; every agent with `skill_read` sees every skill. Fix: an optional `skills` list in `agent.json` if agents need different sets. |
+| The skill index is built only at startup | New, removed or re-described skills need an agent restart (file contents are read live). Fix: re-scan per turn if restarts become a nuisance. |
+
 ## Code-level debt
 
 | # | Item | Severity | Why accepted | Fix when / how |

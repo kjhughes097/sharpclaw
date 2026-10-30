@@ -506,6 +506,7 @@ Behaviour is specified phase by phase; later specs win where they differ:
 [pre-3.3 foundations](docs/sharpclaw-pre-3.3-foundations-spec.md) (browser auth, replayable events) →
 [3.3](docs/sharpclaw-3.3-implementation-spec.md) (web UI) →
 [3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign), plus the
-[agent tools spec](docs/sharpclaw-agent-tools-spec.md). The orientation notes
+[agent tools spec](docs/sharpclaw-agent-tools-spec.md), the accepted
+[external tools spec](docs/sharpclaw-external-tools-spec.md) and [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
 ([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the
 [post-3.3 codebase review](docs/post-phase-3.3-codebase-review.md) are historical working notes.
