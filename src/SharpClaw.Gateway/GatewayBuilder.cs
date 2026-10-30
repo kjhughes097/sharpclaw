@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Data;
+using SharpClaw.Gateway.Egress;
 using SharpClaw.Gateway.Endpoints;
 using SharpClaw.Gateway.Infrastructure;
 
@@ -35,6 +37,7 @@ public static class GatewayBuilder
 
         var listeners = builder.Configuration.GetSection(ListenerOptions.Section).Get<ListenerOptions>() ?? new ListenerOptions();
         var dbOptions = builder.Configuration.GetSection(DatabaseOptions.Section).Get<DatabaseOptions>() ?? new DatabaseOptions();
+        var egress = builder.Configuration.GetSection(EgressOptions.Section).Get<EgressOptions>() ?? new EgressOptions();
 
         builder.Services.AddDbContext<SharpClawDbContext>((sp, opt) =>
         {
@@ -46,6 +49,10 @@ public static class GatewayBuilder
         {
             k.ListenAnyIP(listeners.ClientPort);
             k.ListenAnyIP(listeners.AgentPort);
+            // The egress proxy: a raw connection handler, so no HTTP pipeline, routes or auth
+            // handlers run on this port. Bound only when a sandbox credential is configured.
+            if (egress.Enabled)
+                k.ListenAnyIP(egress.Port, l => l.UseConnectionHandler<EgressConnectionHandler>());
         });
 
         var app = builder.Build();

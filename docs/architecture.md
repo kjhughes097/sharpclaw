@@ -49,13 +49,25 @@ flowchart LR
 
 ## 2. Listeners and authentication
 
-One process, two Kestrel listeners. `ListenerFilter` separates route groups by the connection's
-**local port** (never the `Host` header); a route on the wrong listener returns `404`.
+One process, two Kestrel listeners (three with sandboxes). `ListenerFilter` separates route groups
+by the connection's **local port** (never the `Host` header); a route on the wrong listener returns
+`404`.
 
 | Listener | Routes | Credentials |
 |---|---|---|
 | Client `:8080` | `/api/*`, `/openapi/v1.json`, `/healthz`, the SPA | Admin key (bearer) **or** session cookie. Cookie-authenticated unsafe methods also need a same-origin `Origin`/`Referer` and `X-CSRF-Token`. `/api/users*` is admin-key only; logout and password change are session-only. |
 | Agent `:8081` | `/agent/*`, `/v1/chat/completions`, `/healthz` | Agent token (bearer), stored as SHA-256 hex + 8-char prefix. Disabled agent → `403 agent_disabled`. |
+| Egress `:8082` (only when `Egress:Sandboxes` is set; never published) | None: a raw connection handler (`EgressConnectionHandler`), not HTTP routing. Accepts `CONNECT host:443` and absolute-form `http://host[:80]/…` only. | Per-sandbox proxy credential (`Proxy-Authorization: Basic sbx-<name>:<secret>`); otherwise `407`. |
+
+**Egress proxy** ([external tools spec](sharpclaw-external-tools-spec.md) section 5). The sandboxes'
+only route out. It reads one request head (64 KB, 30 s), refuses anything but the two forms above,
+checks the credential, the port and `Egress:DenyHosts`, resolves the host once and refuses if
+**any** address is loopback, private, link-local, CGNAT, multicast, reserved or an IPv6 form of
+those (`EgressAddressPolicy`), then connects to that checked address. TLS tunnels are never parsed;
+plain HTTP is rewritten to origin form (proxy and hop-by-hop headers removed, `Connection: close`),
+one request per connection. Per sandbox: 32 connections, 60 s idle, 1 GB per connection. Each
+connection is logged (agent, host, port, method, decision, bytes, duration; never paths, queries or
+headers) and counted in `sharpclaw.egress.connections` / `sharpclaw.egress.bytes`.
 
 **Browser login.** `POST /api/auth/login` with a username and password (PBKDF2-SHA256, 600,000
 iterations, upgraded on login; at least 12 characters) sets an `HttpOnly`, `SameSite=Strict`
@@ -219,11 +231,14 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 | `Services/Chat/` | Chat-completion helpers: request parsing, OpenAI-style chunk writing, `llm_calls` recording. |
 | `Providers/` | `IChatProvider` with `OpenRouterProvider` and the scripted `FakeProvider`. |
 | `Telemetry/` | `GatewayMetrics` (meter `SharpClaw.Gateway`) and OTLP wiring. |
+| `Egress/` | The egress proxy: `EgressConnectionHandler`, `ProxyRequestHead` (strict head parser), `EgressAddressPolicy`, and the `IEgressResolver`/`IEgressConnector` seams. |
 | `Infrastructure/` | Listener filter, error results, exception middleware, OpenAPI, UI hosting, paging cursor, `LogScopes`; `Sse/EventStreamResult` (replay + live SSE). |
 
 ## 8. Invariants (each guarded by tests)
 
 - Listener separation is by local port; the wrong listener returns `404` (`HealthAndListenerTests`).
+- The egress listener runs no HTTP routes, refuses private and reserved destinations after
+  resolution, and connects only to the address it checked (`EgressProxyTests`, `EgressAddressPolicyTests`).
 - Only `ToolDispatcher` may call `IAgentTool.ExecuteUncheckedAsync` (`ToolArchitectureTests`).
 - Workspace tools never follow a symbolic link, even one created after the path was checked
   (`WorkspaceToolsTests.NoFollow`).

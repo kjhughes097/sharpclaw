@@ -35,6 +35,8 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Counter<long> _logins;
     private readonly Counter<long> _toolCalls;
     private readonly Counter<long> _brokerCalls;
+    private readonly Counter<long> _egressConnections;
+    private readonly Counter<long> _egressBytes;
     private readonly Histogram<double> _brokerDuration;
     private readonly Counter<long> _approvals;
     private readonly Histogram<double> _approvalDecisionTime;
@@ -72,6 +74,8 @@ public sealed class GatewayMetrics : IDisposable
         _toolCalls = _meter.CreateCounter<long>("sharpclaw.tool.calls", "{call}");
         _brokerCalls = _meter.CreateCounter<long>("sharpclaw.broker.calls", "{call}");
         _brokerDuration = _meter.CreateHistogram("sharpclaw.broker.duration", "s", null, null, messageBuckets);
+        _egressConnections = _meter.CreateCounter<long>("sharpclaw.egress.connections", "{connection}");
+        _egressBytes = _meter.CreateCounter<long>("sharpclaw.egress.bytes", "By");
         _approvals = _meter.CreateCounter<long>("sharpclaw.approvals", "{approval}");
         _approvalDecisionTime = _meter.CreateHistogram("sharpclaw.approval.decision_time", "s", null, null,
             new InstrumentAdvice<double> { HistogramBucketBoundaries = [1, 5, 10, 30, 60, 120, 300, 600] });
@@ -128,6 +132,14 @@ public sealed class GatewayMetrics : IDisposable
     {
         _brokerCalls.Add(1, Tag("agent", agent), Tag("tool", tool), Tag("status", status));
         _brokerDuration.Record(seconds, Tag("agent", agent), Tag("tool", tool));
+    }
+
+    /// <summary>One egress proxy connection (type <c>connect</c>|<c>http</c>) and the bytes it carried.</summary>
+    public void RecordEgress(string agent, string type, string status, long bytes)
+    {
+        _egressConnections.Add(1, Tag("agent", agent), Tag("type", type), Tag("status", status));
+        if (bytes > 0)
+            _egressBytes.Add(bytes, Tag("agent", agent));
     }
 
     public void RecordApproval(string agent, string status) =>

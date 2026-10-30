@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using SharpClaw.Gateway.Services;
+using SharpClaw.Gateway.Egress;
 using SharpClaw.Gateway.Services.Broker;
 
 namespace SharpClaw.Gateway;
@@ -27,6 +28,9 @@ public static class ServicesRegistration
         builder.Services.AddHostedService<CreditsRefresher>();
         // Broker tool handlers are added per tool (IBrokerToolHandler); a tool without one is unavailable.
         builder.Services.AddScoped<ToolBroker>();
+        // Egress proxy network seams; tests register fakes first.
+        builder.Services.TryAddSingleton<IEgressResolver, DnsEgressResolver>();
+        builder.Services.TryAddSingleton<IEgressConnector, SocketEgressConnector>();
         return builder;
     }
 }

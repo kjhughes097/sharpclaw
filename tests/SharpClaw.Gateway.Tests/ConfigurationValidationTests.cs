@@ -46,6 +46,8 @@ public class ConfigurationValidationTests
     [InlineData("ToolBroker:Agents:cody:SandboxUrl", "ftp://sandbox", "SandboxUrl must be an absolute http(s) URL")]
     [InlineData("ToolBroker:Agents:cody:SandboxUrl", "http://sandbox-cody:8090", "SandboxSecret must be at least 16")]
     [InlineData("ToolBroker:MaxResponseBytes", "10", "MaxResponseBytes")]
+    [InlineData("Egress:Sandboxes:cody:Secret", "short", "Egress:Sandboxes:cody:Secret must be at least 16")]
+    [InlineData("Egress:DenyHosts:0", " ", "Egress:DenyHosts must not contain empty entries")]
     public void Invalid_values_refuse_to_start(string key, string value, string expected)
     {
         var ex = Assert.Throws<OptionsValidationException>(() => Build(new() { [key] = value }));
@@ -68,5 +70,29 @@ public class ConfigurationValidationTests
     {
         var ex = Assert.Throws<InvalidOperationException>(() => Build(new() { ["Provider:Type"] = "OpenRouter" }));
         Assert.Contains("OpenRouter:ApiKey", ex.Message);
+    }
+
+    [Fact]
+    public void Egress_port_must_not_collide_with_the_other_listeners()
+    {
+        var ex = Assert.Throws<OptionsValidationException>(() => Build(new()
+        {
+            ["Egress:Port"] = "18081",
+            ["Egress:Sandboxes:cody:Secret"] = "proxy-secret-0123456789",
+        }));
+        Assert.Contains("Egress:Port must differ", ex.Message);
+    }
+
+    [Fact]
+    public void A_sandbox_proxy_secret_must_differ_from_its_service_secret()
+    {
+        const string same = "the-same-secret-0123456789";
+        var ex = Assert.Throws<OptionsValidationException>(() => Build(new()
+        {
+            ["Egress:Sandboxes:cody:Secret"] = same,
+            ["ToolBroker:Agents:cody:SandboxUrl"] = "http://sandbox-cody:8090",
+            ["ToolBroker:Agents:cody:SandboxSecret"] = same,
+        }));
+        Assert.Contains("must differ from ToolBroker:Agents:cody:SandboxSecret", ex.Message);
     }
 }

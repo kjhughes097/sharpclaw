@@ -41,6 +41,9 @@ public static class OptionsRegistration
         Add<CreditsOptions, CreditsOptionsValidator>(builder, CreditsOptions.Section);
         Add<ToolBrokerOptions, ToolBrokerOptionsValidator>(builder, ToolBrokerOptions.Section);
         builder.Services.AddSingleton<IValidateOptions<ToolBrokerOptions>, ProblemValidator<ToolBrokerOptions>>();
+        Add<EgressOptions, EgressOptionsValidator>(builder, EgressOptions.Section);
+        builder.Services.AddSingleton<IValidateOptions<EgressOptions>, ProblemValidator<EgressOptions>>();
+        builder.Services.AddSingleton<IStartupCheck, SandboxSettingsCheck>();
         builder.Services.AddOptions<UiOptions>().Bind(builder.Configuration.GetSection(UiOptions.Section));
         return builder;
     }
@@ -77,6 +80,28 @@ public static class OptionsRegistration
 [OptionsValidator] public sealed partial class ContextOptionsValidator : IValidateOptions<ContextOptions>;
 [OptionsValidator] public sealed partial class CreditsOptionsValidator : IValidateOptions<CreditsOptions>;
 [OptionsValidator] public sealed partial class ToolBrokerOptionsValidator : IValidateOptions<ToolBrokerOptions>;
+[OptionsValidator] public sealed partial class EgressOptionsValidator : IValidateOptions<EgressOptions>;
+
+/// <summary>
+/// Rules across the sandbox settings: the egress listener gets its own port, and a sandbox's proxy
+/// secret (sandbox → egress) differs from its service secret (gateway → runner), so one leaked
+/// value can't stand in for the other.
+/// </summary>
+public sealed class SandboxSettingsCheck(
+    IOptions<ListenerOptions> listeners, IOptions<EgressOptions> egress, IOptions<ToolBrokerOptions> broker) : IStartupCheck
+{
+    public void Validate()
+    {
+        var e = egress.Value;
+        if (e.Enabled && (e.Port == listeners.Value.ClientPort || e.Port == listeners.Value.AgentPort))
+            throw new OptionsValidationException(EgressOptions.Section, typeof(EgressOptions),
+                ["Egress:Port must differ from Listeners:ClientPort and Listeners:AgentPort."]);
+        foreach (var (name, sandbox) in e.Sandboxes)
+            if (broker.Value.ForAgent(name)?.SandboxSecret is { Length: > 0 } serviceSecret && serviceSecret == sandbox.Secret)
+                throw new OptionsValidationException(EgressOptions.Section, typeof(EgressOptions),
+                    [$"Egress:Sandboxes:{name}:Secret must differ from ToolBroker:Agents:{name}:SandboxSecret."]);
+    }
+}
 
 /// <summary>Options whose cross-field rules are a single <c>Problem()</c> check.</summary>
 public interface IHasProblem

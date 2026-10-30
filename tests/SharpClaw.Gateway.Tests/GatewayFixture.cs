@@ -132,7 +132,7 @@ public sealed class GatewayFixture : IAsyncDisposable
         return (body!.Agent, body.Token.Value);
     }
 
-    private static int FreePort()
+    public static int FreePort()
     {
         var l = new TcpListener(IPAddress.Loopback, 0);
         l.Start();
