@@ -20,6 +20,7 @@ public class SharpClawDbContext : DbContext
     public DbSet<User> Users => Set<User>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<BrokerCall> BrokerCalls => Set<BrokerCall>();
+    public DbSet<SandboxClone> SandboxClones => Set<SandboxClone>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -123,6 +124,15 @@ public class SharpClawDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.AgentId, x.CreatedAt });
             e.HasIndex(x => x.CorrelationId);
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
+        });
+
+        b.Entity<SandboxClone>(e =>
+        {
+            e.ToTable("sandbox_clones");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => new { x.AgentId, x.Path }).IsUnique();
+            e.Property(x => x.BaseSha).HasMaxLength(64);
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
         });
 

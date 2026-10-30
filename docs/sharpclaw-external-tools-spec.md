@@ -260,9 +260,12 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 - Fixed invocation: `git -c core.hooksPath=/dev/null -c protocol.allow=never -c
   protocol.https.allow=always clone --depth 1 --no-recurse-submodules --single-branch -- <url>
   <path>`.
-- The runner records the clone's origin (`owner/repo`) and base commit SHA in a runner-owned file
-  **outside** the workspace (`/cache/clones/<path-hash>.json`), so code in the sandbox can't forge
-  them. `github_create_pr` relies on this record.
+- The clone's origin (`owner/repo`) and base commit SHA are recorded **in the gateway**
+  (`sandbox_clones`, keyed by agent and path), from the runner's answer at clone time, so code in
+  the sandbox can't forge them. `github_create_pr` relies on this record. (An earlier draft kept it
+  in `/cache/clones/` in the sandbox, but code there runs as the same user and could rewrite it.)
+  The gateway also enforces the host allow-list (`ToolBroker:CloneAllowHosts`) before the sandbox
+  is asked.
 - Repo size cap enforced by a timeout and a post-clone size check (default 500 MB, then delete).
 
 ### 7.5 `sandbox_run`
@@ -313,9 +316,9 @@ account and add it to `GitHub:Repos`. The gateway checks at call time that
 
 **Flow:**
 
-1. The broker asks the agent's sandbox runner for the **change set** of `clonePath`: the origin and
-   base SHA from the runner's clone record (section 7.4), plus every added, modified or deleted
-   file compared with the base commit, with content and mode. The runner runs `git` with
+1. The broker takes the origin and base SHA from the gateway's clone record for `clonePath`
+   (section 7.4) and asks the agent's sandbox runner for the **change set**: every added, modified
+   or deleted file compared with that base commit, with content and mode. The runner runs `git` with
    `-c core.hooksPath=/dev/null -c core.fsmonitor=` and returns data only.
 2. The gateway validates the change set (hardline → `403`, never offered for approval):
    - The origin is in `GitHub:Repos`.
@@ -384,7 +387,7 @@ account and add it to `GitHub:Repos`. The gateway checks at call time that
 - **`github_create_pr`:** blocked paths (including deletion of a workflow), symlinks and
   submodules rejected, caps, branch-name rule and prefix, existing ref → `branch_exists` (never
   moved), missing or non-matching fork → `fork_missing`, a change set that differs from the approved
-  one → `403`, a forged origin in the workspace ignored in favour of the runner's record, PR head
+  one → `403`, a forged origin in the workspace ignored in favour of the gateway's clone record, PR head
   is `<forkOwner>:sharpclaw/<agent>/…`.
 - **`verify-isolation.sh`:** agents can't reach the sandboxes, and get `407` from `:8082`. `:8082`
   is not published to the host. A sandbox can't reach another sandbox, can't reach the internet

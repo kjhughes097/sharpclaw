@@ -42,12 +42,14 @@ public sealed record InvokeToolRequest(
 
 /// <summary>
 /// The operator's broker settings for the calling agent (<c>GET /agent/tools</c>): which broker
-/// tools it may call, which always need an approval, and the <c>http_fetch</c> hosts scored low.
+/// tools it may call, which always need an approval, the <c>http_fetch</c> hosts scored low, and
+/// the hosts <c>git_clone</c> may clone from.
 /// </summary>
 public sealed record AgentToolPolicyResponse(
     IReadOnlyList<string> Tools,
     IReadOnlyList<string> AlwaysApprove,
-    IReadOnlyList<string> FetchAllowHosts);
+    IReadOnlyList<string> FetchAllowHosts,
+    IReadOnlyList<string>? CloneAllowHosts = null);
 
 /// <summary>
 /// The SHA-256 of a tool call's arguments in canonical JSON, binding an approval to exactly the
@@ -137,6 +139,28 @@ public static class ToolUrls
         if (!string.IsNullOrEmpty(url.UserInfo))
             return (null, "credentials in the URL are not allowed");
         return (url, null);
+    }
+
+    /// <summary>
+    /// A clone URL (spec section 7.4): <c>https://host/owner/repo[.git]</c>, nothing else (no query,
+    /// fragment, port or credentials). Returns the host and the repository path (<c>owner/repo</c>,
+    /// or <c>group/sub/repo</c> on GitLab), or an error.
+    /// </summary>
+    public static (string? Host, string? Repo, string? Error) ParseGitRepo(string? value)
+    {
+        var (url, error) = Parse(value, "https");
+        if (url is null)
+            return (null, null, error);
+        if (!url.IsDefaultPort || url.Query.Length > 0 || url.Fragment.Length > 0)
+            return (null, null, "url must be https://host/owner/repo with no port, query or fragment");
+        var path = url.AbsolutePath.Trim('/');
+        if (path.EndsWith(".git", StringComparison.Ordinal))
+            path = path[..^4];
+        var segments = path.Split('/');
+        if (segments.Length < 2 || segments.Any(s => s.Length == 0 || s is "." or ".." ||
+                !s.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.')))
+            return (null, null, "url must name a repository, e.g. https://github.com/owner/repo");
+        return (url.IdnHost.ToLowerInvariant(), path, null);
     }
 
     /// <summary>True when <paramref name="host"/> is <paramref name="entry"/> or one of its subdomains.</summary>

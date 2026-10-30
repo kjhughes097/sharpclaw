@@ -127,6 +127,29 @@ public class BrokerAgentToolsTests : IDisposable
         Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.ExtractText].Assess(A(new { path, to })));
 
     [Fact]
+    public void Git_clone_is_medium_and_names_the_repository()
+    {
+        var tool = _tools[BrokerTools.GitClone];
+        var args = A(new { url = "https://github.com/owner/repo.git", path = "repos/repo" });
+
+        Assert.Equal(RiskLevel.Medium, Assert.IsType<ToolAssessment.Scored>(tool.Assess(args)).Level);
+        Assert.Equal("clone github.com/owner/repo → repos/repo", tool.Summarize(args));
+        Assert.Equal("github.com/owner/repo", tool.ClassifierFields(args)!["repository"]);
+    }
+
+    [Theory]
+    [InlineData("https://evil.example/owner/repo", "r")]
+    [InlineData("http://github.com/owner/repo", "r")]
+    [InlineData("https://github.com/owner", "r")]
+    [InlineData("https://github.com/owner/repo", "../r")]
+    [InlineData("https://github.com/owner/repo", "existing")]
+    public void Git_clone_blocks_bad_hosts_urls_and_paths(string url, string path)
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "existing"));
+        Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.GitClone].Assess(A(new { url, path })));
+    }
+
+    [Fact]
     public void Always_approve_comes_from_the_gateway_policy()
     {
         var gw = new RecordingGateway();

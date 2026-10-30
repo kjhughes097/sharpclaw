@@ -34,6 +34,7 @@ public static class RunnerApp
         builder.Services.AddSingleton<IRunnerOp, HttpFetchOp>();
         builder.Services.AddSingleton<IRunnerOp, DownloadOp>();
         builder.Services.AddSingleton<IRunnerOp, ExtractTextOp>();
+        builder.Services.AddSingleton<IRunnerOp, GitCloneOp>();
         configure?.Invoke(builder);
 
         var app = builder.Build();

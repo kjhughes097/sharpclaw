@@ -245,3 +245,25 @@ public class BrokerCall
     public Guid? ApprovalId { get; set; }
     public DateTime CreatedAt { get; set; }
 }
+
+/// <summary>
+/// Where an agent's sandbox clone came from (external tools spec section 7.4), recorded by the
+/// gateway from the runner's answer at clone time. Kept here rather than in the sandbox, where code
+/// running as the same user could rewrite it; <c>github_create_pr</c> trusts only this record.
+/// </summary>
+public class SandboxClone
+{
+    public Guid Id { get; set; }
+    public Guid AgentId { get; set; }
+
+    /// <summary>The clone's workspace-relative path, as the runner normalised it.</summary>
+    public string Path { get; set; } = "";
+    public string Host { get; set; } = "";
+
+    /// <summary><c>owner/repo</c> (GitLab: <c>group/…/repo</c>).</summary>
+    public string Repo { get; set; } = "";
+
+    /// <summary>The commit the clone checked out: the base of any change set.</summary>
+    public string BaseSha { get; set; } = "";
+    public DateTime CreatedAt { get; set; }
+}

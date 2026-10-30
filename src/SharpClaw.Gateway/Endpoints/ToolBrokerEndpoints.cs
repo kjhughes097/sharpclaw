@@ -32,7 +32,7 @@ public static class ToolBrokerEndpoints
         var o = options.Value;
         var tools = o.ForAgent(agent.Name)?.Tools.Where(BrokerTools.All.Contains).Distinct().ToList() ?? [];
         return Results.Json(new AgentToolPolicyResponse(
-            tools, o.AlwaysApproveSet.Where(tools.Contains).Order().ToList(), o.FetchAllowHosts), SharpClawJson.Options);
+            tools, o.AlwaysApproveSet.Where(tools.Contains).Order().ToList(), o.FetchAllowHosts, o.CloneHosts), SharpClawJson.Options);
     }
 
     private static async Task<IResult> Invoke(

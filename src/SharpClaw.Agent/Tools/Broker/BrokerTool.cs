@@ -36,15 +36,23 @@ public abstract class BrokerTool(IGatewayClient gateway, BrokerPolicy policy) : 
 
 /// <summary>
 /// The operator's broker settings for this agent, read from the gateway (<c>GET /agent/tools</c>)
-/// at startup: which tools always need an approval and which <c>http_fetch</c> hosts are low risk.
+/// at startup: which tools always need an approval, which <c>http_fetch</c> hosts are low risk, and
+/// which hosts <c>git_clone</c> may use.
 /// </summary>
 public sealed record BrokerPolicy(IReadOnlySet<string> AlwaysApprove, IReadOnlyList<string> FetchAllowHosts)
 {
+    private static readonly string[] DefaultCloneHosts = ["github.com", "gitlab.com"];
+
+    public IReadOnlyList<string> CloneAllowHosts { get; init; } = DefaultCloneHosts;
+
     /// <summary>When the gateway can't be asked: every broker tool needs approval and no host is allow-listed.</summary>
     public static BrokerPolicy Conservative { get; } = new(BrokerTools.All.ToHashSet(), Array.Empty<string>());
 
     public static BrokerPolicy From(AgentToolPolicyResponse response) =>
-        new(response.AlwaysApprove.ToHashSet(StringComparer.Ordinal), response.FetchAllowHosts);
+        new(response.AlwaysApprove.ToHashSet(StringComparer.Ordinal), response.FetchAllowHosts)
+        {
+            CloneAllowHosts = response.CloneAllowHosts ?? DefaultCloneHosts,
+        };
 
     public bool IsFetchAllowed(string host) => FetchAllowHosts.Any(entry => ToolUrls.HostMatches(host, entry));
 }

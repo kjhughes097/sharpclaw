@@ -536,6 +536,50 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.ToTable("messages", (string)null);
                 });
 
+            modelBuilder.Entity("SharpClaw.Gateway.Data.SandboxClone", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("BaseSha")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("base_sha");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("host");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("path");
+
+                    b.Property<string>("Repo")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("repo");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId", "Path")
+                        .IsUnique();
+
+                    b.ToTable("sandbox_clones", (string)null);
+                });
+
             modelBuilder.Entity("SharpClaw.Gateway.Data.Session", b =>
                 {
                     b.Property<Guid>("Id")
@@ -773,6 +817,15 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Agent");
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.SandboxClone", b =>
+                {
+                    b.HasOne("SharpClaw.Gateway.Data.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.Session", b =>

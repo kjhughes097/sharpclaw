@@ -34,6 +34,17 @@ public sealed class ToolBrokerOptions : IHasProblem
     /// </summary>
     public string[] FetchAllowHosts { get; set; } = [];
 
+    /// <summary>
+    /// Hosts <c>git_clone</c> may clone public repositories from, over HTTPS (exact host match).
+    /// Null (unset) means github.com and gitlab.com.
+    /// </summary>
+    public string[]? CloneAllowHosts { get; set; }
+
+    public static readonly string[] DefaultCloneAllowHosts = ["github.com", "gitlab.com"];
+
+    public IReadOnlyList<string> CloneHosts =>
+        (CloneAllowHosts ?? DefaultCloneAllowHosts).Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim().ToLowerInvariant()).ToList();
+
     public IReadOnlySet<string> AlwaysApproveSet =>
         (AlwaysApprove ?? BrokerTools.DefaultAlwaysApprove.ToArray())
             .Where(t => !string.IsNullOrWhiteSpace(t))

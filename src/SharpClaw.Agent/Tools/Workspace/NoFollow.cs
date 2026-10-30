@@ -113,6 +113,17 @@ internal static partial class NoFollow
         Check(renameat2(Fd(fromParent), fromName, Fd(toParent), toName, overwrite ? 0 : RENAME_NOREPLACE), to);
     }
 
+    /// <summary>Creates a directory and any missing parents, none of which may be a link.</summary>
+    public static void CreateDirectory(string root, string relative)
+    {
+        if (!Native)
+        {
+            Directory.CreateDirectory(Path.Combine(root, relative));
+            return;
+        }
+        using var _ = OpenDirectoryHandle(root, relative.Split('/'), create: true, relative);
+    }
+
     /// <summary>
     /// Opens a directory (no component may be a link) and returns a path that names exactly that
     /// directory while the handle is open: <c>/proc/self/fd/N</c> on Linux, otherwise the plain path.

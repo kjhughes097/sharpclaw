@@ -218,6 +218,7 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), [contract
 | `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose `chat`/`risk_assessment`/`web_search`, outcome). |
 | `tool_calls` | Every tool call the model requested, plus the agent's report. |
 | `approvals` | Approval requests and decisions (`decided_by` = user/system; `decided_by_user` = which user, or `admin_key`); `args_hash` binds an approval to exact arguments, `used_at` marks it consumed by the broker. |
+| `sandbox_clones` | Where each agent's sandbox clone came from (host, `owner/repo`, base commit), written by the gateway from the runner's answer to `git_clone`; `github_create_pr` trusts only this. |
 | `broker_calls` | Append-only audit of every tool-broker call: agent, turn, tool, target host or repository, status, bytes, duration, approval. Never arguments or results. |
 | `thread_events`, `event_log_state` | Durable SSE events and the retention watermark. |
 | `users`, `sessions` | Browser users (PBKDF2 passwords) and hashed session tokens with CSRF tokens. |
