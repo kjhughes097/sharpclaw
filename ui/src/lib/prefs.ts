@@ -40,13 +40,16 @@ export function setLastAgent(name: string) {
   }
 }
 
-export type Theme = 'dark' | 'light';
+/** `dark` is the default look; `light` is its light variant; `lcars` is the LCARS theme. */
+export type Theme = 'dark' | 'light' | 'lcars';
+export const THEMES: readonly Theme[] = ['dark', 'light', 'lcars'];
 const THEME_KEY = 'sharpclaw.theme';
 
-/** Dark unless the user picked light in the user menu. */
+/** Dark unless the user picked another theme in the user menu (unknown stored values fall back to dark). */
 export function getTheme(): Theme {
   try {
-    return localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark';
+    const stored = localStorage.getItem(THEME_KEY);
+    return THEMES.find((t) => t === stored) ?? 'dark';
   } catch {
     return 'dark';
   }

@@ -7,13 +7,15 @@ import type { AgentDto } from '../api/types';
 /** Enabled agents shown inline as tabs; the rest (and every disabled agent) go into "More". */
 export const MAX_INLINE_AGENT_TABS = 6;
 
+// LCARS turns the underlined tabs into coloured pills: lavender when idle, orange when active.
 const TAB =
-  'inline-flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm whitespace-nowrap outline-none focus-visible:outline-2';
-const ACTIVE = 'border-accent text-accent';
-const IDLE = 'border-transparent text-fg hover:text-accent';
+  'inline-flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm whitespace-nowrap outline-none focus-visible:outline-2 lcars:my-1 lcars:mr-1 lcars:rounded-full lcars:border-b-0 lcars:px-4 lcars:uppercase lcars:tracking-wide';
+const ACTIVE = 'border-accent text-accent lcars:bg-accent lcars:text-accent-fg';
+const IDLE =
+  'border-transparent text-fg hover:text-accent lcars:bg-lcars-lavender lcars:text-accent-fg lcars:hover:bg-lcars-peach lcars:hover:text-accent-fg';
 
 const MENU_ITEM =
-  'flex min-h-11 cursor-pointer items-center gap-2 rounded px-3 text-sm outline-none data-[highlighted]:bg-surface-2';
+  'flex min-h-11 cursor-pointer items-center gap-2 rounded px-3 text-sm outline-none data-[highlighted]:bg-surface-2 lcars:rounded-full lcars:uppercase';
 
 /** `ade` → `Ade`: tab labels are the agent name, capitalised. */
 export function tabLabel(name: string): string {
@@ -54,7 +56,7 @@ function MoreMenu({ agents, activeName }: { agents: AgentDto[]; activeName: stri
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="start"
-          className="z-30 min-w-48 rounded-md border border-border bg-surface p-1 shadow-lg"
+          className="z-30 min-w-48 rounded-md border border-border bg-surface p-1 shadow-lg lcars:rounded-2xl lcars:border-lcars-lavender"
         >
           {agents.map((agent) => (
             <DropdownMenu.Item key={agent.id} asChild className={MENU_ITEM}>
@@ -100,7 +102,7 @@ export function TabBar() {
     <nav
       ref={navRef}
       aria-label="Main"
-      className="flex items-stretch overflow-x-auto border-b border-border bg-surface px-2"
+      className="flex items-stretch overflow-x-auto border-b border-border bg-surface px-2 lcars:mx-2 lcars:border-b-0 lcars:bg-bg lcars:md:border-l-24 lcars:md:border-accent"
     >
       <Tab to="/overview">Overview</Tab>
       <Tab to="/prompts">Prompts</Tab>

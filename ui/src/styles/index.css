@@ -1,8 +1,12 @@
 @import 'tailwindcss';
 
+/* `lcars:` utilities apply only under the LCARS theme (data-theme="lcars" on <html>). Components use
+   it for the theme's shape changes (pills, elbows, uppercase); colours still come from tokens. */
+@custom-variant lcars (&:where([data-theme='lcars'], [data-theme='lcars'] *));
+
 /* Semantic colour tokens. Components use these (bg-surface, text-muted…), never raw colours. Dark
-   (from the 3.3.1 mockups) is the theme; light is opt-in from the user menu (data-theme="light" on
-   <html>, set by lib/theme.ts). Both meet AA. */
+   (from the 3.3.1 mockups) is the default theme; light and LCARS are opt-in from the user menu
+   (data-theme="light" / "lcars" on <html>, set by lib/theme.ts). All meet AA. */
 :root {
   color-scheme: dark;
   --sc-bg: #151517;
@@ -49,6 +53,38 @@
   --sc-chart-out: #b7791f;
 }
 
+/* LCARS: black field, orange/peach/lavender/blue panels with black text, condensed uppercase
+   labels. The lcars-* palette colours are only meant for `lcars:` utilities. No web fonts (CSP):
+   the stack uses a condensed face when one is installed locally. */
+:root[data-theme='lcars'] {
+  color-scheme: dark;
+  --sc-bg: #000000;
+  --sc-surface: #0b0b12;
+  --sc-surface-2: #1f1a2e;
+  --sc-text: #f7dcbc;
+  --sc-muted: #b6a9d0;
+  --sc-border: #4a3d66;
+  --sc-accent: #ff9900;
+  --sc-accent-fg: #000000;
+  --sc-accent-soft: #3d2600;
+  --sc-danger: #ff6b6b;
+  --sc-danger-soft: #3d1414;
+  --sc-warn: #ffcc66;
+  --sc-warn-soft: #3d3014;
+  --sc-ok: #99cc99;
+  --sc-ok-soft: #16301c;
+  --sc-focus: #9999ff;
+  --sc-assistant: #99ccff;
+  --sc-chart-in: #9999ff;
+  --sc-chart-out: #ff9900;
+  --sc-lcars-peach: #ffcc99;
+  --sc-lcars-lavender: #cc99cc;
+  --sc-lcars-blue: #9999ff;
+  --sc-font-lcars:
+    Antonio, Oswald, 'Bebas Neue', 'Roboto Condensed', 'Ubuntu Condensed', 'Arial Narrow',
+    'Helvetica Neue Condensed', 'Liberation Sans Narrow', sans-serif-condensed, var(--font-sans);
+}
+
 @theme inline {
   --color-bg: var(--sc-bg);
   --color-surface: var(--sc-surface);
@@ -69,6 +105,9 @@
   --color-assistant: var(--sc-assistant);
   --color-chart-in: var(--sc-chart-in);
   --color-chart-out: var(--sc-chart-out);
+  --color-lcars-peach: var(--sc-lcars-peach);
+  --color-lcars-lavender: var(--sc-lcars-lavender);
+  --color-lcars-blue: var(--sc-lcars-blue);
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 }
@@ -93,6 +132,16 @@ body {
   color: var(--sc-text);
   font-family: var(--font-sans);
   -webkit-text-size-adjust: 100%;
+}
+
+/* LCARS chrome is condensed; prose and form fields keep the readable system font. */
+:root[data-theme='lcars'] body {
+  font-family: var(--sc-font-lcars);
+  font-stretch: condensed;
+}
+:root[data-theme='lcars'] :where(.markdown, textarea, input, select) {
+  font-family: var(--font-sans);
+  font-stretch: normal;
 }
 
 :focus-visible {

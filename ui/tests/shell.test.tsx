@@ -3,6 +3,8 @@ import { axe } from 'jest-axe';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { splitAgentTabs, tabLabel } from '../src/components/TabBar';
+import { getTheme } from '../src/lib/prefs';
+import { applyTheme } from '../src/lib/theme';
 import { fixtures, server } from './msw';
 import { renderApp } from './utils';
 
@@ -96,16 +98,45 @@ describe('header', () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  it('is dark by default and switches to a remembered light theme from the user menu', async () => {
+  it('is the default theme unless another is picked, and remembers light and LCARS', async () => {
     const { user } = renderApp('/overview');
     expect(document.documentElement.dataset.theme).toBeUndefined();
-    await user.click(await screen.findByRole('button', { name: 'Account menu (kevin)' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Light theme' }));
+    const menu = await screen.findByRole('button', { name: 'Account menu (kevin)' });
+    await user.click(menu);
+    expect(await screen.findByRole('menuitemradio', { name: /Default/ })).toBeChecked();
+
+    await user.click(screen.getByRole('menuitemradio', { name: /Light/ }));
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(localStorage.getItem('sharpclaw.theme')).toBe('light');
-    await user.click(screen.getByRole('button', { name: 'Account menu (kevin)' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Dark theme' }));
+
+    await user.click(menu);
+    await user.click(await screen.findByRole('menuitemradio', { name: /LCARS/ }));
+    expect(document.documentElement.dataset.theme).toBe('lcars');
+    expect(localStorage.getItem('sharpclaw.theme')).toBe('lcars');
+
+    await user.click(menu);
+    expect(await screen.findByRole('menuitemradio', { name: /LCARS/ })).toBeChecked();
+    await user.click(screen.getByRole('menuitemradio', { name: /Default/ }));
     expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(localStorage.getItem('sharpclaw.theme')).toBe('dark');
+    localStorage.removeItem('sharpclaw.theme');
+  });
+
+  it('renders the shell accessibly under the LCARS theme', async () => {
+    localStorage.setItem('sharpclaw.theme', 'lcars');
+    applyTheme(getTheme());
+    const { container, user } = renderApp('/overview');
+    expect(await screen.findByText('SharpClaw 3')).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Account menu (kevin)' }));
+    expect(await screen.findByRole('menuitemradio', { name: /LCARS/ })).toBeChecked();
+    expect(await axe(container)).toHaveNoViolations();
+    applyTheme('dark');
+    localStorage.removeItem('sharpclaw.theme');
+  });
+
+  it('falls back to the default theme for an unknown stored value', () => {
+    localStorage.setItem('sharpclaw.theme', 'neon');
+    expect(getTheme()).toBe('dark');
     localStorage.removeItem('sharpclaw.theme');
   });
 

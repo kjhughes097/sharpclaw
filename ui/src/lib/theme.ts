@@ -1,20 +1,29 @@
 import { useState } from 'react';
 import { getTheme, setTheme, type Theme } from './prefs';
 
-/** Applies a theme to the page: dark is the default, light sets `data-theme="light"` on <html>. */
+/** Menu labels for each theme, in menu order. */
+export const THEME_LABELS: Record<Theme, string> = {
+  dark: 'Default',
+  light: 'Light',
+  lcars: 'LCARS',
+};
+
+/**
+ * Applies a theme to the page: dark is the default (no attribute); any other theme sets
+ * `data-theme` on <html>, which switches the CSS tokens and enables the `lcars:` variant.
+ */
 export function applyTheme(theme: Theme) {
-  if (theme === 'light') document.documentElement.dataset.theme = 'light';
-  else delete document.documentElement.dataset.theme;
+  if (theme === 'dark') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = theme;
 }
 
-/** The current theme and a toggle that applies and remembers it. */
+/** The current theme and a setter that applies and remembers it. */
 export function useTheme() {
   const [theme, setState] = useState<Theme>(getTheme);
-  const toggle = () => {
-    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+  const choose = (next: Theme) => {
     setTheme(next);
     applyTheme(next);
     setState(next);
   };
-  return { theme, toggle };
+  return { theme, choose };
 }

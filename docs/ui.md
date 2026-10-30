@@ -20,10 +20,17 @@ bar (`components/AppShell.tsx`, `components/TabBar.tsx`). Every tab is a link:
 
 `/chats` and `/chats/:threadId` redirect to `/prompts…` for old bookmarks.
 
-- **Theme:** dark (the mockups' palette) whatever the system setting; "Light theme" in the user
-  menu sets `data-theme="light"` on `<html>` (`lib/theme.ts`) and remembers it (`lib/prefs.ts`).
-  Tokens live in `styles/index.css`; components use them (`bg-surface`, `text-assistant`,
-  `fill-chart-in`…), never raw colours.
+- **Themes:** **Default** (dark, the mockups' palette) whatever the system setting. The user
+  menu's Theme group also offers **Light**, the default's light variant, and **LCARS**. Picking one
+  sets `data-theme="light"`/`"lcars"` on `<html>` (`lib/theme.ts`; Default removes it) and remembers
+  it (`lib/prefs.ts`). Tokens live in `styles/index.css`; components use them (`bg-surface`,
+  `text-assistant`, `fill-chart-in`…), never raw colours.
+- **LCARS:** mostly a token swap: a black field, orange accent, and peach/lavender/blue panels
+  (`bg-lcars-*`, only for LCARS). Shape changes use the `lcars:` Tailwind variant in markup, e.g.
+  `lcars:rounded-full lcars:uppercase`. It's used on the shell (the orange header and left
+  "elbow" frame on desktop, pill tabs), `Button`, `Card`, `Dialog` and the menus. Chrome uses a
+  condensed system font when one is installed (no web fonts); prose and form fields keep the
+  system UI font. Add `lcars:` classes to shared components rather than one-off pages.
 - **Density:** on desktop (`pointer: fine`, ≥ 768 px) the root font size is 14 px, and every
   rem-based size shrinks with it, as in the mockups. Touch screens keep 16 px and 44 px targets.
 - **Charts** (`features/overview/charts.tsx`) are plain SVG with sizes in attributes and colours from

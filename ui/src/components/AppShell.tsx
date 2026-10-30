@@ -5,13 +5,14 @@ import { usePendingApprovals, useSystem } from '../api/hooks';
 import { budgetResetLocalTime } from '../api/errors';
 import { useAuth } from '../app/auth';
 import { useConnectionState } from '../app/services';
-import { useTheme } from '../lib/theme';
+import { THEMES, type Theme } from '../lib/prefs';
+import { THEME_LABELS, useTheme } from '../lib/theme';
 import { formatAbsolute } from '../lib/time';
 import { TabBar } from './TabBar';
 import { Badge } from './ui';
 
 const MENU_ITEM =
-  'flex min-h-11 cursor-pointer items-center rounded px-3 text-sm outline-none data-[highlighted]:bg-surface-2';
+  'flex min-h-11 cursor-pointer items-center rounded px-3 text-sm outline-none data-[highlighted]:bg-surface-2 lcars:rounded-full lcars:uppercase';
 
 function useOnline() {
   const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -51,12 +52,12 @@ export function ConnectionIndicator() {
 function UserMenu() {
   const { state, logout } = useAuth();
   const system = useSystem();
-  const { theme, toggle } = useTheme();
+  const { theme, choose } = useTheme();
   const name = state.status === 'signed_in' ? (state.user?.name ?? 'admin key') : '';
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger
-        className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-sm hover:bg-surface-2"
+        className="inline-flex min-h-11 items-center gap-1 rounded-md px-2 text-sm hover:bg-surface-2 lcars:rounded-full lcars:px-3 lcars:hover:bg-lcars-peach"
         aria-label={`Account menu (${name})`}
       >
         {name} <span aria-hidden="true">▾</span>
@@ -64,14 +65,30 @@ function UserMenu() {
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="end"
-          className="z-30 min-w-60 rounded-md border border-border bg-surface p-1 shadow-lg"
+          className="z-30 min-w-60 rounded-md border border-border bg-surface p-1 shadow-lg lcars:rounded-2xl lcars:border-lcars-lavender"
         >
           <DropdownMenu.Item asChild className={MENU_ITEM}>
             <Link to="/account">Account</Link>
           </DropdownMenu.Item>
-          <DropdownMenu.Item className={MENU_ITEM} onSelect={toggle}>
-            {theme === 'dark' ? 'Light theme' : 'Dark theme'}
-          </DropdownMenu.Item>
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          <DropdownMenu.Label id="theme-label" className="px-3 pt-1 text-xs text-muted lcars:uppercase">
+            Theme
+          </DropdownMenu.Label>
+          <DropdownMenu.RadioGroup
+            aria-labelledby="theme-label"
+            value={theme}
+            onValueChange={(value) => choose(value as Theme)}
+          >
+            {THEMES.map((t) => (
+              <DropdownMenu.RadioItem key={t} value={t} className={`${MENU_ITEM} gap-2`}>
+                <span className="w-4" aria-hidden="true">
+                  <DropdownMenu.ItemIndicator>✓</DropdownMenu.ItemIndicator>
+                </span>
+                {THEME_LABELS[t]}
+              </DropdownMenu.RadioItem>
+            ))}
+          </DropdownMenu.RadioGroup>
+          <DropdownMenu.Separator className="my-1 h-px bg-border" />
           {system.data && (
             <DropdownMenu.Label className="space-y-0.5 px-3 py-2 text-xs text-muted">
               <span className="block">
@@ -115,9 +132,12 @@ export function AppShell({ children }: { children?: ReactNode }) {
       >
         Skip to content
       </a>
-      <header className="flex items-center gap-3 border-b border-border bg-surface px-3">
-        <span className="font-semibold whitespace-nowrap text-accent">SharpClaw 3</span>
-        <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm text-muted">
+      {/* LCARS: the header, the tab bar's left edge and main's left edge form one orange "[" frame. */}
+      <header className="flex items-center gap-3 border-b border-border bg-surface px-3 lcars:mx-2 lcars:mt-2 lcars:rounded-tl-3xl lcars:rounded-r-full lcars:border-0 lcars:bg-accent lcars:pl-6 lcars:text-accent-fg lcars:uppercase">
+        <span className="font-semibold whitespace-nowrap text-accent lcars:text-accent-fg lcars:tracking-widest">
+          SharpClaw 3
+        </span>
+        <span className="flex min-w-0 flex-1 items-center gap-2 truncate text-sm text-muted lcars:text-accent-fg">
           <ConnectionIndicator />
           {system.data && <span className="hidden sm:inline">· {system.data.version}</span>}
           {system.data?.provider === 'Fake' && <Badge tone="warn">Fake provider</Badge>}
@@ -125,7 +145,11 @@ export function AppShell({ children }: { children?: ReactNode }) {
         <UserMenu />
       </header>
       <TabBar />
-      <main id="main" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none">
+      <main
+        id="main"
+        tabIndex={-1}
+        className="flex min-h-0 min-w-0 flex-1 flex-col outline-none lcars:md:mx-2 lcars:md:mb-2 lcars:md:rounded-bl-3xl lcars:md:border-l-24 lcars:md:border-accent lcars:md:pl-2"
+      >
         {children ?? <Outlet />}
       </main>
     </div>

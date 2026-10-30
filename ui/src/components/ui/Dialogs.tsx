@@ -23,7 +23,7 @@ export function Dialog({
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/50" />
         <RadixDialog.Content
-          className="fixed top-1/2 left-1/2 z-50 max-h-[90dvh] w-[min(94vw,32rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-surface p-5 shadow-xl"
+          className="fixed top-1/2 left-1/2 z-50 max-h-[90dvh] w-[min(94vw,32rem)] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-border bg-surface p-5 shadow-xl lcars:rounded-l-3xl lcars:border-l-16 lcars:border-l-accent"
           onEscapeKeyDown={(e) => {
             if (!dismissible) e.preventDefault();
           }}
@@ -34,7 +34,9 @@ export function Dialog({
             if (!dismissible) e.preventDefault();
           }}
         >
-          <RadixDialog.Title className="text-lg font-semibold">{title}</RadixDialog.Title>
+          <RadixDialog.Title className="text-lg font-semibold lcars:tracking-wide lcars:text-accent lcars:uppercase">
+            {title}
+          </RadixDialog.Title>
           {description ? (
             <RadixDialog.Description className="mt-1 text-sm text-muted">
               {description}

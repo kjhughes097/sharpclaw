@@ -71,7 +71,7 @@ Section 13. Notably:
 | Activity feed | New `GET /api/activity` (recent user/assistant messages across threads, with a 120-character preview). It stays live by **invalidating the query on events**, as 3.3 does; event payloads are not enriched. |
 | Credits | The gateway fetches OpenRouter `GET /credits` with a separate **management key**. It fetches at startup, then every 24 h (hourly while failing), and caches the result **in memory**. `GET /api/credits` exposes it. |
 | Charts | Hand-rolled SVG (stacked bars, horizontal bars). No chart library. Each chart has a text alternative. |
-| Theme | Dark, matching the mockups, regardless of the system setting. A light theme from the same CSS tokens is opt-in from the user menu and remembered in `localStorage` (`lib/prefs.ts`). |
+| Theme | Dark, matching the mockups, regardless of the system setting. A light theme from the same CSS tokens, and (added later) an LCARS theme, are opt-in from the user menu's Theme group and remembered in `localStorage` (`lib/prefs.ts`); see [ui.md](ui.md). |
 | Phone | Supported. The tab bar becomes a horizontally scrolling strip, and the Prompts session list becomes a drawer. |
 | Unchanged | SQLite, EF Core, UTC `DateTime`, `TimeProvider`, the error shape, port-based listener separation, the CSP, one SSE stream per tab, shared visibility for every user. |
 
@@ -486,7 +486,7 @@ selected.
   | `--assistant` | blue `#7aa2f7` | assistant text |
   | `--ok` / `--warn` / `--danger` | green / amber / red `#f26d6d` | status |
 
-  Light-theme values (opt-in from the user menu) are chosen to meet WCAG AA contrast.
+  Light- and LCARS-theme values (opt-in from the user menu) are chosen to meet WCAG AA contrast.
 - **Type:** the system UI font for prose; the system monospace stack
   (`ui-monospace, SFMono-Regular, Menlo, monospace`) for numbers, tables, timestamps, the tool rows
   and the status bar. No web fonts (CSP).
