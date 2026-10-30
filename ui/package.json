@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "gen:api": "openapi-typescript ../docs/openapi/sharpclaw-client.v1.json -o src/api/schema.d.ts && prettier --write src/api/schema.d.ts",
+    "gen:api": "openapi-typescript ../contracts/openapi/sharpclaw-client.v1.json -o src/api/schema.d.ts && prettier --write src/api/schema.d.ts",
     "check:api": "node scripts/check-api.mjs",
     "format": "prettier --write ."
   },

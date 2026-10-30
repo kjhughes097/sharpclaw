@@ -9,7 +9,7 @@ execFileSync('npm', ['run', '--silent', 'gen:api'], { stdio: 'inherit' });
 const after = readFileSync(target, 'utf8');
 if (before !== after) {
   console.error(
-    `${target} was out of date with docs/openapi/sharpclaw-client.v1.json. It has been regenerated; commit it.`,
+    `${target} was out of date with contracts/openapi/sharpclaw-client.v1.json. It has been regenerated; commit it.`,
   );
   process.exit(1);
 }

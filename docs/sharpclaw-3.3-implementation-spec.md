@@ -211,9 +211,9 @@ The UI always posts messages with `unattended = false`. The admin-only user-mana
 - Use the built-in ASP.NET OpenAPI support. Document name `v1`, served at `GET /openapi/v1.json` on the client listener, authenticated like other `/api/*` routes. Include only client routes (never agent routes).
 - Stable `operationId`s (set explicit endpoint names), tags per area (auth, agents, tokens, threads, messages, approvals, audit, system), request and response schemas from `SharpClaw.Contracts`, the shared error object on 4xx/5xx responses, and security schemes for the session cookie, the bearer admin key and the `X-CSRF-Token` header.
 - SSE endpoints are documented as `text/event-stream` responses with a description pointing to the event table in `docs/ui.md`.
-- **Snapshot:** the committed file `docs/openapi/sharpclaw-client.v1.json` is the contract. A gateway test generates the document, normalises it (stable key order), and compares it with the snapshot; on mismatch it fails with instructions. Setting `UPDATE_OPENAPI=1` rewrites the snapshot.
+- **Snapshot:** the committed file `contracts/openapi/sharpclaw-client.v1.json` is the contract. A gateway test generates the document, normalises it (stable key order), and compares it with the snapshot; on mismatch it fails with instructions. Setting `UPDATE_OPENAPI=1` rewrites the snapshot.
 - **UI:** `npm run gen:api` runs `openapi-typescript` against the snapshot and writes `ui/src/api/schema.d.ts`, which is committed. `npm run check:api` regenerates and fails on any diff; CI runs it.
-- **Event fixtures:** a gateway test writes one sample payload per event type to `docs/api-fixtures/events/<event-type>.json` and compares against the committed files (same `UPDATE_` switch). UI tests parse these fixtures to keep the hand-written event types honest.
+- **Event fixtures:** a gateway test writes one sample payload per event type to `contracts/events/<event-type>.json` and compares against the committed files (same `UPDATE_` switch). UI tests parse these fixtures to keep the hand-written event types honest.
 
 ## 8. Live updates in the UI
 

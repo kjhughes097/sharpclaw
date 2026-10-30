@@ -60,7 +60,7 @@ public class SnapshotTests
         Assert.DoesNotContain(paths, p => p.StartsWith("/agent") || p.StartsWith("/v1"));
         Assert.NotNull(doc["components"]!["securitySchemes"]!["csrfToken"]);
 
-        Compare(Path.Combine(ClientApiHelpers.RepoRoot(), "docs", "openapi", "sharpclaw-client.v1.json"),
+        Compare(Path.Combine(ClientApiHelpers.RepoRoot(), "contracts", "openapi", "sharpclaw-client.v1.json"),
             Normalise(json), "The OpenAPI document");
     }
 
@@ -107,7 +107,7 @@ public class SnapshotTests
     [Fact]
     public void Event_fixtures_match_the_committed_files()
     {
-        var dir = Path.Combine(ClientApiHelpers.RepoRoot(), "docs", "api-fixtures", "events");
+        var dir = Path.Combine(ClientApiHelpers.RepoRoot(), "contracts", "events");
         var samples = SampleEvents();
         // Every event name the gateway knows has a fixture.
         var names = typeof(SseEventNames).GetFields().Select(f => (string)f.GetValue(null)!).ToList();

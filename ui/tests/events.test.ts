@@ -13,7 +13,7 @@ import {
 import { LiveStore } from '../src/api/live';
 import { keys } from '../src/api/queryKeys';
 
-const FIXTURES = join(__dirname, '..', '..', 'docs', 'api-fixtures', 'events');
+const FIXTURES = join(__dirname, '..', '..', 'contracts', 'events');
 
 function fixture<K extends EventType>(type: K): EventPayloads[K] {
   return JSON.parse(readFileSync(join(FIXTURES, `${type}.json`), 'utf8')) as EventPayloads[K];

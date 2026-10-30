@@ -64,7 +64,7 @@ and are pruned daily.
 ## 4. Client API (client listener)
 
 All JSON is camelCase; errors use `{ "error": { "code", "message" } }`. Foreign or unknown ids return `404`.
-The committed contract is [openapi/sharpclaw-client.v1.json](openapi/sharpclaw-client.v1.json).
+The committed contract is [contracts/openapi/sharpclaw-client.v1.json](../contracts/openapi/sharpclaw-client.v1.json).
 
 | Area | Routes |
 |---|---|
@@ -100,7 +100,7 @@ Agent listener: `GET /agent/inbox`, `GET /agent/threads/{id}/messages`,
 - If `Last-Event-ID` predates retention (`Events:RetentionDays`), the stream sends `reset`.
 - Never put tool arguments or results in an event.
 
-Payloads and their samples: [ui.md § Live events](ui.md#live-events), `docs/api-fixtures/events/`.
+Payloads and their samples: [ui.md § Live events](ui.md#live-events), [contracts/events/](../contracts/events/).
 
 ## 6. Data (SQLite, snake_case)
 
