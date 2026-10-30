@@ -18,7 +18,7 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | No provider retries | A transient provider failure fails the message. |
 | Budget overshoot possible | Concurrent or in-flight calls aren't counted; cancelled calls may incur unrecorded upstream cost. |
 | Single gateway process, single SQLite file | No high availability. |
-| Streaming only; no tools; no traces | Out of scope for 3.1. |
+| Streaming-only chat completions | No non-streaming `/v1/chat/completions`; every client and agent streams. |
 
 ## Accepted by design (Phase 3.2 spec)
 

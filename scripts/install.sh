@@ -14,6 +14,12 @@ DEST="$(cd "$DEST" && pwd)"
 SKIPPED=()
 while IFS= read -r -d '' FILE; do
   REL="${FILE#"$TEMPLATE"/}"
+  # An existing install decides which agents it has: don't bring back a sample agent its
+  # compose.yml no longer defines (e.g. one the quick start left out).
+  if [[ "$REL" == agents/* ]] && [ -f "$DEST/compose.yml" ]; then
+    AGENT="${REL#agents/}"; AGENT="${AGENT%%/*}"
+    grep -q "^  agent-$AGENT:" "$DEST/compose.yml" || continue
+  fi
   if [ -e "$DEST/$REL" ]; then
     cmp -s "$FILE" "$DEST/$REL" || SKIPPED+=("$REL")
   else

@@ -2,19 +2,39 @@
 
 This page describes the system **as it is now**. It is the first thing to read. The phase specs
 ([3.1](sharpclaw-3.1-implementation-spec.md) → [3.2](sharpclaw-3.2-implementation-spec.md) →
-[pre-3.3 foundations](sharpclaw-pre-3.3-foundations-spec.md) → [3.3](sharpclaw-3.3-implementation-spec.md))
+[pre-3.3 foundations](sharpclaw-pre-3.3-foundations-spec.md) → [3.3](sharpclaw-3.3-implementation-spec.md) →
+[3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md))
 record *why* and *when* each behaviour was decided; they remain the source of truth for detailed
 behaviour, with later specs winning. Keep this page in step with the code when structure changes.
 
 ## 1. Components
 
-```
-                  LAN / loopback                      internal network (no egress)
- browser ──┐                                        ┌── agent-ade, agent-cody (SharpClaw.Agent)
- CLI ──────┼──► :8080 client listener ┐             │     soul.md (ro) · agent.json (ro) · workspace (rw)
-           │                          ├─ Gateway ◄──┘ :8081 agent listener
-           │                          │   SQLite (one file) · OTLP metrics/logs
-           │                          └──► LLM provider (OpenRouter, or the Fake provider)
+```mermaid
+flowchart LR
+  browser["Browser<br/>(web UI)"]
+  cli["sharpclaw CLI"]
+
+  subgraph gateway["Gateway (SharpClaw.Gateway): the only trust boundary"]
+    client[":8080 client listener<br/>/api/*, /openapi, SPA"]
+    agentl[":8081 agent listener<br/>/agent/*, /v1/chat/completions"]
+    services["MessageTurns · Inbox · ContextBuilder<br/>Approvals · IEventPublisher · Budgets"]
+    providers["IChatProvider<br/>OpenRouter | Fake"]
+    db[("SQLite (one file)")]
+  end
+
+  subgraph internal["internal Docker network (no egress)"]
+    agents["SharpClaw.Agent containers<br/>soul.md + agent.json (ro) · /workspace (rw)<br/>ToolDispatcher"]
+  end
+
+  browser -- "session cookie + X-CSRF-Token<br/>SSE /api/events" --> client
+  cli -- "admin key (bearer)" --> client
+  agents -- "agent token (bearer)" --> agentl
+  client --> services
+  agentl --> services
+  services --> db
+  services --> providers
+  providers -- "provider key" --> openrouter["OpenRouter"]
+  services -. "OTLP metrics and logs" .-> otel["VictoriaMetrics · Loki"]
 ```
 
 | Project | Role |
@@ -35,10 +55,51 @@ One process, two Kestrel listeners. `ListenerFilter` separates route groups by t
 | Client `:8080` | `/api/*`, `/openapi/v1.json`, `/healthz`, the SPA | Admin key (bearer) **or** session cookie. Cookie-authenticated unsafe methods also need a same-origin `Origin`/`Referer` and `X-CSRF-Token`. `/api/users*` is admin-key only; logout and password change are session-only. |
 | Agent `:8081` | `/agent/*`, `/v1/chat/completions`, `/healthz` | Agent token (bearer), stored as SHA-256 hex + 8-char prefix. Disabled agent → `403 agent_disabled`. |
 
-Login is rate-limited per username and per IP (in memory). Sessions have idle and absolute expiry
-and are pruned daily.
+**Browser login.** `POST /api/auth/login` with a username and password (PBKDF2-SHA256, 600,000
+iterations, upgraded on login; at least 12 characters) sets an `HttpOnly`, `SameSite=Strict`
+session cookie and returns a CSRF token. Cookie-authenticated `POST`/`PUT`/`PATCH`/`DELETE` need a
+same-origin `Origin` (or `Referer`) and `X-CSRF-Token`, otherwise `403 csrf_failed`. Failed logins
+are rate-limited per username and per IP, in memory (`429 rate_limited`). Sessions slide (7 days
+idle, 30 days absolute) and are pruned daily. Users are created with the admin key
+(`sharpclaw users create`). There is no CORS. TLS, when used, is terminated by a reverse proxy: set
+`Auth:ForwardedHeaders:*` so the gateway trusts its forwarded headers, and `Auth:AllowedOrigins` if
+the browser's origin differs from what the gateway sees.
 
 ## 3. Request flow of one turn
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Client (UI / CLI)
+  participant G as Gateway
+  participant A as Agent
+  participant P as Provider
+
+  C->>G: GET /api/events (or /api/threads/{id}/stream), SSE
+  C->>G: POST /api/threads/{id}/messages
+  G-->>C: message.created
+  A->>G: GET /agent/inbox?wait= (long poll, atomic claim)
+  A->>G: GET /agent/threads/{id}/context?reserveTokens=
+  loop model calls (max Chat:MaxLlmCallsPerMessage)
+    A->>G: POST /v1/chat/completions (stream)
+    G->>G: ownership, call limit, budget, context size, model
+    G->>P: stream with the provider key
+    P-->>G: chunks
+    G-->>A: OpenAI-style SSE
+    G-->>C: delta (ephemeral)
+    G->>G: record llm_calls (+ requested tool_calls)
+    opt risk above allowedRiskLevel
+      A->>G: POST /agent/approvals, then poll
+      G-->>C: approval.requested
+      C->>G: POST /api/approvals/{id}
+      G-->>C: approval.decided
+    end
+    A->>A: ToolDispatcher executes in /workspace
+    A->>G: POST /agent/tool-calls (outcome)
+  end
+  A->>G: POST /agent/threads/{id}/messages (tool exchanges + reply)
+  G-->>C: message.completed
+```
 
 1. **Post.** The client posts to `POST /api/threads/{id}/messages`. The gateway stores a `pending`
    user message (with `seq`), emits `message.created` and signals the agent's inbox.
@@ -60,6 +121,16 @@ and are pruned daily.
 6. **Finish.** `POST /agent/threads/{id}/messages` stores the tool exchanges plus the reply in one
    transaction and emits `message.completed`; or `POST /agent/messages/{id}/fail` emits `error`.
    Either way, pending approvals for the turn are expired.
+
+**Budgets.** Each agent has a daily USD cap. Spend is the sum of `llm_calls.cost_usd` since the
+start of the current UTC day; a call over the cap returns `429` with `Retry-After` and is recorded
+as `rejected`. Budgets reset at UTC midnight.
+
+**Context window.** The window is the agent's `contextWindowTokens` (default
+`Context:DefaultWindowTokens`) minus the agent's reserve for its soul and tool schemas and
+`Context:ReplyReserveTokens`. Whole turns that don't fit are dropped, oldest first, and replaced by a
+note; tokens are estimated as characters / 4. A turn that alone doesn't fit, a chat request over the
+window, or a provider context-length error fails the turn with `context_too_large`.
 
 ## 4. Client API (client listener)
 
@@ -148,7 +219,9 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 
 Docker Compose runs from an install directory outside the repo (default `~/sharpclaw`), created by
 `scripts/install.sh` from [docker/template/](../docker/template/) and running images built by
-`scripts/build-images.sh`. The gateway publishes only the client port
+`scripts/build-images.sh`; `scripts/quickstart.sh` asks for the location, provider and agent names, does both, adds a compose
+service per agent, then creates the agents, their tokens and the first user through the client API. `scripts/dev-stack.sh` runs a throwaway fake-provider
+stack on port 8090 for development. The gateway publishes only the client port
 (`${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}`) and keeps SQLite in the install's `data/`.
 Agents run read-only on an internal network with no egress; check this with `scripts/verify-isolation.sh`.
 Telemetry: [telemetry-notes.md](telemetry-notes.md). Known and accepted debt: [tech-debt.md](tech-debt.md).
