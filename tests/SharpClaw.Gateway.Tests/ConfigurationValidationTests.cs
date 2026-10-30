@@ -49,6 +49,8 @@ public class ConfigurationValidationTests
     [InlineData("ToolBroker:MaxResponseBytes", "10", "MaxResponseBytes")]
     [InlineData("Egress:Sandboxes:cody:Secret", "short", "Egress:Sandboxes:cody:Secret must be at least 16")]
     [InlineData("Egress:DenyHosts:0", " ", "Egress:DenyHosts must not contain empty entries")]
+    [InlineData("GitHub:Repos:0", "not-a-repo", "GitHub:Repos entry 'not-a-repo' must be owner/repo")]
+    [InlineData("GitHub:ForkOwner", "bad/name", "GitHub:ForkOwner must be a GitHub user name")]
     public void Invalid_values_refuse_to_start(string key, string value, string expected)
     {
         var ex = Assert.Throws<OptionsValidationException>(() => Build(new() { [key] = value }));
@@ -95,5 +97,12 @@ public class ConfigurationValidationTests
             ["ToolBroker:Agents:cody:SandboxSecret"] = same,
         }));
         Assert.Contains("must differ from ToolBroker:Agents:cody:SandboxSecret", ex.Message);
+    }
+
+    [Fact]
+    public void The_two_github_tokens_must_differ()
+    {
+        var ex = Assert.Throws<OptionsValidationException>(() => Build(new() { ["GitHub:Token"] = "same", ["GitHub:ForkToken"] = "same" }));
+        Assert.Contains("must be different tokens", ex.Message);
     }
 }

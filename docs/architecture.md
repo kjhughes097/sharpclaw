@@ -188,6 +188,12 @@ fake-script `citations` rules), reduced to `{ title, url, excerpt }` results; it
 `llm_calls` with purpose `web_search` and counts against the daily budget. The server-side search
 tool is never enabled on agent chat completions. Sandbox tools go to `SandboxToolHandler`, which
 forwards to the calling agent's own runner.
+GitHub tools run in the gateway (`GitHub/GitHubClient`): typed calls only, on two named clients
+fixed to `https://api.github.com` that never follow redirects, one per token (`GitHub:Token` for
+reads, writes and opening PRs; `GitHub:ForkToken` only for the machine user's forks). Operations are
+a fixed enum, owner/repo names are validated and checked against the optional `GitHub:Repos`
+allow-list before anything is sent (`403 repo_not_allowed`), and answers are parsed into typed DTOs
+and reduced (64 KB). Broker results use relaxed JSON escaping (they never go into HTML).
 
 ## 5. Events
 

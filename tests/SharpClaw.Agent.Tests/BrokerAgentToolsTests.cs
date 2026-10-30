@@ -173,6 +173,26 @@ public class BrokerAgentToolsTests : IDisposable
         Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.SandboxRun].Assess(JsonDocument.Parse(args).RootElement));
 
     [Fact]
+    public void Github_read_is_low_untrusted_and_described_by_names_only()
+    {
+        var tool = _tools[BrokerTools.GitHubRead];
+        var args = A(new { operation = "get_issue", owner = "octo", repo = "repo", number = 12 });
+
+        Assert.Equal(RiskLevel.Low, Assert.IsType<ToolAssessment.Scored>(tool.Assess(args)).Level);
+        Assert.Equal("github get_issue octo/repo#12", tool.Summarize(args));
+        Assert.Equal("octo/repo#12", tool.ClassifierFields(args)!["repository"]);
+        Assert.True(tool.ReturnsUntrustedContent);
+    }
+
+    [Theory]
+    [InlineData("""{"operation":"comment","owner":"o","repo":"r","number":1}""")]
+    [InlineData("""{"operation":"get_issue","owner":"o","repo":"r"}""")]
+    [InlineData("""{"operation":"get_issue","owner":"o/x","repo":"r","number":1}""")]
+    [InlineData("""{"operation":"get_file","owner":"o","repo":"r"}""")]
+    public void Github_read_blocks_unknown_operations_and_missing_fields(string args) =>
+        Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.GitHubRead].Assess(JsonDocument.Parse(args).RootElement));
+
+    [Fact]
     public void Always_approve_comes_from_the_gateway_policy()
     {
         var gw = new RecordingGateway();

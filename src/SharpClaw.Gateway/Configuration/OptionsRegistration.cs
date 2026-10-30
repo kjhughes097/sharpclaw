@@ -42,6 +42,7 @@ public static class OptionsRegistration
         Add<ToolBrokerOptions, ToolBrokerOptionsValidator>(builder, ToolBrokerOptions.Section);
         builder.Services.AddSingleton<IValidateOptions<ToolBrokerOptions>, ProblemValidator<ToolBrokerOptions>>();
         Add<WebSearchOptions, WebSearchOptionsValidator>(builder, WebSearchOptions.Section);
+        Add<GitHubOptions, ProblemValidator<GitHubOptions>>(builder, GitHubOptions.Section);
         Add<EgressOptions, EgressOptionsValidator>(builder, EgressOptions.Section);
         builder.Services.AddSingleton<IValidateOptions<EgressOptions>, ProblemValidator<EgressOptions>>();
         builder.Services.AddSingleton<IStartupCheck, SandboxSettingsCheck>();

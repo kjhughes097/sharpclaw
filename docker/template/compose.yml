@@ -70,6 +70,11 @@ services:
       Egress__Sandboxes__coder__Secret: ${SANDBOX_CODER_PROXY_SECRET:-}
       # The cheap model that runs web_search (default openai/gpt-4o-mini), e.g.:
       # WebSearch__Model: openai/gpt-4o-mini
+      # GitHub tools (github_read/github_write/github_create_pr). Empty tokens = off. Optional
+      # allow-list, required for github_create_pr: GitHub__Repos__0: owner/repo
+      GitHub__Token: ${GITHUB_TOKEN:-}
+      GitHub__ForkToken: ${GITHUB_FORK_TOKEN:-}
+      GitHub__ForkOwner: ${GITHUB_FORK_OWNER:-}
       # Hosts whose http_fetch calls are low risk, e.g.:
       # ToolBroker__FetchAllowHosts__0: learn.microsoft.com
     ports:

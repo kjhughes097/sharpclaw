@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Auth;
@@ -50,18 +51,24 @@ public sealed record BrokerResult(
     public static BrokerResult Of(JsonElement result, string? targetHost = null, string? target = null) =>
         new(200, result, null, null, targetHost, target);
 
+    /// <summary>
+    /// Results go to the agent as JSON and never into HTML, so text is written as UTF-8 and only
+    /// JSON's own characters are escaped (the default encoder turns <c>+</c> or <c>é</c> into six bytes).
+    /// </summary>
+    public static readonly JsonSerializerOptions Json = new(SharpClawJson.Options) { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     public static BrokerResult Ok(object payload, string? targetHost = null, string? target = null)
     {
-        var element = JsonSerializer.SerializeToElement(payload, SharpClawJson.Options);
+        var element = JsonSerializer.SerializeToElement(payload, Json);
         var fields = new Dictionary<string, object?> { ["ok"] = true };
         foreach (var p in element.EnumerateObject())
             fields[p.Name] = p.Value;
-        return Of(JsonSerializer.SerializeToElement(fields, SharpClawJson.Options), targetHost, target);
+        return Of(JsonSerializer.SerializeToElement(fields, Json), targetHost, target);
     }
 
     /// <summary>The tool ran but failed in a way the model should see (bad URL, not found…).</summary>
     public static BrokerResult ToolError(string code, string message, string? targetHost = null, string? target = null) =>
-        Of(JsonSerializer.SerializeToElement(new { ok = false, error = code, message }, SharpClawJson.Options), targetHost, target);
+        Of(JsonSerializer.SerializeToElement(new { ok = false, error = code, message }, Json), targetHost, target);
 
     public static BrokerResult Refused(int status, string code, string message, string? targetHost = null, string? target = null) =>
         new(status, null, code, message, targetHost, target);

@@ -171,3 +171,36 @@ public static class ToolUrls
         return e.Length > 0 && (h == e || h.EndsWith("." + e, StringComparison.Ordinal));
     }
 }
+
+/// <summary>
+/// The fixed GitHub operations (spec section 7.6): there is no generic "call any URL" operation,
+/// and owner/repository names are validated before anything is sent.
+/// </summary>
+public static class GitHubOperations
+{
+    public const string GetIssue = "get_issue";
+    public const string ListIssues = "list_issues";
+    public const string GetPull = "get_pull";
+    public const string GetPullDiff = "get_pull_diff";
+    public const string ListComments = "list_comments";
+    public const string GetFile = "get_file";
+
+    public const string Comment = "comment";
+    public const string CreateIssue = "create_issue";
+    public const string AddLabels = "add_labels";
+    public const string RemoveLabels = "remove_labels";
+
+    public static readonly IReadOnlyList<string> Read = [GetIssue, ListIssues, GetPull, GetPullDiff, ListComments, GetFile];
+    public static readonly IReadOnlyList<string> Write = [Comment, CreateIssue, AddLabels, RemoveLabels];
+
+    /// <summary>Operations that need an issue or pull request number.</summary>
+    public static readonly IReadOnlyList<string> NeedNumber = [GetIssue, GetPull, GetPullDiff, ListComments, Comment, AddLabels, RemoveLabels];
+
+    /// <summary>A GitHub user or organisation name.</summary>
+    public static bool IsOwner(string? s) =>
+        s is { Length: > 0 and <= 39 } && s.All(c => char.IsAsciiLetterOrDigit(c) || c == '-') && !s.StartsWith('-');
+
+    /// <summary>A repository name.</summary>
+    public static bool IsRepo(string? s) =>
+        s is { Length: > 0 and <= 100 } && s is not ("." or "..") && s.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.');
+}
