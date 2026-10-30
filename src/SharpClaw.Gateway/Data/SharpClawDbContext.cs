@@ -11,6 +11,7 @@ public class SharpClawDbContext : DbContext
 
     public DbSet<Agent> Agents => Set<Agent>();
     public DbSet<AgentToken> AgentTokens => Set<AgentToken>();
+    public DbSet<AgentSkill> AgentSkills => Set<AgentSkill>();
     public DbSet<ConversationThread> Threads => Set<ConversationThread>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<LlmCall> LlmCalls => Set<LlmCall>();
@@ -53,6 +54,14 @@ public class SharpClawDbContext : DbContext
             e.HasIndex(x => x.Name).IsUnique();
             e.Property(x => x.Name).IsRequired();
             e.Property(x => x.Model).IsRequired();
+        });
+
+        b.Entity<AgentSkill>(e =>
+        {
+            e.ToTable("agent_skills");
+            e.HasKey(x => new { x.AgentId, x.Name });
+            e.Property(x => x.Description).IsRequired();
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<AgentToken>(e =>

@@ -57,6 +57,8 @@ export const fixtures = {
     remainingUsd: 0.75,
     contextWindowTokens: null,
     lastSeenAt: '2026-10-25T11:59:30Z',
+    skills: [],
+    skillsReportedAt: null,
     ...over,
   }),
   thread: (over: Partial<S['ThreadSummaryDto']> = {}): S['ThreadSummaryDto'] => ({

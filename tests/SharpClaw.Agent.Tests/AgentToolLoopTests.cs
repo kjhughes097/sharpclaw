@@ -61,6 +61,7 @@ public class AgentToolLoopTests
             throw new NotSupportedException();
 
         public Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task ReportSkillsAsync(IReadOnlyList<AgentSkillDto> skills, CancellationToken ct) => throw new NotSupportedException();
     }
 
     private static ChatOutcome ToolCall(string id, string name, string args = "{}") =>

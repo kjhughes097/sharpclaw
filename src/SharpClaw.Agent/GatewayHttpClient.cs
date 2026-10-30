@@ -302,6 +302,12 @@ public sealed class GatewayHttpClient : IGatewayClient
             ?? throw new InvalidOperationException("empty tool policy response");
     }
 
+    public async Task ReportSkillsAsync(IReadOnlyList<AgentSkillDto> skills, CancellationToken ct)
+    {
+        using var resp = await _http.PutAsJsonAsync($"{_baseUrl}/agent/skills", new ReportSkillsRequest(skills), SharpClawJson.Options, ct);
+        resp.EnsureSuccessStatusCode();
+    }
+
     public async Task<string?> ClassifyRiskAsync(
         IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct)
     {

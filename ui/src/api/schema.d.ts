@@ -447,11 +447,18 @@ export interface components {
       name: string;
       /** Format: double */
       remainingUsd: number;
+      skills: components['schemas']['AgentSkillDto'][];
+      /** Format: date-time */
+      skillsReportedAt?: null | string;
       /** Format: double */
       todaySpendUsd: number;
     };
     AgentListResponse: {
       agents: components['schemas']['AgentDto'][];
+    };
+    AgentSkillDto: {
+      description: string;
+      name: string;
     };
     ApiError: {
       code: string;

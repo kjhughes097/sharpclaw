@@ -68,5 +68,9 @@ else
         string.Join(",", toolConfig.Tools), toolConfig.AllowedRiskLevel.ToWire(), toolConfig.SmartMode, toolConfig.MaxToolIterations);
 }
 
+// Only an agent with skill_read reports (Q8); an empty library still reports, clearing old skills.
+if (skills is not null)
+    await SkillReport.SendAsync(gateway, skills, logger, cts.Token);
+
 var loop = new AgentLoop(gateway, soul, config, loggerFactory.CreateLogger<AgentLoop>(), TimeProvider.System, tools, skills);
 return await loop.RunAsync(cts.Token);
