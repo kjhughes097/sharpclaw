@@ -1,6 +1,6 @@
 /**
  * Hand-written SSE payload types (3.3 spec section 7). They are checked against the committed
- * fixtures in docs/api-fixtures/events by tests/events.test.ts.
+ * fixtures in contracts/events by tests/events.test.ts.
  */
 
 export interface DeltaEvent {

@@ -8,7 +8,7 @@ namespace SharpClaw.Gateway.Infrastructure;
 /// <summary>
 /// The client API's OpenAPI document (3.3 spec section 7): <c>GET /openapi/v1.json</c> on the
 /// client listener, authenticated like <c>/api/*</c>, covering client routes only. The committed
-/// snapshot in <c>docs/openapi/</c> is the contract the UI's generated client is built from.
+/// snapshot in <c>contracts/openapi/</c> is the contract the UI's generated client is built from.
 /// </summary>
 public static class OpenApiSetup
 {

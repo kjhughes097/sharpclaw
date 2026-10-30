@@ -68,7 +68,7 @@ CI (`.github/workflows/ci.yml`) runs all of the above on every pull request; kee
 
 **Contract changes** (DTOs, endpoints, SSE events) are snapshot-guarded. After changing one:
 `UPDATE_OPENAPI=1 dotnet test tests/SharpClaw.Gateway.Tests --filter "FullyQualifiedName~SnapshotTests"`
-to rewrite `docs/openapi/sharpclaw-client.v1.json` and `docs/api-fixtures/events/`, then
+to rewrite `contracts/openapi/sharpclaw-client.v1.json` and `contracts/events/`, then
 `npm run gen:api` in `ui/`, review the diff, and commit all three together.
 
 ## Architecture
