@@ -87,6 +87,18 @@ public class SkillReadToolTests : IDisposable
     }
 
     [Fact]
+    public async Task File_list_skips_hidden_files_and_folders()
+    {
+        for (var i = 0; i < SkillTools.MaxListedFiles + 5; i++)
+            Put($".git/objects/o{i:000}", "x");
+        Put(".DS_Store", "x");
+
+        var files = (await Run(new { name = "research-brief" })).GetProperty("files").EnumerateArray().Select(f => f.GetString());
+
+        Assert.Equal(new[] { "assets/brief-template.md", "references/style-guide.md" }, files);
+    }
+
+    [Fact]
     public async Task Nested_path_has_no_file_list()
     {
         var r = await Run(new { name = "research-brief", path = "references/style-guide.md" });
