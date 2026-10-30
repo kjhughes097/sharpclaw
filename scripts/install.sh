@@ -46,6 +46,8 @@ mkdir -p "$DEST/data"
 if [ ! -w "$DEST/data" ] || [ ! -x "$DEST/data" ]; then
   echo "WARNING: $DEST/data is not writable by $(id -un); the gateway runs as this user and will fail to open its database." >&2
 fi
+# The shared skill library every agent mounts read-only (it must exist for the bind mount).
+mkdir -p "$DEST/skills"
 for AGENT in "$DEST"/agents/*/; do
   mkdir -p "$AGENT/workspace"
 done

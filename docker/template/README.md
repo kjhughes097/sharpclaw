@@ -1,7 +1,8 @@
 # SharpClaw install
 
 This directory is your SharpClaw deployment: `compose.yml`, `.env` (secrets), each agent's
-`config/` (soul and tool policy) and `workspace/`, and the gateway's SQLite database in `data/`.
+`config/` (soul and tool policy) and `workspace/`, the shared skill library in `skills/`, and the
+gateway's SQLite database in `data/`.
 It was created by `scripts/install.sh` from the SharpClaw repo and is yours to edit — the
 installer never overwrites files here.
 
@@ -30,10 +31,19 @@ By hand:
 ## Adding an agent
 
 1. Copy an `agent-*` service block in `compose.yml` and rename it, its token variable and its
-   mount paths.
+   mount paths (keep the `./skills:/skills:ro` line).
 2. Create `agents/<name>/config/soul.md`, `agents/<name>/config/agent.json` and an empty
    `agents/<name>/workspace/` owned by `SHARPCLAW_UID`.
 3. `sharpclaw agents create <name> …`, add the token to `.env`, `docker compose up -d`.
+
+## Skills
+
+`skills/<name>/SKILL.md` folders are shared, read-only, by every agent whose `agent.json` lists
+`skill_read`. The folder name must match the `name` in the frontmatter. Restart the agents
+(`docker compose restart`) after adding, removing or renaming a skill or changing its description;
+the agent's log lists the skills it loaded and any it skipped, with the reason. **Read every file of
+a skill you didn't write before adding it**: skills are trusted like a soul, so a malicious one
+could steer your agent. See "Skills" in the repo's README.
 
 ## Day to day
 

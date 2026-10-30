@@ -80,6 +80,7 @@ public class AgentToolConfigTests : IDisposable
         var config = AgentToolConfig.Load(path, Known);
         Assert.NotNull(config);
         Assert.NotEmpty(config.Tools);
+        Assert.Contains(SkillTools.ReadName, config.Tools);
     }
 
     private static string RepoRoot([CallerFilePath] string thisFile = "") =>

@@ -267,6 +267,7 @@ A missing file runs the agent without tools; an invalid one stops it (exit code 
 | `workspace_delete` | high |
 | `current_time` | low (UTC, or an IANA zone such as `Europe/London`) |
 | `calculate` | low (arithmetic only: `+ - * / % ^`, `abs round floor ceil sqrt min max`) |
+| `skill_read` | low (reads a file of a loaded skill; see [Skills](#skills)) |
 
 The full rules and caps are in the [agent tools spec](docs/sharpclaw-agent-tools-spec.md).
 
@@ -353,6 +354,47 @@ token ever enters a sandbox, and an existing branch is never moved), and opens t
 then runs as a fork PR: no repository secrets, and GitHub holds a first-time contributor's run for
 your approval.
 
+### Skills
+
+Skills are reusable know-how you write once and share across agents: a folder with a `SKILL.md`
+(YAML frontmatter with `name` and `description`, then Markdown instructions) and optionally
+`references/`, `assets/` and `scripts/`. This is the open **Agent Skills** layout, so skills written
+for other agent runtimes work unchanged. See the [skills spec](docs/sharpclaw-skills-spec.md).
+
+```markdown
+---
+name: daily-notes
+description: Keep a dated daily notes file in the workspace. Use when the user asks to note, log or journal something.
+---
+
+# Daily notes
+...
+```
+
+- **Where they live.** One shared library, `skills/` in your install, mounted **read-only** at
+  `/skills` in every agent container. The template ships `daily-notes` and `research-brief`.
+- **Turning them on.** An agent uses skills only when `skill_read` is in the `tools` list of its
+  `agent.json` (the template's agents have it).
+- **How the model uses them.** Only an index (each skill's name and description) goes into the
+  system prompt. The model loads a skill's `SKILL.md`, and any other file in it, on demand with
+  `skill_read`, so a skill costs tokens only when it's used. Write descriptions that say both
+  *what* the skill does and *when* to use it.
+- **Picking up changes.** The index is built when the agent starts: restart the agent
+  (`docker compose restart agent-<name>`) after adding, removing or renaming a skill or changing a
+  description. Edits to a skill's other contents are read live.
+- **Rules.** The folder name must equal `name` (lowercase letters, digits, single hyphens, at most
+  64 characters); the description is 1–1,024 characters; `SKILL.md` is at most 64 KB. An invalid
+  skill is skipped with a warning in the agent's log (`skill <dir> skipped: <reason>`) and the rest
+  still load. At most 100 skills, and a 16 KB index.
+- **Skills can't grant anything.** Fields such as `allowed-tools` are ignored: tools and risk
+  levels come only from `agent.json`. A skill's scripts can be read but never run in the agent;
+  they can only run in the agent's sandbox through `sandbox_run`, which always needs your approval.
+
+> **Review third-party skills before adding them.** Skill contents are trusted like `soul.md`:
+> reading one does not raise the risk of later tool calls. A skill copied from the internet can
+> carry instructions you wouldn't give your agent (prompt injection), so read every file in it
+> first.
+
 ## Your install
 
 The repo is for building; you run SharpClaw from a separate install directory (default
@@ -367,6 +409,7 @@ SQLite database. The repo ships a sample in [docker/template/](docker/template/)
 | `agents/<name>/config/soul.md` | The agent's persona (system prompt) |
 | `agents/<name>/config/agent.json` | The agent's tool policy (see [Agent tools](#agent-tools)) |
 | `agents/<name>/workspace/` | The only files the agent (and its sandbox, if it has one) can read and write |
+| `skills/<name>/` | The shared [skill library](#skills), read-only to every agent |
 | `data/` | The gateway's SQLite database |
 
 **Manual setup.** `scripts/quickstart.sh` runs these steps for you; to do them by hand:
@@ -388,7 +431,7 @@ SQLite database. The repo ships a sample in [docker/template/](docker/template/)
 5. Create your web UI user: `sharpclaw users create <name>`.
 
 **Adding an agent.** Copy an `agent-*` service in `compose.yml` and rename it, its token variable
-and its mount paths; create `agents/<name>/config/soul.md`, `agent.json` and an empty
+and its mount paths (keep the `./skills:/skills:ro` line); create `agents/<name>/config/soul.md`, `agent.json` and an empty
 `workspace/`; then `sharpclaw agents create <name> …`, put the token in `.env` and
 `docker compose up -d`. Or just re-run `scripts/quickstart.sh`, which does all of that for you.
 
@@ -471,7 +514,8 @@ Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 
 **Agent** (environment): `GATEWAY_URL` (required), `AGENT_TOKEN` (required), `SOUL_PATH`
 (`/config/soul.md`), `AGENT_CONFIG_PATH` (`/config/agent.json`, tool policy), `WORKSPACE_PATH`
-(`/workspace`), `LONG_POLL_SECONDS` (`30`), `LOG_LEVEL` (`Information`).
+(`/workspace`), `SKILLS_PATH` (`/skills`, the read-only skill library), `LONG_POLL_SECONDS` (`30`),
+`LOG_LEVEL` (`Information`).
 
 **Sandbox runner** (environment, set by compose): `SANDBOX_SECRET` (required, at least 16
 characters), `HTTP_PROXY`/`HTTPS_PROXY` (`http://sbx-<name>:<proxy secret>@gateway:8082`),
@@ -521,7 +565,8 @@ cd ~/sharpclaw && bash <repo>/scripts/verify-isolation.sh
 
 It checks that the agent network cannot reach the public internet but can reach the gateway agent
 listener, that port 8081 is not published to the host, that each route group returns `404` on the
-wrong port, and that the agent container's root filesystem and `/config` are read-only. With
+wrong port, that the agent container's root filesystem and `/config` are read-only, and that
+`/skills` is mounted read-only in each running agent and doesn't overlap `/workspace`. With
 sandboxes running it also checks that port 8082 is not published, that agents can't reach a
 sandbox and get `407` from the egress proxy, and, per sandbox, that it is only on its own network,
 has no direct route out, reaches the internet through the proxy with its credential, is refused
@@ -598,6 +643,6 @@ Behaviour is specified phase by phase; later specs win where they differ:
 [3.3](docs/sharpclaw-3.3-implementation-spec.md) (web UI) →
 [3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign), plus the
 [agent tools spec](docs/sharpclaw-agent-tools-spec.md), the
-[external tools spec](docs/sharpclaw-external-tools-spec.md) and the accepted [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
+[external tools spec](docs/sharpclaw-external-tools-spec.md) and the [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
 ([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the
 [post-3.3 codebase review](docs/post-phase-3.3-codebase-review.md) are historical working notes.

@@ -63,6 +63,36 @@ for SVC in $(docker compose config --services | grep '^agent-'); do
   fi
 done
 
+echo "== 4b. /skills is mounted read-only in each agent and is not under /workspace (skills spec) =="
+for SVC in $(docker compose config --services | grep '^agent-'); do
+  CID=$(docker compose ps -q "$SVC")
+  if [ -z "$CID" ]; then
+    echo "($SVC is not running: skipping its /skills checks)"
+    continue
+  fi
+  SKILLS_SRC=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/skills"}}{{.Source}}{{end}}{{end}}' "$CID")
+  SKILLS_RW=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/skills"}}{{.RW}}{{end}}{{end}}' "$CID")
+  WS_SRC=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/workspace"}}{{.Source}}{{end}}{{end}}' "$CID")
+  if [ -z "$SKILLS_SRC" ]; then
+    fail "$SVC has no /skills mount"
+    continue
+  fi
+  if [ "$SKILLS_RW" = "false" ] && ! docker compose exec -T "$SVC" sh -c 'touch /skills/write-test' 2>/dev/null; then
+    pass "$SVC /skills is read-only"
+  else
+    fail "$SVC /skills is writable"
+  fi
+  # Neither directory may contain the other on the host, and nothing is mounted inside /workspace.
+  case "$SKILLS_SRC/" in "$WS_SRC"/*) INSIDE=1 ;; *) INSIDE=0 ;; esac
+  case "$WS_SRC/" in "$SKILLS_SRC"/*) INSIDE=1 ;; esac
+  NESTED=$(docker inspect -f '{{range .Mounts}}{{.Destination}} {{end}}' "$CID" | xargs -n1 | grep '^/workspace/' || true)
+  if [ "$INSIDE" -eq 0 ] && [ -z "$NESTED" ]; then
+    pass "$SVC /skills is not under /workspace"
+  else
+    fail "$SVC /skills and /workspace overlap (skills: $SKILLS_SRC, workspace: $WS_SRC, nested: $NESTED)"
+  fi
+done
+
 # ----- External tools: the egress proxy and sandboxes (external tools spec section 10) -----
 
 # Secrets for the proxy checks come from the install's .env.
