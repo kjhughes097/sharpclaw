@@ -15,6 +15,14 @@ untrusted workloads. They run in locked-down containers with **no internet acces
 provider keys**, and reach the outside world only through the gateway, which enforces budgets,
 asks you before risky tool calls, and audits every model and tool call.
 
+### Screenshots
+
+The web UI's three themes, picked from the menu under your name:
+
+| Default | Light | LCARS |
+|---|---|---|
+| [![Default theme](docs/theme-default.png)](docs/theme-default.png) | [![Light theme](docs/theme-light.png)](docs/theme-light.png) | [![LCARS theme](docs/theme-lcars.png)](docs/theme-lcars.png) |
+
 ## Quick start
 
 You need **Docker** (with Compose v2), `git`, `curl` and `openssl` on Linux or macOS. No .NET,
