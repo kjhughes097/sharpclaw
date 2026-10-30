@@ -4,6 +4,12 @@ A personal, self-hosted multi-agent system. You chat with your agents from a web
 agent has its own persona ("soul"), model, daily budget and a private workspace it can read and
 write with a small set of file tools.
 
+Inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [GoClaw](https://github.com/nextlevelbuilder/goclaw).
+
+![SharpClaw mascot](https://github.com/user-attachments/assets/0dd5321b-b058-4319-8904-c3b2a9bd9212)
+
+## Overview
+
 The design is built around one rule: **the gateway is the single trust boundary.** Agents are
 untrusted workloads. They run in locked-down containers with **no internet access**, hold **no
 provider keys**, and reach the outside world only through the gateway, which enforces budgets,
