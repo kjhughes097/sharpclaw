@@ -66,3 +66,53 @@ internal static class GitHubArgs
         return Number(args) is { } n ? $"{name}#{n}" : name;
     }
 }
+
+/// <summary>
+/// <c>github_write</c> (external tools spec section 7.6, Q4): comment, create an issue, add or remove
+/// labels. Always high; the gateway requires an approval (Q2) whose detail shows the human exactly
+/// what will be posted. Summaries carry sizes and counts only.
+/// </summary>
+internal sealed class GitHubWriteTool(IGatewayClient gateway, BrokerPolicy policy) : BrokerTool(gateway, policy)
+{
+    public override string Name => BrokerTools.GitHubWrite;
+    public override string Description =>
+        "Write to GitHub (every call needs the user's approval): comment on an issue or PR, create_issue, add_labels or remove_labels.";
+    public override string ParametersJson => """
+        {"type":"object","properties":{"operation":{"type":"string","enum":["comment","create_issue","add_labels","remove_labels"]},"owner":{"type":"string"},"repo":{"type":"string"},"number":{"type":"integer","minimum":1,"description":"Issue or PR number (not for create_issue)"},"title":{"type":"string","description":"create_issue: the title"},"body":{"type":"string","description":"comment or create_issue: Markdown text"},"labels":{"type":"array","items":{"type":"string"},"maxItems":10,"description":"create_issue, add_labels, remove_labels"}},"required":["operation","owner","repo"]}
+        """;
+    public override bool ReturnsUntrustedContent => false;
+
+    public override ToolAssessment Assess(JsonElement args)
+    {
+        if (GitHubArgs.Problem(args, GitHubOperations.Write) is { } problem)
+            return new ToolAssessment.Blocked(problem);
+        var operation = Args.String(args, "operation");
+        if (operation == GitHubOperations.Comment && Args.String(args, "body") is not { Length: > 0 })
+            return new ToolAssessment.Blocked("body is required");
+        if (operation == GitHubOperations.CreateIssue && Args.String(args, "title") is not { Length: > 0 })
+            return new ToolAssessment.Blocked("title is required");
+        if (operation is GitHubOperations.AddLabels or GitHubOperations.RemoveLabels && Labels(args) == 0)
+            return new ToolAssessment.Blocked("labels must name at least one label");
+        return new ToolAssessment.Scored(RiskLevel.High, "writes to GitHub as the user");
+    }
+
+    public override string Summarize(JsonElement args)
+    {
+        var target = GitHubArgs.Describe(args).Split(' ', 2)[^1];
+        var body = Args.Size(System.Text.Encoding.UTF8.GetByteCount(Args.String(args, "body") ?? ""));
+        var labels = Labels(args);
+        return Args.String(args, "operation") switch
+        {
+            GitHubOperations.Comment => $"comment on {target} ({body})",
+            GitHubOperations.CreateIssue => $"create issue in {target} (title {Args.String(args, "title")?.Length ?? 0} chars, {body})",
+            GitHubOperations.AddLabels => $"add {labels} label{(labels == 1 ? "" : "s")} to {target}",
+            GitHubOperations.RemoveLabels => $"remove {labels} label{(labels == 1 ? "" : "s")} from {target}",
+            _ => $"github {GitHubArgs.Describe(args)}",
+        };
+    }
+
+    public override IReadOnlyDictionary<string, string>? ClassifierFields(JsonElement args) => GitHubArgs.Fields(args);
+
+    private static int Labels(JsonElement args) =>
+        args.TryGetProperty("labels", out var l) && l.ValueKind == JsonValueKind.Array ? l.GetArrayLength() : 0;
+}

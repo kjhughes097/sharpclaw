@@ -192,6 +192,22 @@ public class BrokerAgentToolsTests : IDisposable
     public void Github_read_blocks_unknown_operations_and_missing_fields(string args) =>
         Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.GitHubRead].Assess(JsonDocument.Parse(args).RootElement));
 
+    [Theory]
+    [InlineData("""{"operation":"comment","owner":"o","repo":"r","number":3,"body":"SECRET text"}""", "comment on o/r#3 (11 B)")]
+    [InlineData("""{"operation":"create_issue","owner":"o","repo":"r","title":"SECRET","body":"x"}""", "create issue in o/r (title 6 chars, 1 B)")]
+    [InlineData("""{"operation":"add_labels","owner":"o","repo":"r","number":3,"labels":["SECRET","b"]}""", "add 2 labels to o/r#3")]
+    [InlineData("""{"operation":"remove_labels","owner":"o","repo":"r","number":3,"labels":["SECRET"]}""", "remove 1 label from o/r#3")]
+    public void Github_write_is_high_and_summaries_carry_sizes_and_counts_only(string json, string summary)
+    {
+        var tool = _tools[BrokerTools.GitHubWrite];
+        var args = JsonDocument.Parse(json).RootElement;
+
+        Assert.Equal(RiskLevel.High, Assert.IsType<ToolAssessment.Scored>(tool.Assess(args)).Level);
+        Assert.Equal(summary, tool.Summarize(args));
+        Assert.True(tool.ApprovalNeedsArguments);
+        Assert.False(tool.ReturnsUntrustedContent);
+    }
+
     [Fact]
     public void Always_approve_comes_from_the_gateway_policy()
     {

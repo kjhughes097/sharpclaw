@@ -43,6 +43,7 @@ public sealed class ApprovalDetails
         var detail = tool switch
         {
             BrokerTools.SandboxRun => RenderRun(args),
+            BrokerTools.GitHubWrite => RenderGitHubWrite(args),
             _ => null,
         };
         return detail is { Length: > ApprovalDetailLimits.MaxChars } ? detail[..ApprovalDetailLimits.MaxChars] : detail;
@@ -54,6 +55,23 @@ public sealed class ApprovalDetails
             return null;
         var cwd = Str(args, "cwd") is { Length: > 0 } c ? c : ".";
         return $"in {Cap(cwd, 200)}/\n$ {Cap(command, ApprovalDetailLimits.MaxCommandChars)}";
+    }
+
+    /// <summary>What will be posted: the target, and the title, labels and text as the human will see them on GitHub.</summary>
+    private static string? RenderGitHubWrite(JsonElement args)
+    {
+        var (request, _) = GitHubRequest.Parse(args, GitHubOperations.Write);
+        if (request is null)
+            return null;
+        var (write, _) = GitHubWrite.Parse(request.Operation, args);
+        var lines = new List<string> { $"{request.Operation} {request.Target}" };
+        if (write?.Title is { } title)
+            lines.Add($"title: {Cap(title, 300)}");
+        if (write?.Labels is { Count: > 0 } labels)
+            lines.Add($"labels: {string.Join(", ", labels)}");
+        if (write?.Body is { } body)
+            lines.Add($"---\n{Cap(body, ApprovalDetailLimits.MaxCommandChars)}");
+        return string.Join('\n', lines);
     }
 
     internal static string Cap(string text, int max) =>

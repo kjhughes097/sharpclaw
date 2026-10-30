@@ -78,6 +78,21 @@ public sealed class GitHubClient(IHttpClientFactory factory, IOptions<GitHubOpti
         return GetJsonAsync<JsonElement?>(OwnerClient, $"{Repo(owner, repo)}/contents/{escaped}{query}", ct);
     }
 
+    // ----- Writes (owner token) -----
+
+    public Task<GitHubResponse<GhComment>> CreateCommentAsync(string owner, string repo, int number, string body, CancellationToken ct) =>
+        SendAsync<GhComment>(OwnerClient, HttpMethod.Post, $"{Repo(owner, repo)}/issues/{number}/comments", new { body }, ct);
+
+    public Task<GitHubResponse<GhIssue>> CreateIssueAsync(
+        string owner, string repo, string title, string? body, IReadOnlyList<string> labels, CancellationToken ct) =>
+        SendAsync<GhIssue>(OwnerClient, HttpMethod.Post, $"{Repo(owner, repo)}/issues", new { title, body, labels }, ct);
+
+    public Task<GitHubResponse<List<GhLabel>>> AddLabelsAsync(string owner, string repo, int number, IReadOnlyList<string> labels, CancellationToken ct) =>
+        SendAsync<List<GhLabel>>(OwnerClient, HttpMethod.Post, $"{Repo(owner, repo)}/issues/{number}/labels", new { labels }, ct);
+
+    public Task<GitHubResponse<List<GhLabel>>> RemoveLabelAsync(string owner, string repo, int number, string label, CancellationToken ct) =>
+        SendAsync<List<GhLabel>>(OwnerClient, HttpMethod.Delete, $"{Repo(owner, repo)}/issues/{number}/labels/{Uri.EscapeDataString(label)}", null, ct);
+
     // ----- Plumbing -----
 
     internal static string Repo(string owner, string repo) =>

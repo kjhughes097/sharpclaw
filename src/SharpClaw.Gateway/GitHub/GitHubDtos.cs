@@ -19,7 +19,7 @@ public sealed record GhPull(
     int Number, string Title, string State, GhUser? User, string? Body, bool? Merged, bool? Draft,
     GhRef Base, GhRef Head, int? ChangedFiles, int? Additions, int? Deletions, string? HtmlUrl);
 
-public sealed record GhComment(GhUser? User, string? Body, DateTime CreatedAt);
+public sealed record GhComment(GhUser? User, string? Body, DateTime CreatedAt, long? Id = null, string? HtmlUrl = null);
 
 /// <summary>A file (<c>type = file</c>) or a directory entry from the contents API.</summary>
 public sealed record GhContent(string Type, string Name, string Path, long Size, string? Encoding, string? Content);
