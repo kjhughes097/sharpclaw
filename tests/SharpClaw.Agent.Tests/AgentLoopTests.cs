@@ -258,6 +258,8 @@ public class AgentLoopTests
 
         public Task<SharpClaw.Agent.Tools.ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct) => throw new NotSupportedException();
     }
 
     private sealed class FixedSoul : ISoulProvider

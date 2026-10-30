@@ -96,7 +96,7 @@ public sealed class SandboxSettingsCheck(
         if (e.Enabled && (e.Port == listeners.Value.ClientPort || e.Port == listeners.Value.AgentPort))
             throw new OptionsValidationException(EgressOptions.Section, typeof(EgressOptions),
                 ["Egress:Port must differ from Listeners:ClientPort and Listeners:AgentPort."]);
-        foreach (var (name, sandbox) in e.Sandboxes)
+        foreach (var (name, sandbox) in e.Configured)
             if (broker.Value.ForAgent(name)?.SandboxSecret is { Length: > 0 } serviceSecret && serviceSecret == sandbox.Secret)
                 throw new OptionsValidationException(EgressOptions.Section, typeof(EgressOptions),
                     [$"Egress:Sandboxes:{name}:Secret must differ from ToolBroker:Agents:{name}:SandboxSecret."]);

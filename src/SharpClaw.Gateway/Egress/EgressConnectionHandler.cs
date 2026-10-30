@@ -373,7 +373,7 @@ public sealed class EgressConnectionHandler(
             return null;
         var name = decoded[ProxyUserPrefix.Length..colon];
         var secret = decoded[(colon + 1)..];
-        var match = opts.Sandboxes.FirstOrDefault(s => string.Equals(s.Key, name, StringComparison.OrdinalIgnoreCase));
+        var match = opts.Configured.FirstOrDefault(s => string.Equals(s.Key, name, StringComparison.OrdinalIgnoreCase));
         return match.Value is { } sandbox && Hashing.FixedTimeEquals(secret, sandbox.Secret) ? match.Key : null;
     }
 

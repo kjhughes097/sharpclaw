@@ -14,13 +14,13 @@ namespace SharpClaw.Agent.Tests;
 /// </summary>
 public class BrokerToolTests
 {
-    private sealed class TestBrokerTool(IGatewayClient gateway, bool alwaysApprove = false) : BrokerTool(gateway)
+    private sealed class TestBrokerTool(IGatewayClient gateway, bool alwaysApprove = false)
+        : BrokerTool(gateway, new BrokerPolicy(alwaysApprove ? new HashSet<string> { "sandbox_run" } : new HashSet<string>(), Array.Empty<string>()))
     {
         public override string Name => "sandbox_run";
         public override string Description => "test";
         public override string ParametersJson => """{"type":"object"}""";
         public override bool ReturnsUntrustedContent => true;
-        public override bool AlwaysRequiresApproval => alwaysApprove;
         public override ToolAssessment Assess(JsonElement args) => new ToolAssessment.Scored(RiskLevel.Low, "test");
         public override string Summarize(JsonElement args) => "run";
         public override IReadOnlyDictionary<string, string>? ClassifierFields(JsonElement args) => null;

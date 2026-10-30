@@ -44,6 +44,7 @@ flowchart LR
 | `src/SharpClaw.Contracts` | Wire shapes shared by everything: DTOs, SSE payloads, `ErrorCodes`, status/role constants, `SharpClawJson`. |
 | `src/SharpClaw.Gateway` | The **only trust boundary**. Holds provider keys, budgets, auth, the message queue, approvals, events, audit and the UI files. |
 | `src/SharpClaw.Agent` | Untrusted worker. Long-polls its inbox, builds the prompt from the gateway's context endpoint, calls the model **through the gateway**, runs workspace tools via `ToolDispatcher`. |
+| `src/SharpClaw.Sandbox` | The per-agent sandbox runner (`sandbox-<agent>`, image `sharpclaw-sandbox`): runs broker tools that parse untrusted input or run code, against that agent's workspace only. Accepts calls from the gateway only (service secret); its only route out is the gateway's egress proxy. Shares the agent's `WorkspaceRoot`/`NoFollow` path rules by source. |
 | `src/SharpClaw.Cli` | `sharpclaw` admin/chat CLI over the client API. |
 | `ui/` | React web UI, built into the gateway image and served same-origin. See [ui.md](ui.md). |
 
@@ -249,6 +250,18 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 - Metric labels are limited to agent, model, status, type and listener; never ids.
 - The client contract (OpenAPI + event fixtures) changes only deliberately (`SnapshotTests`, `npm run check:api`).
 - Product code takes time from an injected `TimeProvider`.
+
+## 9. Sandboxes
+
+Optional, per agent ([external tools spec](sharpclaw-external-tools-spec.md) sections 3 and 6). A
+`sandbox-<name>` service (compose profile `sandboxes`) runs the runner and the .NET, Node and Python
+toolchains, as the install's user, read-only root, `cap_drop: ALL`, `no-new-privileges`, 2 CPUs,
+2 GB, 256 processes. It sits only on its own `sbx-<name>` network (`internal: true`) with the
+gateway, mounts only its agent's workspace (rw) and a per-agent cache volume, and reaches the
+internet only through the egress proxy with its own credential. The gateway calls it at
+`ToolBroker:Agents:<name>:SandboxUrl` with `SANDBOX_<NAME>_SECRET`; the runner makes itself
+non-dumpable and starts every child (argv only, through `setsid`) with an allow-listed environment
+that never contains that secret, killing the child's whole process group on timeout or completion.
 
 ## 9. Operations
 

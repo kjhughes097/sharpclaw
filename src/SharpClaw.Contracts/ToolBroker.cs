@@ -41,6 +41,15 @@ public sealed record InvokeToolRequest(
     Guid? ApprovalId = null);
 
 /// <summary>
+/// The operator's broker settings for the calling agent (<c>GET /agent/tools</c>): which broker
+/// tools it may call, which always need an approval, and the <c>http_fetch</c> hosts scored low.
+/// </summary>
+public sealed record AgentToolPolicyResponse(
+    IReadOnlyList<string> Tools,
+    IReadOnlyList<string> AlwaysApprove,
+    IReadOnlyList<string> FetchAllowHosts);
+
+/// <summary>
 /// The SHA-256 of a tool call's arguments in canonical JSON, binding an approval to exactly the
 /// call the human saw. The agent and the gateway compute it with this same code.
 /// </summary>
@@ -102,5 +111,39 @@ public static class ToolArgsHash
                 w.WriteNullValue();
                 break;
         }
+    }
+}
+
+/// <summary>
+/// The URL rule for network tools (spec section 7.1): absolute <c>http</c> or <c>https</c>, a host,
+/// no credentials in the URL, at most 2,048 characters. Applied by the agent, the gateway and the
+/// sandbox runner alike; the egress proxy then checks where the host actually resolves.
+/// </summary>
+public static class ToolUrls
+{
+    public const int MaxLength = 2048;
+
+    public static (Uri? Url, string? Error) Parse(string? value, params string[] schemes)
+    {
+        schemes = schemes.Length == 0 ? ["http", "https"] : schemes;
+        if (string.IsNullOrWhiteSpace(value))
+            return (null, "url is required");
+        if (value.Length > MaxLength)
+            return (null, $"url is longer than {MaxLength} characters");
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var url) || !schemes.Contains(url.Scheme))
+            return (null, $"url must be an absolute {string.Join(" or ", schemes)} URL");
+        if (string.IsNullOrEmpty(url.Host))
+            return (null, "url must have a host");
+        if (!string.IsNullOrEmpty(url.UserInfo))
+            return (null, "credentials in the URL are not allowed");
+        return (url, null);
+    }
+
+    /// <summary>True when <paramref name="host"/> is <paramref name="entry"/> or one of its subdomains.</summary>
+    public static bool HostMatches(string host, string entry)
+    {
+        var e = entry.Trim().TrimEnd('.').ToLowerInvariant();
+        var h = host.TrimEnd('.').ToLowerInvariant();
+        return e.Length > 0 && (h == e || h.EndsWith("." + e, StringComparison.Ordinal));
     }
 }

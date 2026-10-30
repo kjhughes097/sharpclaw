@@ -28,6 +28,8 @@
     <ProjectReference Include="..\..\src\SharpClaw.Gateway\SharpClaw.Gateway.csproj" />
     <ProjectReference Include="..\..\src\SharpClaw.Contracts\SharpClaw.Contracts.csproj" />
     <ProjectReference Include="..\..\src\SharpClaw.Agent\SharpClaw.Agent.csproj" />
+    <!-- Aliased: the runner shares WorkspaceRoot with the agent by source, so its types must not clash. -->
+    <ProjectReference Include="..\..\src\SharpClaw.Sandbox\SharpClaw.Sandbox.csproj" Aliases="sandbox" />
   </ItemGroup>
 
 </Project>

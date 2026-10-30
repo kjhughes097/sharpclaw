@@ -34,10 +34,12 @@ if [ ! -e "$DEST/.env" ]; then
   (umask 077 && cp "$TEMPLATE/.env.example" "$DEST/.env")
   sed -i \
     -e "s/^ADMIN_KEY=$/ADMIN_KEY=$(openssl rand -hex 32)/" \
+    -e "s/^SANDBOX_CODER_SECRET=$/SANDBOX_CODER_SECRET=$(openssl rand -hex 32)/" \
+    -e "s/^SANDBOX_CODER_PROXY_SECRET=$/SANDBOX_CODER_PROXY_SECRET=$(openssl rand -hex 32)/" \
     -e "s/^SHARPCLAW_UID=$/SHARPCLAW_UID=$(id -u)/" \
     -e "s/^SHARPCLAW_GID=$/SHARPCLAW_GID=$(id -g)/" \
     "$DEST/.env"
-  echo "created .env (ADMIN_KEY generated)"
+  echo "created .env (ADMIN_KEY and sandbox secrets generated)"
 fi
 
 mkdir -p "$DEST/data"

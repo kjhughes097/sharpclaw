@@ -4,6 +4,14 @@ networks:
   internal:
     internal: true # no route to the outside world
   external: {}
+  # One network per sandbox, holding only the gateway and that sandbox: no route out (its only exit
+  # is the gateway's egress proxy), and no way to reach another sandbox or any agent.
+  sbx-coder:
+    internal: true
+
+volumes:
+  # Per-agent package caches (NuGet, npm, pip); never shared between agents.
+  sandbox-coder-cache: {}
 
 x-agent: &agent
   image: sharpclaw-agent:${SHARPCLAW_TAG:-latest}
@@ -16,6 +24,22 @@ x-agent: &agent
   tmpfs: [/tmp]
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
+# A sandbox runs code and parses untrusted input for one agent (external tools). It holds no
+# secrets except its own two, and only starts with COMPOSE_PROFILES=sandboxes in .env.
+x-sandbox: &sandbox
+  image: sharpclaw-sandbox:${SHARPCLAW_TAG:-latest}
+  # Same host user as the agent, so files it writes in the workspace stay editable.
+  user: "${SHARPCLAW_UID:-1000}:${SHARPCLAW_GID:-1000}"
+  profiles: [sandboxes]
+  read_only: true
+  tmpfs: ["/tmp:exec,mode=1777,size=2g"] # builds need an executable /tmp; HOME lives here
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 256
+  mem_limit: 2g
+  cpus: 2
   restart: unless-stopped
 
 services:
@@ -37,10 +61,20 @@ services:
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=home
       # Models a session may switch to, e.g.:
       # Models__Allowed__0: openai/gpt-4o-mini
+      # External tools for agent-coder (see README). Empty secrets mean no sandbox; nothing is
+      # enabled until you list tools, e.g.:
+      # ToolBroker__Agents__coder__Tools__0: http_fetch
+      # ToolBroker__Agents__coder__Tools__1: download_to_workspace
+      ToolBroker__Agents__coder__SandboxUrl: http://sandbox-coder:8090
+      ToolBroker__Agents__coder__SandboxSecret: ${SANDBOX_CODER_SECRET:-}
+      Egress__Sandboxes__coder__Secret: ${SANDBOX_CODER_PROXY_SECRET:-}
+      # Hosts whose http_fetch calls are low risk, e.g.:
+      # ToolBroker__FetchAllowHosts__0: learn.microsoft.com
     ports:
       # Client API and web UI only; 8081 is never published. Never port-forward this port.
       - "${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}:8080"
-    networks: [internal, external]
+    # The egress proxy (8082) is reachable only on these networks and is never published.
+    networks: [internal, external, sbx-coder]
     volumes:
       - ./data:/data
     healthcheck:
@@ -71,3 +105,17 @@ services:
     volumes:
       - ./agents/coder/config:/config:ro
       - ./agents/coder/workspace:/workspace
+
+  sandbox-coder:
+    # The coder's sandbox: its own workspace (rw) and cache, its own network, egress only through
+    # the gateway's proxy with its own credential.
+    <<: *sandbox
+    environment:
+      SANDBOX_SECRET: ${SANDBOX_CODER_SECRET:-}
+      HTTP_PROXY: http://sbx-coder:${SANDBOX_CODER_PROXY_SECRET:-}@gateway:8082
+      HTTPS_PROXY: http://sbx-coder:${SANDBOX_CODER_PROXY_SECRET:-}@gateway:8082
+      NO_PROXY: ""
+    networks: [sbx-coder]
+    volumes:
+      - ./agents/coder/workspace:/workspace
+      - sandbox-coder-cache:/cache

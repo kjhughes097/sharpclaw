@@ -28,6 +28,12 @@ public sealed class ToolBrokerOptions : IHasProblem
     /// <summary>The largest result the broker returns to an agent.</summary>
     [Range(1024, 64 * 1024 * 1024)] public int MaxResponseBytes { get; set; } = 2 * 1024 * 1024;
 
+    /// <summary>
+    /// Hosts whose <c>http_fetch</c> calls the agent scores <c>low</c> (others are <c>medium</c>, Q3).
+    /// Matched exactly or as a parent domain. Sent to the agent by <c>GET /agent/tools</c>.
+    /// </summary>
+    public string[] FetchAllowHosts { get; set; } = [];
+
     public IReadOnlySet<string> AlwaysApproveSet =>
         (AlwaysApprove ?? BrokerTools.DefaultAlwaysApprove.ToArray())
             .Where(t => !string.IsNullOrWhiteSpace(t))
@@ -48,14 +54,15 @@ public sealed class ToolBrokerOptions : IHasProblem
             foreach (var tool in options.Tools)
                 if (!BrokerTools.All.Contains(tool))
                     return $"ToolBroker:Agents:{agent}:Tools: unknown tool '{tool}'.";
-            if (options.SandboxUrl is { Length: > 0 } url)
-            {
-                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
-                    return $"ToolBroker:Agents:{agent}:SandboxUrl must be an absolute http(s) URL.";
-                if (options.SandboxSecret is not { Length: >= MinSandboxSecretChars })
-                    return $"ToolBroker:Agents:{agent}:SandboxSecret must be at least {MinSandboxSecretChars} characters when SandboxUrl is set.";
-            }
+            if (options.SandboxUrl is { Length: > 0 } url &&
+                (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")))
+                return $"ToolBroker:Agents:{agent}:SandboxUrl must be an absolute http(s) URL.";
+            // Empty means "no sandbox yet" (its tools answer 503); a short one is a mistake.
+            if (options.SandboxSecret is { Length: > 0 and < MinSandboxSecretChars })
+                return $"ToolBroker:Agents:{agent}:SandboxSecret must be at least {MinSandboxSecretChars} characters.";
         }
+        if (FetchAllowHosts.Any(string.IsNullOrWhiteSpace))
+            return "ToolBroker:FetchAllowHosts must not contain empty entries.";
         return null;
     }
 }

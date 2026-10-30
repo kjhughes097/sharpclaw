@@ -28,12 +28,16 @@ public sealed class EgressOptions : IHasProblem
     /// <summary>Hosts never allowed, matched exactly or as a parent domain (<c>example.com</c> also blocks <c>a.example.com</c>).</summary>
     public string[] DenyHosts { get; set; } = [];
 
-    public bool Enabled => Sandboxes.Count > 0;
+    /// <summary>Sandboxes with a credential. An empty secret means "not set up yet" (the template's default).</summary>
+    public IEnumerable<KeyValuePair<string, EgressSandboxOptions>> Configured =>
+        Sandboxes.Where(s => s.Value.Secret.Length > 0);
+
+    public bool Enabled => Configured.Any();
 
     public string? Problem()
     {
         foreach (var (name, sandbox) in Sandboxes)
-            if (sandbox.Secret is not { Length: >= MinSecretChars })
+            if (sandbox.Secret is { Length: > 0 and < MinSecretChars })
                 return $"Egress:Sandboxes:{name}:Secret must be at least {MinSecretChars} characters.";
         if (DenyHosts.Any(string.IsNullOrWhiteSpace))
             return "Egress:DenyHosts must not contain empty entries.";

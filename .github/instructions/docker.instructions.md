@@ -8,8 +8,17 @@ applyTo: ["docker/**", "scripts/verify-isolation.sh", "scripts/build-images.sh",
   (`internal: true`, no egress), run `read_only: true` with `tmpfs: [/tmp]`, `cap_drop: [ALL]`,
   `no-new-privileges`, mount `/config` read-only. Never give an agent the `external` network,
   provider keys, OTLP endpoints, or the Docker socket.
+- **Sandboxes** (external tools spec): one `sandbox-<name>` per agent that has one, using the
+  `x-sandbox` anchor (profile `sandboxes`, `read_only`, exec `tmpfs` for `/tmp`, `cap_drop: [ALL]`,
+  `no-new-privileges`, `pids_limit`/`mem_limit`/`cpus`). Each sits **only** on its own
+  `sbx-<name>` network (`internal: true`), which holds just it and the gateway; never put an agent or
+  another sandbox on it. Mounts: its agent's workspace (rw) and a per-agent named cache volume,
+  nothing else. Its environment holds only `SANDBOX_SECRET` and the proxy variables
+  (`http://sbx-<name>:<proxy secret>@gateway:8082`); the two secrets come from `.env` and must
+  differ. No Docker socket, ever.
 - Publish only the client port, bound to loopback by default:
-  `${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}:8080`. Port 8081 must never be published.
+  `${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}:8080`. Ports 8081 (agent) and 8082 (egress
+  proxy) must never be published.
 - Images: multi-stage (`sdk` → `aspnet`/`runtime`), run as the built-in non-root `app` user (there
   is no `adduser` in the .NET images), no secrets baked in. The gateway image sets
   `ASPNETCORE_HTTP_PORTS=` because Kestrel ports are configured in code.

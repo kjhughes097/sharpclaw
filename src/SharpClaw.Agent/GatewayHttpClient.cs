@@ -279,6 +279,14 @@ public sealed class GatewayHttpClient : IGatewayClient
         return new ToolResult(ok, json, ok ? null : code ?? ErrorCodes.ToolFailed);
     }
 
+    public async Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct)
+    {
+        using var resp = await _http.GetAsync($"{_baseUrl}/agent/tools", ct);
+        resp.EnsureSuccessStatusCode();
+        return await resp.Content.ReadFromJsonAsync<AgentToolPolicyResponse>(SharpClawJson.Options, ct)
+            ?? throw new InvalidOperationException("empty tool policy response");
+    }
+
     public async Task<string?> ClassifyRiskAsync(
         IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct)
     {

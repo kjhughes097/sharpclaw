@@ -21,7 +21,18 @@ public static class ToolBrokerEndpoints
 
     public static void Map(RouteGroupBuilder agent)
     {
+        agent.MapGet("/tools", Policy);
         agent.MapPost("/tools/{tool}", Invoke);
+    }
+
+    /// <summary>The operator's broker settings for the calling agent, read once at agent startup.</summary>
+    private static IResult Policy(HttpContext http, IOptions<ToolBrokerOptions> options)
+    {
+        var agent = AuthContext.Agent(http);
+        var o = options.Value;
+        var tools = o.ForAgent(agent.Name)?.Tools.Where(BrokerTools.All.Contains).Distinct().ToList() ?? [];
+        return Results.Json(new AgentToolPolicyResponse(
+            tools, o.AlwaysApproveSet.Where(tools.Contains).Order().ToList(), o.FetchAllowHosts), SharpClawJson.Options);
     }
 
     private static async Task<IResult> Invoke(

@@ -69,6 +69,9 @@ public interface IGatewayClient
     /// </summary>
     Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct);
 
+    /// <summary>The operator's broker settings for this agent (<c>GET /agent/tools</c>).</summary>
+    Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct);
+
     /// <summary>
     /// Smart mode: asks the LLM to classify a call's risk (purpose <c>risk_assessment</c>, never
     /// shown to the user). Returns the reply text, or null if the call failed.

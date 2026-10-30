@@ -26,6 +26,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
+      - name: Install pandoc (the sandbox runner's HTML conversion is tested for real)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
       - name: Build (Release, warnings are errors)
         run: dotnet build -c Release
       - name: Test (includes the OpenAPI and event-fixture snapshot tests)

@@ -59,6 +59,8 @@ public class AgentToolLoopTests
 
         public Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct) => throw new NotSupportedException();
     }
 
     private static ChatOutcome ToolCall(string id, string name, string args = "{}") =>
