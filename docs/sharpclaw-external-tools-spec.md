@@ -1,7 +1,8 @@
 # SharpClaw V3 — External Tools Spec (network, GitHub, sandboxed code)
 
 **Audience:** an implementing coding agent (and the human reviewing its work).
-**Status:** **accepted**, not yet implemented. Build it in the task order in section 11.
+**Status:** **implemented** (tasks 2-13, in the order of section 11). Where the build differs from
+an earlier draft, the text below says so (the clone record lives in the gateway, section 7.4).
 **Scope:** the first agent tools that reach beyond the agent's own workspace: fetching from the
 web, web search, the GitHub API, cloning public repositories, extracting text from HTML and PDF,
 and running code. This is a **deliberate change to the trust model**: it replaces section 6 ("Ruled

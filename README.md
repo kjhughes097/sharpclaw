@@ -2,7 +2,9 @@
 
 A personal, self-hosted multi-agent system. You chat with your agents from a web UI or a CLI; each
 agent has its own persona ("soul"), model, daily budget and a private workspace it can read and
-write with a small set of file tools.
+write with a small set of file tools. Optionally, agents can also fetch and search the web, read and
+write GitHub, clone repositories and run code — always through the gateway, with code confined to a
+per-agent sandbox and every risky call approved by you.
 
 Inspired by [OpenClaw](https://github.com/openclaw/openclaw) and [GoClaw](https://github.com/nextlevelbuilder/goclaw).
 
@@ -288,8 +290,68 @@ How a call is decided (all in the agent's `ToolDispatcher`):
    model on later turns, except results of tools that return untrusted content (`workspace_read`, `workspace_search`),
    which are replaced by a stub so injected text can't persist in the thread.
 
-No tool executes code or shell commands. The agent container (no network, read-only root
-filesystem, only its own `/workspace`) contains anything a tool does.
+No tool executes code or shell commands inside the agent. The agent container (no network,
+read-only root filesystem, only its own `/workspace`) contains anything a workspace tool does.
+Code only ever runs as `sandbox_run`, in the agent's own sandbox (below).
+
+### External tools
+
+The [external tools spec](docs/sharpclaw-external-tools-spec.md) adds tools that reach beyond the
+workspace. They run through the gateway's **tool broker** (`POST /agent/tools/{tool}`): in the
+gateway itself when they need a credential (web search, GitHub), otherwise in the agent's own
+**sandbox** (`sandbox-<name>`: .NET SDK, Node, Python, git, pandoc and poppler, its own network, your
+agent's workspace and a package cache, and the internet only through the gateway's egress proxy,
+which refuses LAN, Docker and cloud-metadata addresses). Nothing is enabled by default: a tool has to
+be in the agent's `agent.json` **and** listed for it by the operator in the gateway config
+(`ToolBroker__Agents__<name>__Tools__N`).
+
+| Tool | Runs in | Risk | Notes |
+|---|---|---|---|
+| `http_fetch` | sandbox | low for `ToolBroker:FetchAllowHosts`, else medium | Markdown/text/raw, 64 KB; untrusted |
+| `download_to_workspace` | sandbox | medium; scripts, executables and dotfiles uncertain | 50 MB |
+| `web_search` | gateway | low | OpenRouter web plugin on `WebSearch:Model`; recorded in `llm_calls` and counts against the budget; untrusted |
+| `extract_text` | sandbox | low; script/dotfile output uncertain | `.html` → Markdown, `.pdf` → text, into a new workspace file |
+| `git_clone` | sandbox | medium | Public repos over HTTPS from `ToolBroker:CloneAllowHosts` (github.com, gitlab.com); shallow, no hooks |
+| `sandbox_run` | sandbox | high, **always approved** | `bash -c` in a workspace folder; 10 min (operator max 30); 1 MB of output, the rest in a log file; untrusted |
+| `github_read` | gateway | low | Issues, PRs, diffs, comments, files; untrusted |
+| `github_write` | gateway | high, **always approved** | Comment, create issue, add/remove labels |
+| `github_create_pr` | gateway + sandbox | high, **always approved** | PR from your machine user's fork (below) |
+
+**Always approved** means the gateway itself refuses the call without a matching approval
+(`ToolBroker:AlwaysApprove`), whatever the agent's `allowedRiskLevel` says. The approval shows you
+what will happen: the command for `sandbox_run`, the text for `github_write`, and the repository,
+branch and every changed file (with line counts) for `github_create_pr`. Lists, events, logs and
+the smart-mode classifier only ever see a content-free summary such as `run (412 chars) in repo/`.
+
+**Enabling a sandbox.** The template has one for `coder`. `scripts/install.sh` writes two different
+secrets into `.env` (`SANDBOX_CODER_SECRET` for gateway → sandbox, `SANDBOX_CODER_PROXY_SECRET` for
+sandbox → egress proxy). Set `COMPOSE_PROFILES=sandboxes` in `.env`, list the tools for the agent in
+`compose.yml` (e.g. `ToolBroker__Agents__coder__Tools__0: http_fetch`), add them to
+`agents/coder/config/agent.json`, and `docker compose up -d`. For another agent, copy the
+`sandbox-coder` service and its `sbx-coder` network and cache volume, add the network to the
+gateway, and add its `ToolBroker__Agents__<name>__Sandbox*` and `Egress__Sandboxes__<name>__Secret`
+lines.
+
+**GitHub.** Create a fine-grained token for your own account limited to **selected repositories**
+(contents read, issues write, pull requests write) and put it in `.env` as `GITHUB_TOKEN`. That is
+enough for `github_read` and `github_write`; `GitHub__Repos__N` (`owner/repo`) optionally limits
+them further. For `github_create_pr`:
+
+1. Create a separate GitHub **machine user** (e.g. `sharpclaw-bot`). GitHub doesn't let an account
+   fork its own repository, and fine-grained tokens can't contribute to public repositories the
+   account isn't a member of, so the machine user owns the forks and your token opens the PR.
+2. As the machine user, fork each repository you want PRs for (keep the repository name).
+3. Give the machine user a fine-grained token limited to its forks with **contents write**, and set
+   `GITHUB_FORK_TOKEN` and `GITHUB_FORK_OWNER` in `.env`.
+4. List each upstream repository in `GitHub__Repos__N` (required for PRs).
+
+The agent clones with `git_clone`, edits and tests in its sandbox, then calls `github_create_pr`.
+The gateway reads the changes from the sandbox, refuses anything touching `.github/workflows/**`
+(`GitHub:BlockedPaths`), symbolic links or submodules, builds a new branch
+`sharpclaw/<agent>/<branch>` in the fork through the GitHub API (nothing ever runs `git push`, no
+token ever enters a sandbox, and an existing branch is never moved), and opens the PR as you. CI
+then runs as a fork PR: no repository secrets, and GitHub holds a first-time contributor's run for
+your approval.
 
 ## Your install
 
@@ -304,12 +366,12 @@ SQLite database. The repo ships a sample in [docker/template/](docker/template/)
 | `compose.yml` | The gateway and one service per agent; yours to edit |
 | `agents/<name>/config/soul.md` | The agent's persona (system prompt) |
 | `agents/<name>/config/agent.json` | The agent's tool policy (see [Agent tools](#agent-tools)) |
-| `agents/<name>/workspace/` | The only files the agent can read and write |
+| `agents/<name>/workspace/` | The only files the agent (and its sandbox, if it has one) can read and write |
 | `data/` | The gateway's SQLite database |
 
 **Manual setup.** `scripts/quickstart.sh` runs these steps for you; to do them by hand:
 
-1. Build the images (`sharpclaw-gateway` and `sharpclaw-agent`, tagged `:<git-sha>` and `:latest`):
+1. Build the images (`sharpclaw-gateway`, `sharpclaw-agent` and `sharpclaw-sandbox`, tagged `:<git-sha>` and `:latest`):
    `scripts/build-images.sh`
 2. Create the install: `scripts/install.sh [dir]`. It copies the template without overwriting
    anything, writes `.env` (mode 600, a generated `ADMIN_KEY`, your uid/gid) and creates `data/`
@@ -343,7 +405,7 @@ plain HTTP, so **never port-forward it** from your router.
 on the same host needs its own `COMPOSE_PROJECT_NAME` and `CLIENT_PORT`.
 
 Containers are started and stopped by you. The gateway never touches the Docker socket, and the
-agent port 8081 is never published.
+agent port 8081 and egress proxy port 8082 are never published.
 
 ## Configuration
 
@@ -388,12 +450,33 @@ ASP.NET `__` syntax).
 | `Context:ReplyReserveTokens` | `2000` | Kept free for the model's reply |
 | `Context:CharsPerToken` | `4` | Estimation heuristic |
 | `Context:MessageOverheadTokens` | `4` | Added per message |
+| `ToolBroker:Agents:<name>:Tools` | empty | Broker tools the agent may call (the operator's gate) |
+| `ToolBroker:Agents:<name>:SandboxUrl` / `SandboxSecret` | empty | The agent's sandbox runner and its service secret (`SANDBOX_<NAME>_SECRET`); empty secret: no sandbox (`503 tool_unavailable`) |
+| `ToolBroker:AlwaysApprove` | `sandbox_run`, `github_write`, `github_create_pr` | Tools the gateway never runs without a matching approval; `ToolBroker__AlwaysApprove__0=` (empty) clears it |
+| `ToolBroker:ApprovalUseSeconds` | `600` | An approval must be used this soon after it was decided |
+| `ToolBroker:MaxResponseBytes` | `4194304` | Largest tool result returned to an agent |
+| `ToolBroker:SandboxRunMaxSeconds` | `600` | Longest `sandbox_run` (at most 1800) |
+| `ToolBroker:FetchAllowHosts` | empty | `http_fetch` hosts scored low (subdomains included) |
+| `ToolBroker:CloneAllowHosts` | `github.com`, `gitlab.com` | Hosts `git_clone` may use |
+| `Egress:Port` | `8082` | The sandboxes' proxy; bound only when a sandbox credential is set, never published |
+| `Egress:Sandboxes:<name>:Secret` | empty | The sandbox's proxy credential (`SANDBOX_<NAME>_PROXY_SECRET`); must differ from its service secret |
+| `Egress:MaxConnectionsPerSandbox` / `IdleTimeoutSeconds` / `HeadTimeoutSeconds` / `MaxBytesPerConnection` / `MaxHeadBytes` | `32` / `60` / `30` / 1 GB / 64 KB | Per-sandbox proxy limits |
+| `Egress:DenyHosts` | empty | Hosts (and subdomains) the proxy always refuses |
+| `WebSearch:Model` / `TimeoutSeconds` | `openai/gpt-4o-mini` / `60` | The model running `web_search` |
+| `GitHub:Token` / `ForkToken` / `ForkOwner` | empty | `GITHUB_TOKEN`, `GITHUB_FORK_TOKEN`, `GITHUB_FORK_OWNER`; empty token: GitHub tools unavailable |
+| `GitHub:Repos` | empty | `owner/repo` allow-list; optional for reads and writes, required for PRs |
+| `GitHub:BlockedPaths` | `.github/workflows/**` | Paths a PR may never add, change or delete |
 
 Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 
 **Agent** (environment): `GATEWAY_URL` (required), `AGENT_TOKEN` (required), `SOUL_PATH`
 (`/config/soul.md`), `AGENT_CONFIG_PATH` (`/config/agent.json`, tool policy), `WORKSPACE_PATH`
 (`/workspace`), `LONG_POLL_SECONDS` (`30`), `LOG_LEVEL` (`Information`).
+
+**Sandbox runner** (environment, set by compose): `SANDBOX_SECRET` (required, at least 16
+characters), `HTTP_PROXY`/`HTTPS_PROXY` (`http://sbx-<name>:<proxy secret>@gateway:8082`),
+`SANDBOX_WORKSPACE` (`/workspace`), `SANDBOX_CACHE` (`/cache`), `SANDBOX_PORT` (`8090`). Child
+processes get only an allow-listed environment, never `SANDBOX_SECRET`.
 
 **CLI** (environment): `SHARPCLAW_URL` (default `http://localhost:8080`) and
 `SHARPCLAW_ADMIN_KEY` (required).
@@ -423,7 +506,8 @@ OTEL_RESOURCE_ATTRIBUTES=deployment.environment=home
   `sharpclaw-gateway`; re-import via *Dashboards → New → Import* or the API after changes)
   (LLM calls by status, cost vs budget, duration/TTFT percentiles, tokens, inbox depth, last-seen
   age, budget rejections, tool calls, approvals (rate, pending, decision time), unreported tool
-  calls, context truncations/rejections, logins and auth failures by method, and a Loki logs panel
+  calls, context truncations/rejections, logins and auth failures by method, broker calls and
+  durations by tool, egress connections and bytes by sandbox, and a Loki logs panel
   with a `correlation_id` variable).
   Panel queries use the actual landed names (dotted OTel names via `{__name__="…"}`).
 
@@ -437,7 +521,12 @@ cd ~/sharpclaw && bash <repo>/scripts/verify-isolation.sh
 
 It checks that the agent network cannot reach the public internet but can reach the gateway agent
 listener, that port 8081 is not published to the host, that each route group returns `404` on the
-wrong port, and that the agent container's root filesystem and `/config` are read-only.
+wrong port, and that the agent container's root filesystem and `/config` are read-only. With
+sandboxes running it also checks that port 8082 is not published, that agents can't reach a
+sandbox and get `407` from the egress proxy, and, per sandbox, that it is only on its own network,
+has no direct route out, reaches the internet through the proxy with its credential, is refused
+metadata/LAN/gateway addresses, gets `401` from the client and agent listeners, can't reach other
+sandboxes, mounts only its own workspace and cache, and has a read-only root filesystem.
 
 ## Development
 
@@ -447,10 +536,12 @@ wrong port, and that the agent container's root filesystem and `/config` are rea
 | `src/SharpClaw.Gateway` | ASP.NET gateway: two listeners, EF Core/SQLite, providers, telemetry |
 | `src/SharpClaw.Agent` | The agent loop (console app, one per Docker container) |
 | `src/SharpClaw.Cli` | Admin and chat client (assembly name `sharpclaw`) |
+| `src/SharpClaw.Sandbox` | The per-agent sandbox runner (one per sandbox container) |
 | `ui/` | Web UI (React + TypeScript + Vite), served by the gateway; see [docs/ui.md](docs/ui.md) |
 | `tests/SharpClaw.Gateway.Tests` | Gateway integration/unit tests (real Kestrel, fake provider, fake clock) |
 | `tests/SharpClaw.Agent.Tests` | Agent loop tests against a fake gateway |
 | `tests/SharpClaw.Cli.Tests` | CLI argument parsing and chat-ordering tests |
+| `tests/SharpClaw.Sandbox.Tests` | Runner operations against real processes (needs `pandoc` and `poppler-utils` on the PATH) |
 
 ### Build and test
 
@@ -506,7 +597,7 @@ Behaviour is specified phase by phase; later specs win where they differ:
 [pre-3.3 foundations](docs/sharpclaw-pre-3.3-foundations-spec.md) (browser auth, replayable events) →
 [3.3](docs/sharpclaw-3.3-implementation-spec.md) (web UI) →
 [3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign), plus the
-[agent tools spec](docs/sharpclaw-agent-tools-spec.md), the accepted
-[external tools spec](docs/sharpclaw-external-tools-spec.md) and [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
+[agent tools spec](docs/sharpclaw-agent-tools-spec.md), the
+[external tools spec](docs/sharpclaw-external-tools-spec.md) and the accepted [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
 ([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the
 [post-3.3 codebase review](docs/post-phase-3.3-codebase-review.md) are historical working notes.
