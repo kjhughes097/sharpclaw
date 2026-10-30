@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Verifies the SharpClaw isolation guarantees against a running stack.
-# Run from the docker/ directory after `docker compose up -d`.
+# Run from an install directory (e.g. ~/sharpclaw, or docker/.dev) after `docker compose up -d`.
 set -uo pipefail
 
-NET="sharpclaw_internal"
+PROJECT="$(docker compose config | sed -n 's/^name: //p')"
+[ -n "$PROJECT" ] || { echo "Run this from a directory with a compose.yml" >&2; exit 2; }
+NET="${PROJECT}_internal"
 CURL_IMAGE="curlimages/curl:latest"
 FAILURES=0
 

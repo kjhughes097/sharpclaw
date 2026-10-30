@@ -146,6 +146,9 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 
 ## 9. Operations
 
-Docker Compose (`docker/`): the gateway publishes only the client port (`${CLIENT_BIND:-127.0.0.1}:8080`).
+Docker Compose runs from an install directory outside the repo (default `~/sharpclaw`), created by
+`scripts/install.sh` from [docker/template/](../docker/template/) and running images built by
+`scripts/build-images.sh`. The gateway publishes only the client port
+(`${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}`) and keeps SQLite in the install's `data/`.
 Agents run read-only on an internal network with no egress; check this with `scripts/verify-isolation.sh`.
 Telemetry: [telemetry-notes.md](telemetry-notes.md). Known and accepted debt: [tech-debt.md](tech-debt.md).

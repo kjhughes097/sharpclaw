@@ -1,9 +1,9 @@
-# Development override for working on the web UI (see docs/ui.md):
-#   docker compose --env-file ../.env -f compose.yml -f compose.dev.yml up -d gateway
-#   cd ../ui && npm run dev        # Vite on http://localhost:5173, proxying /api to :8080
-# The fake provider means no OpenRouter key or spend. The extra allowed origin lets the Vite dev
-# server's cookie-authenticated requests pass the gateway's origin check; it must never appear in
-# compose.yml.
+# Development override, copied to docker/.dev/compose.override.yml by scripts/dev-stack.sh (see
+# docs/ui.md). The fake provider means no OpenRouter key or spend. The extra allowed origin lets the
+# Vite dev server's cookie-authenticated requests pass the gateway's origin check; it must never
+# appear in the template compose.yml.
+name: sharpclaw-dev
+
 services:
   gateway:
     environment:
