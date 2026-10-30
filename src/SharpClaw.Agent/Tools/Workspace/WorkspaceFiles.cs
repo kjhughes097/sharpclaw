@@ -47,9 +47,10 @@ internal static class WorkspaceFiles
     /// <summary>
     /// Every regular file under <paramref name="directory"/>, depth first in ordinal name order.
     /// Symbolic links (to files or directories) are skipped, never followed; unreadable directories
-    /// are skipped. Lazy, so callers can stop at their caps.
+    /// are skipped. Lazy, so callers can stop at their caps. With <paramref name="skipHidden"/>,
+    /// dot-prefixed files and folders (.git, .DS_Store) are skipped too, and never descended into.
     /// </summary>
-    public static IEnumerable<FileInfo> Walk(string directory)
+    public static IEnumerable<FileInfo> Walk(string directory, bool skipHidden = false)
     {
         var pending = new Stack<DirectoryInfo>();
         pending.Push(new DirectoryInfo(directory));
@@ -69,7 +70,7 @@ internal static class WorkspaceFiles
             var subdirectories = new List<DirectoryInfo>();
             foreach (var entry in entries)
             {
-                if (entry.LinkTarget is not null)
+                if (entry.LinkTarget is not null || (skipHidden && entry.Name.StartsWith('.')))
                     continue;
                 if (entry is FileInfo file)
                     yield return file;
