@@ -9,7 +9,7 @@ public static class AgentBrokerTools
     public static IReadOnlyCollection<string> Names { get; } =
     [
         BrokerTools.HttpFetch, BrokerTools.DownloadToWorkspace, BrokerTools.WebSearch, BrokerTools.ExtractText,
-        BrokerTools.GitClone,
+        BrokerTools.GitClone, BrokerTools.SandboxRun,
     ];
 
     public static IAgentTool[] All(IGatewayClient gateway, BrokerPolicy policy, string workspacePath)
@@ -22,6 +22,7 @@ public static class AgentBrokerTools
             new WebSearchTool(gateway, policy),
             new ExtractTextTool(gateway, policy, root),
             new GitCloneTool(gateway, policy, root),
+            new SandboxRunTool(gateway, policy, root),
         ];
     }
 }

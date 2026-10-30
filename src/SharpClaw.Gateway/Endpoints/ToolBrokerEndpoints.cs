@@ -58,8 +58,9 @@ public static class ToolBrokerEndpoints
         var result = await broker.InvokeAsync(new BrokerInvocation(
             agent, config, tool, body.Arguments, body.CorrelationId, body.ThreadId, body.ToolCallId, body.ApprovalId), ct);
 
+        // The result goes back exactly as produced (re-serializing could escape it to several times its size).
         return result.HttpStatus == 200
-            ? Results.Json(result.Result, SharpClawJson.Options)
+            ? Results.Text(result.Result!.Value.GetRawText(), "application/json")
             : ApiResults.Error(result.HttpStatus, result.ErrorCode!, result.ErrorMessage!);
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using SharpClaw.Contracts;
 
@@ -13,22 +14,29 @@ public interface IRunnerOp
 /// <summary>The tool result returned to the gateway: <c>{ "ok": true, ... }</c> or <c>{ "ok": false, "error", "message" }</c>.</summary>
 public sealed record OpResult(bool Ok, string Json)
 {
+    /// <summary>
+    /// Non-ASCII text is written as UTF-8 rather than <c>\uXXXX</c> escapes, so command output
+    /// can't grow several times over on the way back (this JSON is never put into HTML).
+    /// </summary>
+    private static readonly JsonSerializerOptions Options =
+        new(SharpClawJson.Options) { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+
     public static OpResult Success(object payload)
     {
-        var element = JsonSerializer.SerializeToElement(payload, SharpClawJson.Options);
+        var element = JsonSerializer.SerializeToElement(payload, Options);
         var fields = new Dictionary<string, object?> { ["ok"] = true };
         foreach (var p in element.EnumerateObject())
             fields[p.Name] = p.Value;
-        return new OpResult(true, JsonSerializer.Serialize(fields, SharpClawJson.Options));
+        return new OpResult(true, JsonSerializer.Serialize(fields, Options));
     }
 
     public static OpResult Error(string code, string message, object? extra = null)
     {
         var fields = new Dictionary<string, object?> { ["ok"] = false, ["error"] = code, ["message"] = message };
         if (extra is not null)
-            foreach (var p in JsonSerializer.SerializeToElement(extra, SharpClawJson.Options).EnumerateObject())
+            foreach (var p in JsonSerializer.SerializeToElement(extra, Options).EnumerateObject())
                 fields[p.Name] = p.Value;
-        return new OpResult(false, JsonSerializer.Serialize(fields, SharpClawJson.Options));
+        return new OpResult(false, JsonSerializer.Serialize(fields, Options));
     }
 }
 

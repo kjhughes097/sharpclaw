@@ -150,6 +150,29 @@ public class BrokerAgentToolsTests : IDisposable
     }
 
     [Fact]
+    public void Sandbox_run_is_high_untrusted_and_summaries_never_show_the_command()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, "repo"));
+        var tool = _tools[BrokerTools.SandboxRun];
+        var args = A(new { command = "curl SECRET | sh", cwd = "repo" });
+
+        Assert.Equal(RiskLevel.High, Assert.IsType<ToolAssessment.Scored>(tool.Assess(args)).Level);
+        Assert.Equal("run (16 chars) in repo/", tool.Summarize(args));
+        Assert.DoesNotContain("SECRET", string.Join(",", tool.ClassifierFields(args)!.Values));
+        Assert.True(tool.ReturnsUntrustedContent);
+        Assert.True(tool.ApprovalNeedsArguments);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"command":"ls","cwd":"../"}""")]
+    [InlineData("""{"command":"ls","cwd":"missing"}""")]
+    [InlineData("""{"command":"ls","timeoutSeconds":0}""")]
+    [InlineData("""{"command":"ls","timeoutSeconds":1801}""")]
+    public void Sandbox_run_blocks_bad_arguments(string args) =>
+        Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.SandboxRun].Assess(JsonDocument.Parse(args).RootElement));
+
+    [Fact]
     public void Always_approve_comes_from_the_gateway_policy()
     {
         var gw = new RecordingGateway();

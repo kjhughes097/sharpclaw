@@ -105,6 +105,12 @@ public interface IAgentTool
     /// </summary>
     bool AlwaysRequiresApproval => false;
 
+    /// <summary>
+    /// True when an approval request should carry the call's arguments, so the gateway can check
+    /// them against the hash and show the human what will run (broker tools only; Q1).
+    /// </summary>
+    bool ApprovalNeedsArguments => false;
+
     /// <summary>Runs the call without any policy checks. Only <see cref="ToolDispatcher"/> may call this.</summary>
     Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct);
 

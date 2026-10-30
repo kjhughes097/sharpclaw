@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SharpClaw.Gateway.Configuration;
+using SharpClaw.Gateway.Services.Broker;
 
 namespace SharpClaw.Gateway.Data;
 
@@ -114,6 +115,7 @@ public class SharpClawDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.DecidedByUser).HasMaxLength(100);
             e.Property(x => x.ArgsHash).HasMaxLength(64);
+            e.Property(x => x.Detail).HasMaxLength(ApprovalDetailLimits.MaxChars);
             e.HasIndex(x => x.CorrelationId);
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
         });

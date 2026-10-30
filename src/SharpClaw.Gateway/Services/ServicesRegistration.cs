@@ -28,10 +28,12 @@ public static class ServicesRegistration
         builder.Services.AddHostedService<CreditsRefresher>();
         // Broker tool handlers are added per tool (IBrokerToolHandler); a tool without one is unavailable.
         builder.Services.AddScoped<ToolBroker>();
+        builder.Services.AddScoped<ApprovalDetails>();
         builder.Services.AddSingleton<SandboxClient>();
         builder.Services.AddSingleton<IBrokerToolHandler, SandboxToolHandler>();
         builder.Services.AddScoped<IBrokerToolHandler, WebSearchToolHandler>();
         builder.Services.AddScoped<IBrokerToolHandler, GitCloneToolHandler>();
+        builder.Services.AddSingleton<IBrokerToolHandler, SandboxRunToolHandler>();
         // The runner is on the sandbox's own network: never through a proxy, never following redirects.
         builder.Services.AddHttpClient(SandboxClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan)
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false });

@@ -8,6 +8,7 @@ import { HIGHEST_RISK } from '../../api/types';
 import { useToast } from '../../app/toast';
 import { Badge, Button, RelativeTime, RiskBadge } from '../../components/ui';
 import { formatCountdown, useServerNow } from '../../lib/time';
+import { ApprovalDetail, hasApprovalDetail } from './ApprovalDetail';
 import { deciderLabel } from './decider';
 
 export interface ApprovalView {
@@ -104,6 +105,7 @@ export function ApprovalCard({
         )}
       </div>
       <p className="mt-1 text-sm break-words whitespace-pre-wrap">{approval.summary}</p>
+      {hasApprovalDetail(approval.toolName) && <ApprovalDetail id={approval.id} />}
       {approval.reason && <p className="mt-1 text-xs text-muted">Why: {approval.reason}</p>}
       <p className="mt-1 text-xs text-muted">
         Requested <RelativeTime iso={approval.createdAt} />

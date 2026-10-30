@@ -1,0 +1,64 @@
+using System.Text.Json;
+using SharpClaw.Contracts;
+using SharpClaw.Gateway.Auth;
+
+namespace SharpClaw.Gateway.Services.Broker;
+
+public static class ApprovalDetailLimits
+{
+    /// <summary>The stored detail, whatever the tool.</summary>
+    public const int MaxChars = 4000;
+
+    /// <summary>A command shown to the human (Q1).</summary>
+    public const int MaxCommandChars = 1000;
+}
+
+/// <summary>
+/// The gateway's side of an approval for a broker call: it recomputes the arguments hash itself
+/// (refusing one that doesn't match what the agent sent) and renders the approval detail the human
+/// sees in <c>GET /api/approvals/{id}</c> (Q1). Only the hash and the detail are stored, never the
+/// arguments.
+/// </summary>
+public sealed class ApprovalDetails
+{
+    public sealed record Prepared(string? ArgsHash, string? Detail, string? Error);
+
+    public Task<Prepared> PrepareAsync(
+        AuthenticatedAgent agent, string tool, string? argsHash, JsonElement? arguments, CancellationToken ct)
+    {
+        if (arguments is not { } args || args.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+            return Task.FromResult(new Prepared(argsHash, null, null));
+        if (args.ValueKind != JsonValueKind.Object)
+            return Task.FromResult(new Prepared(null, null, "arguments must be a JSON object."));
+
+        var computed = ToolArgsHash.Compute(args);
+        if (argsHash is not null && argsHash != computed)
+            return Task.FromResult(new Prepared(null, null, "argsHash does not match arguments."));
+        return Task.FromResult(new Prepared(computed, Render(tool, args), null));
+    }
+
+    /// <summary>The detail text for tools that need one; null for the rest.</summary>
+    public static string? Render(string tool, JsonElement args)
+    {
+        var detail = tool switch
+        {
+            BrokerTools.SandboxRun => RenderRun(args),
+            _ => null,
+        };
+        return detail is { Length: > ApprovalDetailLimits.MaxChars } ? detail[..ApprovalDetailLimits.MaxChars] : detail;
+    }
+
+    private static string? RenderRun(JsonElement args)
+    {
+        if (Str(args, "command") is not { } command)
+            return null;
+        var cwd = Str(args, "cwd") is { Length: > 0 } c ? c : ".";
+        return $"in {Cap(cwd, 200)}/\n$ {Cap(command, ApprovalDetailLimits.MaxCommandChars)}";
+    }
+
+    internal static string Cap(string text, int max) =>
+        text.Length <= max ? text : $"{text[..max]}… ({text.Length - max} more characters)";
+
+    internal static string? Str(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+}

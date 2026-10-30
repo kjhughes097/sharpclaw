@@ -61,7 +61,9 @@ public class BrokerToolTests
 
         await d.DispatchAsync(new ToolCallRequest("call_1", "sandbox_run", args), new TurnContext(Guid.NewGuid(), Guid.NewGuid()), default);
 
-        Assert.Equal(ToolArgsHash.Compute(JsonDocument.Parse(args).RootElement), Assert.Single(gw.ApprovalRequests).ArgsHash);
+        var request = Assert.Single(gw.ApprovalRequests);
+        Assert.Equal(ToolArgsHash.Compute(JsonDocument.Parse(args).RootElement), request.ArgsHash);
+        Assert.Equal("npm test", request.Arguments!.Value.GetProperty("command").GetString());
         Assert.Equal(approved.Id, Assert.Single(gw.ToolInvocations).Request.ApprovalId);
     }
 

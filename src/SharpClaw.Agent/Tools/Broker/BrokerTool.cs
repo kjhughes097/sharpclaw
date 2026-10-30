@@ -21,6 +21,9 @@ public abstract class BrokerTool(IGatewayClient gateway, BrokerPolicy policy) : 
     /// <summary>The gateway will refuse this tool without an approval, so the dispatcher always asks.</summary>
     public bool AlwaysRequiresApproval => Policy.AlwaysApprove.Contains(Name);
 
+    /// <summary>The gateway renders the approval detail (a command, a comment) from the arguments.</summary>
+    public bool ApprovalNeedsArguments => true;
+
     public abstract ToolAssessment Assess(JsonElement args);
     public abstract string Summarize(JsonElement args);
     public abstract IReadOnlyDictionary<string, string>? ClassifierFields(JsonElement args);

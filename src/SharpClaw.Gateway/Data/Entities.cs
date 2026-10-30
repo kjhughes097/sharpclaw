@@ -214,6 +214,12 @@ public class Approval
 
     /// <summary>When the broker consumed this approval; each approval allows one broker call.</summary>
     public DateTime? UsedAt { get; set; }
+
+    /// <summary>
+    /// What the human sees in the approval detail for a broker call, rendered by the gateway from the
+    /// arguments (e.g. the command, capped at 1,000 characters). Never in lists, events or logs.
+    /// </summary>
+    public string? Detail { get; set; }
 }
 
 /// <summary>

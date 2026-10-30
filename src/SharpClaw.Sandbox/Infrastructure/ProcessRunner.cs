@@ -27,6 +27,7 @@ public sealed record ProcessResult(int ExitCode, bool TimedOut, byte[] Stdout, b
 public static class ProcessRunner
 {
     private const int ChunkBytes = 16 * 1024;
+    private static readonly TimeSpan ReaderGrace = TimeSpan.FromSeconds(30);
 
     public static async Task<ProcessResult> RunAsync(ProcessSpec spec, CancellationToken ct)
     {
@@ -74,8 +75,9 @@ public static class ProcessRunner
         }
         await process.WaitForExitAsync(CancellationToken.None);
 
-        // A process that escaped the group could still hold the pipes open: don't wait forever.
-        try { await Task.WhenAll(readOut, readErr, writeIn).WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None); }
+        // The pipes reach EOF once the group is gone; only a process that escaped the group could hold
+        // them open. The grace is generous because a busy host can be slow to schedule the readers.
+        try { await Task.WhenAll(readOut, readErr, writeIn).WaitAsync(ReaderGrace, CancellationToken.None); }
         catch (TimeoutException) { }
         ct.ThrowIfCancellationRequested();
 

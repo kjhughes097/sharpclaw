@@ -25,8 +25,11 @@ public sealed class ToolBrokerOptions : IHasProblem
     /// <summary>An approved approval must be used within this many seconds of its decision.</summary>
     [Range(1, 86400)] public int ApprovalUseSeconds { get; set; } = 600;
 
-    /// <summary>The largest result the broker returns to an agent.</summary>
-    [Range(1024, 64 * 1024 * 1024)] public int MaxResponseBytes { get; set; } = 2 * 1024 * 1024;
+    /// <summary>The largest result the broker returns to an agent (sandbox_run alone may return 1 MB of output).</summary>
+    [Range(1024, 64 * 1024 * 1024)] public int MaxResponseBytes { get; set; } = 4 * 1024 * 1024;
+
+    /// <summary>The longest a <c>sandbox_run</c> may take (Q6: default 10 minutes, at most 30).</summary>
+    [Range(1, 1800)] public int SandboxRunMaxSeconds { get; set; } = 600;
 
     /// <summary>
     /// Hosts whose <c>http_fetch</c> calls the agent scores <c>low</c> (others are <c>medium</c>, Q3).

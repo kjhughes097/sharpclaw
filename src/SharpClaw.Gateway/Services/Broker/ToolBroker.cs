@@ -36,7 +36,8 @@ public sealed class ToolBroker(
     {
         var sw = Stopwatch.StartNew();
         var result = await RunAsync(call, ct);
-        var bytes = result.Result is { } r ? JsonSerializer.SerializeToUtf8Bytes(r).LongLength : 0;
+        // Measured on the raw JSON, which is what the agent receives (never re-encoded).
+        var bytes = result.Result is { } r ? System.Text.Encoding.UTF8.GetByteCount(r.GetRawText()) : 0;
         if (bytes > options.Value.MaxResponseBytes)
         {
             result = BrokerResult.Refused(502, ErrorCodes.ToolFailed,

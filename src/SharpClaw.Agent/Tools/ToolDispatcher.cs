@@ -169,7 +169,8 @@ public sealed class ToolDispatcher
             // recomputes it and refuses a call that doesn't match.
             approval = await _gateway.RequestApprovalAsync(new CreateApprovalRequest(
                 turn.CorrelationId, turn.ThreadId, call.Id, tool.Name,
-                Truncate(summary, 200), risk.ToWire(), Truncate(reason, 200), ToolArgsHash.Compute(args)), ct);
+                Truncate(summary, 200), risk.ToWire(), Truncate(reason, 200), ToolArgsHash.Compute(args),
+                tool.ApprovalNeedsArguments ? args.Clone() : null), ct);
 
             while (approval.Status == ApprovalStatuses.Pending)
                 approval = await _gateway.PollApprovalAsync(approval.Id, ApprovalPollSeconds, ct);

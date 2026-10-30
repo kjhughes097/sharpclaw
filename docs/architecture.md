@@ -162,7 +162,7 @@ The committed contract is [contracts/openapi/sharpclaw-client.v1.json](../contra
 | threads | `GET/POST /api/threads`, `GET/PATCH /api/threads/{id}`, `GET /api/threads/{id}/trace` |
 | messages | `GET/POST /api/threads/{id}/messages` (seq paging), `GET /api/threads/{id}/stream` (SSE) |
 | events | `GET /api/events` (global SSE stream) |
-| approvals | `GET /api/approvals`, `GET /api/approvals/{id}`, `POST /api/approvals/{id}` (decide) |
+| approvals | `GET /api/approvals`, `GET /api/approvals/{id}` (adds `detail` for broker calls: a command, capped at 1,000 chars), `POST /api/approvals/{id}` (decide) |
 | audit | `GET /api/audit/llm-calls`, `GET /api/audit/tool-calls` (keyset cursors) |
 | system | `GET /api/system` (version, provider, clock, `models` allow-list) |
 | dashboard (3.3.1) | `GET /api/usage?range=today\|7d\|30d&agent=` (zero-filled UTC buckets, by model, by agent), `GET /api/activity` (recent prompts and replies across threads), `GET /api/credits` (cached OpenRouter balance) |
@@ -250,7 +250,10 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 - Only `ToolDispatcher` may call `IAgentTool.ExecuteUncheckedAsync` (`ToolArchitectureTests`).
 - Workspace tools never follow a symbolic link, even one created after the path was checked
   (`WorkspaceToolsTests.NoFollow`).
-- No agent tool executes code or shell commands. Tool policy is read only from read-only config,
+- No agent tool executes code or shell commands inside the agent. Code runs only as `sandbox_run`
+  in the agent's own sandbox, behind a gateway-enforced approval whose detail shows the human the
+  command (`SandboxRunTests`); lists, events, logs and the classifier see only its length and folder.
+  Tool policy is read only from read-only config,
   never from the workspace.
 - No prompt or reply content, soul, tool arguments or results, tokens, keys, passwords or cookies
   in logs, metric labels or events (`PrivacyTests` and others).
