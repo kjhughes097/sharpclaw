@@ -68,6 +68,14 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Chart bars are hover-only for sighted users | Keyboard and screen-reader users get the same figures from a visually hidden table per chart, not a focusable tooltip. |
 | Live tool rows need the live stream | After a page load mid-turn, rows for tools requested earlier in that turn appear only once the turn finishes (a fresh stream doesn't replay `tool.requested`); the approval card still shows. Unchanged from 3.3. |
 
+## Accepted by design (external tools spec)
+
+| Item | Notes |
+|---|---|
+| Credentialed integrations live in the gateway | The GitHub token sits next to the OpenRouter keys, and the gateway makes fixed, typed calls to `api.github.com`. A separate credentials container (`toolhost`) was considered and dropped: it would only protect the token from a compromised gateway, which already holds more valuable keys. Fix: split them out into their own container when several credentialed integrations (Jira, Slack, email…) start crowding the gateway, or when one needs more than typed JSON calls. |
+| Sandboxed code can send its agent's workspace to the internet | Sandbox egress is open (private and LAN addresses blocked). Mitigated by gateway-enforced approval for every `sandbox_run` and one workspace per sandbox. Fix: an egress allow-list per agent if workspaces start holding sensitive data. |
+| The egress proxy runs inside the gateway | Sandbox traffic (package restores, downloads) shares the process that streams chats, and a proxy bug would sit next to the keys. Kept small: a raw connection handler, TLS tunnels are never parsed, plain HTTP is one rewritten request per connection, with per-sandbox limits. Fix: move `EgressConnectionHandler` into its own container if heavy builds make chat slow, or if the proxy needs to grow (caching, TLS inspection, other protocols). |
+
 ## Code-level debt
 
 | # | Item | Severity | Why accepted | Fix when / how |

@@ -10,9 +10,11 @@ network-isolated workloads that hold no provider keys and reach the world only v
   [3.2](../docs/sharpclaw-3.2-implementation-spec.md) →
   [pre-3.3 foundations](../docs/sharpclaw-pre-3.3-foundations-spec.md) →
   [3.3 (web UI)](../docs/sharpclaw-3.3-implementation-spec.md) →
-  [3.3.1 (tabbed UI redesign)](../docs/sharpclaw-3.3.1-ui-redesign-spec.md). Build only what they describe;
+  [3.3.1 (tabbed UI redesign)](../docs/sharpclaw-3.3.1-ui-redesign-spec.md) →
+  [external tools](../docs/sharpclaw-external-tools-spec.md) (accepted, being built in task order). Build only what they describe;
   anything still in an "Out of scope" list (agent-to-agent, retries, non-streaming completions,
-  Postgres, Docker socket access, network or code-execution tools, stop/cancel turn, message
+  Postgres, Docker socket access, network or code-execution tools other than those in the external
+  tools spec, stop/cancel turn, message
   editing, attachments, thread deletion, search, multi-user features, push/PWA, TLS, frontend
   telemetry…) must not be added. If the spec is ambiguous, ask rather than guess.
 - Setup, configuration and CLI usage: [README.md](../README.md). Web UI: [docs/ui.md](../docs/ui.md).
@@ -105,8 +107,10 @@ to rewrite `contracts/openapi/sharpclaw-client.v1.json` and `contracts/events/`,
   snake_case names. Schema changes need a new EF migration (`dotnet ef migrations add <Name>
   --project src/SharpClaw.Gateway --output-dir Data/Migrations`); `llm_calls` is append-only.
 - **Agent tools:** every tool call goes through the agent's `ToolDispatcher` (risk → approval →
-  execute → report). **Never add a tool that executes code or shell commands**, and never read
-  agent policy from the writable workspace. See the 3.2 spec.
+  execute → report). **Never add a tool that executes code or shell commands inside the agent
+  container.** Code execution exists only as `sandbox_run` in the per-agent sandbox, reached through
+  the gateway (external tools spec). Never read agent policy from the writable workspace. See the
+  3.2 spec.
 - **Errors:** always return the single shape via `ApiResults.*` (`{ "error": { code, message } }`).
   Foreign/unowned ids return `404`, not `403`.
 - **JSON:** use `SharpClawJson.Options` (camelCase, string enums).

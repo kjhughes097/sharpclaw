@@ -3,7 +3,8 @@
 This page describes the system **as it is now**. It is the first thing to read. The phase specs
 ([3.1](sharpclaw-3.1-implementation-spec.md) → [3.2](sharpclaw-3.2-implementation-spec.md) →
 [pre-3.3 foundations](sharpclaw-pre-3.3-foundations-spec.md) → [3.3](sharpclaw-3.3-implementation-spec.md) →
-[3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md))
+[3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md)
+and the accepted, not yet built [external tools spec](sharpclaw-external-tools-spec.md))
 record *why* and *when* each behaviour was decided; they remain the source of truth for detailed
 behaviour, with later specs winning. Keep this page in step with the code when structure changes.
 
