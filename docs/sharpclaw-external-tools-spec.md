@@ -19,14 +19,18 @@ configuration, single dispatch path) still applies.
 
 ### 0.1 Decisions already made
 
-- **Topology:** two new kinds of container, not one. **`toolhost`** holds credentials and never
-  runs or parses untrusted code. One **`sandbox-<agent>`** per agent runs code and parses untrusted
-  input and holds no secrets. A third small container, **`egress`**, is the only route from either
-  to the internet. Credentials and code execution MUST NOT share a container.
-- **Placement rule:** a tool that needs a credential runs in the gateway or `toolhost`. A tool that
-  needs no credential runs in the agent's sandbox.
-- **Web search** runs in the **gateway** through OpenRouter's web plugin, because the OpenRouter key
-  already lives there. It is not moved to `toolhost`.
+- **Topology:** one **`sandbox-<agent>`** per agent runs code and parses untrusted input, and holds
+  no secrets. One small **`egress`** container is the sandboxes' only route to the internet.
+  Credentials and code execution MUST NOT share a container.
+- **Placement rule:** a tool that needs a credential runs in the **gateway**, as fixed, typed calls
+  to a fixed host. That is how the gateway already uses OpenRouter, and it is already where the
+  secrets live. A tool that runs or parses untrusted input runs in the agent's sandbox.
+- **No separate credentials container.** A `toolhost` for credentialed APIs was considered and
+  dropped. It would protect the GitHub token from a compromised gateway, which already holds more
+  valuable keys, at the cost of an extra container, network, secret and hop. Revisit when there
+  are many credentialed integrations (see [tech-debt](tech-debt.md)).
+- **Web search** runs in the gateway through OpenRouter's web plugin, and **GitHub** runs in the
+  gateway with a fine-grained token.
 - **Sandbox egress while running code:** open internet, with private, loopback, link-local and LAN
   addresses blocked by the egress proxy.
 - **`git clone`:** public repositories only, over HTTPS, in this phase.
@@ -59,8 +63,7 @@ can do:
 
 | Asset | Where it lives | Protection |
 |---|---|---|
-| OpenRouter keys, admin key, DB | Gateway | No untrusted code or parsing in the gateway. Nothing new can reach it except through authenticated listeners. |
-| GitHub token | `toolhost` | `toolhost` runs only our C#, parses only GitHub JSON, accepts requests only from the gateway, mounts no workspace, and shares no network with any sandbox. |
+| OpenRouter keys, GitHub token, admin key, DB | Gateway | No untrusted code and no rendering or conversion of untrusted content in the gateway; it only parses provider and GitHub JSON into typed DTOs. Each credential is used only by its own `HttpClient` with a fixed host. Nothing new can reach the gateway except through authenticated listeners. |
 | Other agents' workspaces | Host bind mounts | Each sandbox mounts only its own agent's workspace and sits on its own network. |
 | Home LAN, Docker networks, cloud metadata | Network | No container except `egress` has a route out. `egress` blocks private and reserved address ranges after DNS resolution. |
 | Host | Docker | No Docker socket, `cap_drop: ALL`, `no-new-privileges`, non-root, read-only root filesystem, resource limits. |
@@ -77,36 +80,30 @@ flowchart LR
   subgraph internal["internal network (no egress)"]
     agent["agent-&lt;name&gt;"]
   end
-  subgraph thnet["toolhost-net (no egress)"]
-    toolhost["toolhost<br/>GitHub token"]
-  end
   subgraph sbxnet["sbx-&lt;name&gt; (no egress), one per agent"]
     sandbox["sandbox-&lt;name&gt;<br/>/workspace (rw), /cache"]
   end
-  gateway["gateway<br/>OpenRouter keys, DB"]
+  gateway["gateway<br/>OpenRouter keys, GitHub token, DB"]
   egress["egress proxy<br/>no secrets"]
 
   agent -- "agent token" --> gateway
-  gateway -- "service secret" --> toolhost
   gateway -- "service secret" --> sandbox
-  toolhost -- "HTTP(S) proxy" --> egress
   sandbox -- "HTTP(S) proxy" --> egress
   egress --> internet["public internet"]
   gateway --> openrouter["OpenRouter"]
+  gateway --> github["api.github.com"]
 ```
 
-- **Networks, one per service so nothing can move sideways.** `internal` is unchanged: gateway and
+- **Networks, one per sandbox so nothing can move sideways.** `internal` is unchanged: gateway and
   agents. Each sandbox gets its own `sbx-<name>` network (`internal: true`) holding only the gateway,
-  that sandbox and `egress`. `toolhost` gets `toolhost-net` (`internal: true`) holding only the
-  gateway, `toolhost` and `egress`. Only `egress` and the gateway are on `external`. So a sandbox can
-  reach neither `toolhost` nor another sandbox, and **agents are never on any of these networks**.
+  that sandbox and `egress`. Only `egress` and the gateway are on `external`. So a sandbox can't
+  reach another sandbox, and **agents are never on any of these networks**.
 - **Gateway reachability.** The gateway's listeners are reachable from each `sbx-<name>` network
   (Kestrel binds every interface). That is accepted: both listeners require credentials the sandbox
   doesn't have, and login is rate-limited. `verify-isolation.sh` checks it.
-- **Services.** `toolhost` and each sandbox listen on one port and accept only requests carrying
-  their service secret (`TOOLHOST_SECRET`, `SANDBOX_<NAME>_SECRET` in `.env`), compared in constant
-  time.
-- **Hardening (all three):** read-only root, `tmpfs` for `/tmp`, `cap_drop: [ALL]`,
+- **Services.** Each sandbox listens on one port and accepts only requests carrying its service
+  secret (`SANDBOX_<NAME>_SECRET` in `.env`), compared in constant time.
+- **Hardening (sandboxes and `egress`):** read-only root, `tmpfs` for `/tmp`, `cap_drop: [ALL]`,
   `no-new-privileges`, non-root user, `restart: unless-stopped`. Sandboxes add `pids_limit`,
   `mem_limit` and `cpus` (Q6).
 
@@ -124,7 +121,7 @@ required, an `approvalId`.
    already used, and whose stored **arguments hash** (SHA-256 of the canonical JSON arguments)
    matches this request. The gateway marks it used in the same transaction. Otherwise `403
    approval_required`.
-4. Route the call: web search → gateway, GitHub → `toolhost`, everything else → the agent's own
+4. Route the call: web search and GitHub → handled in the gateway, everything else → the agent's own
    sandbox. **The sandbox is chosen from the agent's identity, never from the request.**
 5. Record it in a new append-only `broker_calls` table (agent, tool, target host, status, bytes,
    duration, approval id) and in the existing metrics, with no content.
@@ -142,7 +139,7 @@ replacement for the dispatcher.
 ## 5. Egress proxy (`egress`)
 
 A small C# forward proxy (Q7) supporting `CONNECT host:443` and plain HTTP `GET`/`POST` on port 80.
-`toolhost` and the sandboxes get `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY=` set to it, and have no
+The sandboxes get `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY=` set to it, and have no
 other route out, so tools that ignore the proxy simply fail.
 
 - Resolve the host itself. Reject if **any** resolved address is loopback, private (RFC 1918),
@@ -178,8 +175,8 @@ other route out, so tools that ignore the proxy simply fail.
 | `extract_text` | sandbox | `path` (`.html`, `.htm`, `.pdf`), `to` | `low`; sensitive `to` `Uncertain` | no | no (writes a file) |
 | `git_clone` | sandbox | `url` (public `https://`), `path` | `medium` | no | no |
 | `sandbox_run` | sandbox | `command` (string), `cwd`, `timeoutSeconds` | `high` | **yes** | **yes** |
-| `github_read` | toolhost | `operation`, `owner`, `repo`, `number`… | `low` | no | **yes** |
-| `github_write` | toolhost | `operation`, `owner`, `repo`, `number`, `body`… | `high` | **yes** | no |
+| `github_read` | gateway | `operation`, `owner`, `repo`, `number`… | `low` | no | **yes** |
+| `github_write` | gateway | `operation`, `owner`, `repo`, `number`, `body`… | `high` | **yes** | no |
 
 Summaries follow the existing rule (paths, hosts, sizes and flags only; never queries, bodies or
 commands), except for the approval detail in Q1. Examples: `fetch example.com (markdown)`,
@@ -233,13 +230,17 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 
 ### 7.6 `github_read` and `github_write`
 
-- `toolhost` holds one fine-grained GitHub token (`GITHUB_TOKEN` in `.env`), scoped by the operator
-  to the repositories it should touch. It sends requests only to `api.github.com`, through `egress`.
+- The gateway holds one fine-grained GitHub token (`GITHUB_TOKEN` in `.env`), scoped by the
+  operator to the repositories it should touch. It is used only by a dedicated named `HttpClient`
+  whose base address is fixed to `https://api.github.com`, with redirects disabled so the token
+  can't follow a redirect to another host. The gateway never fetches arbitrary URLs with it.
 - `operation` is a fixed enum per tool (e.g. `get_issue`, `list_issues`, `get_pull`, `get_pull_diff`,
   `list_comments`, `get_file`. For writes: `comment`, `create_issue`, `add_labels`,
   `remove_labels`). There is no generic "call any URL" operation.
-- Optional operator allow-list of `owner/repo`; anything else → `403 repo_not_allowed` from the
-  gateway before the call reaches `toolhost`.
+- Optional operator allow-list of `owner/repo`; anything else → `403 repo_not_allowed` before any
+  request is sent.
+- GitHub responses are parsed into typed DTOs with `System.Text.Json`. The gateway never renders,
+  converts or executes them.
 - Results are reduced to the fields the model needs (titles, bodies, authors, state, diff text)
   and capped at 64 KB.
 
@@ -256,11 +257,11 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 
 - Agent: new tool names in `agent.json`, as today. Unknown names still fail startup.
 - Gateway: `ToolBroker:Agents:<name>:Tools`, `ToolBroker:AlwaysApprove`, `ToolBroker:SandboxUrl`
-  per agent, `ToolBroker:ToolhostUrl`, `ToolBroker:FetchAllowHosts`, `ToolBroker:GitHubRepos`,
-  `WebSearch:Model`. All validated at startup like every other options class.
-- Secrets: `TOOLHOST_SECRET`, `SANDBOX_<NAME>_SECRET`, `GITHUB_TOKEN`, in `.env` only.
-- Nothing is enabled by default. A stack without `toolhost` or sandboxes still runs, and broker
-  tools return `503 tool_unavailable`.
+  per agent, `ToolBroker:FetchAllowHosts`, `GitHub:Repos`, `WebSearch:Model`. All validated at
+  startup like every other options class.
+- Secrets: `SANDBOX_<NAME>_SECRET`, `GITHUB_TOKEN`, in `.env` only.
+- Nothing is enabled by default. A stack without sandboxes or a GitHub token still runs, and the
+  affected broker tools return `503 tool_unavailable`.
 
 ## 10. Tests
 
@@ -272,11 +273,13 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
   rules, git invocation flags, size cap.
 - **Agent tools:** schema, `Assess`, `Summarize` (no free text), taint, approval flow with args
   hash.
-- **`verify-isolation.sh`:** agents can't reach `toolhost`, the sandboxes or `egress`. A sandbox
-  can't reach `toolhost` or another sandbox, can't reach the internet except through `egress`, gets
+- **GitHub client:** fixed base address, redirects not followed, token never sent to another host,
+  only enum operations, repo allow-list.
+- **`verify-isolation.sh`:** agents can't reach the sandboxes or `egress`. A sandbox can't reach
+  another sandbox, can't reach the internet except through `egress`, gets
   `401` from both gateway listeners without credentials, and can't reach the LAN. `egress` refuses
   private targets. Each sandbox mounts only its own workspace.
-- **Integration:** `GatewayFixture` with fake `toolhost` and sandbox handlers. `FakeProvider`
+- **Integration:** `GatewayFixture` with fake GitHub and sandbox HTTP handlers. `FakeProvider`
   scripts for `web_search` annotations.
 
 ## 11. Task order
@@ -292,7 +295,7 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 | 7 | `extract_text` |
 | 8 | `git_clone` |
 | 9 | `sandbox_run` |
-| 10 | `toolhost` and `github_read` |
+| 10 | `github_read` (gateway) |
 | 11 | `github_write` |
 | 12 | Docs: architecture, README tool table, ui.md (approval detail for commands), dashboard panels |
 
