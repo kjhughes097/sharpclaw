@@ -108,6 +108,25 @@ public class BrokerAgentToolsTests : IDisposable
         Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.WebSearch].Assess(JsonDocument.Parse(args).RootElement));
 
     [Fact]
+    public void Extract_text_is_low_writes_a_file_and_is_uncertain_for_sensitive_output()
+    {
+        var tool = _tools[BrokerTools.ExtractText];
+
+        Assert.Equal(RiskLevel.Low, Assert.IsType<ToolAssessment.Scored>(tool.Assess(A(new { path = "a.pdf", to = "a.txt" }))).Level);
+        Assert.IsType<ToolAssessment.Uncertain>(tool.Assess(A(new { path = "a.html", to = "run.sh" })));
+        Assert.Equal("extract a.pdf → a.txt", tool.Summarize(A(new { path = "a.pdf", to = "a.txt" })));
+        Assert.False(tool.ReturnsUntrustedContent);
+    }
+
+    [Theory]
+    [InlineData("a.docx", "a.txt")]
+    [InlineData("../a.pdf", "a.txt")]
+    [InlineData("a.pdf", "/tmp/a.txt")]
+    [InlineData("a.pdf", "a.pdf")]
+    public void Extract_text_blocks_bad_paths_and_types(string path, string to) =>
+        Assert.IsType<ToolAssessment.Blocked>(_tools[BrokerTools.ExtractText].Assess(A(new { path, to })));
+
+    [Fact]
     public void Always_approve_comes_from_the_gateway_policy()
     {
         var gw = new RecordingGateway();

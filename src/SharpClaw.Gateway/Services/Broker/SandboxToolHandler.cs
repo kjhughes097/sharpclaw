@@ -17,7 +17,7 @@ public sealed class SandboxToolHandler(IHttpClientFactory httpFactory, IOptions<
     public const string HttpClientName = "sandbox";
 
     /// <summary>The sandbox tools served so far; each later task adds its own.</summary>
-    public IReadOnlyCollection<string> Tools { get; } = [BrokerTools.HttpFetch, BrokerTools.DownloadToWorkspace];
+    public IReadOnlyCollection<string> Tools { get; } = [BrokerTools.HttpFetch, BrokerTools.DownloadToWorkspace, BrokerTools.ExtractText];
 
     public async Task<BrokerResult> InvokeAsync(BrokerInvocation call, CancellationToken ct)
     {
@@ -80,7 +80,7 @@ public sealed class SandboxToolHandler(IHttpClientFactory httpFactory, IOptions<
     /// <summary>A little longer than the runner's own limit for the operation, so its timeout answers first.</summary>
     private static TimeSpan TimeoutFor(BrokerInvocation call) => call.Tool switch
     {
-        BrokerTools.HttpFetch => TimeSpan.FromSeconds(90),
+        BrokerTools.HttpFetch or BrokerTools.ExtractText => TimeSpan.FromSeconds(90),
         _ => TimeSpan.FromMinutes(11),
     };
 }

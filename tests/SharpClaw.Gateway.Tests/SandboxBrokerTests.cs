@@ -51,7 +51,7 @@ public class SandboxBrokerTests : IAsyncLifetime
 
     private Dictionary<string, string?> SandboxConfig(string secret = RunnerSecret)
     {
-        var config = Config("assistant", BrokerTools.HttpFetch, BrokerTools.DownloadToWorkspace);
+        var config = Config("assistant", BrokerTools.HttpFetch, BrokerTools.DownloadToWorkspace, BrokerTools.ExtractText);
         config["ToolBroker:Agents:assistant:SandboxUrl"] = $"http://127.0.0.1:{_runnerPort}";
         config["ToolBroker:Agents:assistant:SandboxSecret"] = secret;
         return config;
@@ -87,6 +87,19 @@ public class SandboxBrokerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Extract_text_writes_the_text_into_the_workspace()
+    {
+        await using var fx = await GatewayAsync(SandboxConfig());
+        var t = await fx.ClaimedTurnAsync();
+        File.WriteAllText(Path.Combine(_workspace, "page.html"), "<h2>Section</h2>");
+
+        var resp = await t.InvokeAsync(BrokerTools.ExtractText, new { path = "page.html", to = "page.md" });
+
+        Assert.True((await resp.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("ok").GetBoolean());
+        Assert.Contains("## Section", File.ReadAllText(Path.Combine(_workspace, "page.md")));
+    }
+
+    [Fact]
     public async Task Without_a_sandbox_secret_the_tool_is_unavailable()
     {
         var config = SandboxConfig();
@@ -116,7 +129,7 @@ public class SandboxBrokerTests : IAsyncLifetime
     public async Task The_policy_endpoint_reports_the_operators_settings_for_the_calling_agent()
     {
         var config = SandboxConfig();
-        config["ToolBroker:Agents:assistant:Tools:2"] = BrokerTools.SandboxRun;
+        config["ToolBroker:Agents:assistant:Tools:3"] = BrokerTools.SandboxRun;
         config["ToolBroker:FetchAllowHosts:0"] = "docs.github.com";
         await using var fx = await GatewayAsync(config);
         var (_, token) = await fx.CreateAgentAsync("assistant");
@@ -127,7 +140,7 @@ public class SandboxBrokerTests : IAsyncLifetime
         using var o = fx.AgentClient(other);
         var none = await o.GetFromJsonAsync<AgentToolPolicyResponse>("/agent/tools", SharpClawJson.Options);
 
-        Assert.Equal(new[] { BrokerTools.HttpFetch, BrokerTools.DownloadToWorkspace, BrokerTools.SandboxRun }, policy!.Tools);
+        Assert.Equal(new[] { BrokerTools.HttpFetch, BrokerTools.DownloadToWorkspace, BrokerTools.ExtractText, BrokerTools.SandboxRun }, policy!.Tools);
         Assert.Equal(new[] { BrokerTools.SandboxRun }, policy.AlwaysApprove);
         Assert.Equal(new[] { "docs.github.com" }, policy.FetchAllowHosts);
         Assert.Empty(none!.Tools);
