@@ -19,10 +19,13 @@ export function Card({
   return (
     <section
       aria-labelledby={titleId}
-      className={`flex min-w-0 flex-col rounded-md border border-border bg-surface p-2.5 ${className}`}
+      className={`flex min-w-0 flex-col rounded-md border border-border bg-surface p-2.5 lcars:rounded-l-2xl lcars:rounded-r-none lcars:border-0 lcars:border-l-8 lcars:border-lcars-violet ${className}`}
     >
       <div className="mb-1 flex items-baseline justify-between gap-2">
-        <h2 id={titleId} className="text-sm font-semibold">
+        <h2
+          id={titleId}
+          className="text-sm font-semibold lcars:text-base lcars:font-normal lcars:text-accent"
+        >
           {title}
         </h2>
         {caption && <span className="text-xs text-muted">{caption}</span>}

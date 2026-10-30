@@ -7,7 +7,7 @@ import { useUsage } from '../../api/hooks';
 import { keys } from '../../api/queryKeys';
 import type { AgentDto } from '../../api/types';
 import { useToast } from '../../app/toast';
-import { CONNECTION_DOT } from '../../components/AppShell';
+import { CONNECTION_DOT } from '../../components/ShellParts';
 import {
   Badge,
   Button,

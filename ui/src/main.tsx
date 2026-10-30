@@ -3,12 +3,11 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { AppProviders, AppRoutes, createQueryClient } from './App';
 import { createServices } from './app/services';
-import { getTheme } from './lib/prefs';
-import { applyTheme } from './lib/theme';
+import { initTheme } from './lib/theme';
 import './styles/index.css';
 
-// Before the first render, so a light-theme user doesn't see a dark flash.
-applyTheme(getTheme());
+// Before the first render, so a light- or LCARS-theme user doesn't see a dark flash.
+initTheme();
 
 const queryClient = createQueryClient();
 const services = createServices();

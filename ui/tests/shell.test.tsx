@@ -3,6 +3,8 @@ import { axe } from 'jest-axe';
 import { http, HttpResponse } from 'msw';
 import { describe, expect, it } from 'vitest';
 import { splitAgentTabs, tabLabel } from '../src/components/TabBar';
+import { getTheme } from '../src/lib/prefs';
+import { chooseTheme, initTheme } from '../src/lib/theme';
 import { fixtures, server } from './msw';
 import { renderApp } from './utils';
 
@@ -96,16 +98,57 @@ describe('header', () => {
     expect(await axe(container)).toHaveNoViolations();
   });
 
-  it('is dark by default and switches to a remembered light theme from the user menu', async () => {
+  it('is the default theme unless another is picked, and remembers light and LCARS', async () => {
     const { user } = renderApp('/overview');
     expect(document.documentElement.dataset.theme).toBeUndefined();
-    await user.click(await screen.findByRole('button', { name: 'Account menu (kevin)' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Light theme' }));
+    // LCARS swaps the whole shell, so the menu button is looked up afresh each time.
+    const openMenu = async () =>
+      user.click(await screen.findByRole('button', { name: 'Account menu (kevin)' }));
+    await openMenu();
+    expect(await screen.findByRole('menuitemradio', { name: /Default/ })).toBeChecked();
+
+    await user.click(screen.getByRole('menuitemradio', { name: /Light/ }));
     expect(document.documentElement.dataset.theme).toBe('light');
     expect(localStorage.getItem('sharpclaw.theme')).toBe('light');
-    await user.click(screen.getByRole('button', { name: 'Account menu (kevin)' }));
-    await user.click(await screen.findByRole('menuitem', { name: 'Dark theme' }));
+
+    await openMenu();
+    await user.click(await screen.findByRole('menuitemradio', { name: /LCARS/ }));
+    expect(document.documentElement.dataset.theme).toBe('lcars');
+    expect(localStorage.getItem('sharpclaw.theme')).toBe('lcars');
+    expect(await screen.findByText('SharpClaw / Overview')).toBeInTheDocument();
+
+    await openMenu();
+    expect(await screen.findByRole('menuitemradio', { name: /LCARS/ })).toBeChecked();
+    await user.click(screen.getByRole('menuitemradio', { name: /Default/ }));
     expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(localStorage.getItem('sharpclaw.theme')).toBe('dark');
+    expect(await screen.findByText('SharpClaw 3')).toBeInTheDocument();
+    localStorage.removeItem('sharpclaw.theme');
+  });
+
+  it('renders the LCARS frame with the same landmarks and controls, accessibly', async () => {
+    localStorage.setItem('sharpclaw.theme', 'lcars');
+    initTheme();
+    try {
+      const { container, user } = renderApp('/agents/ade');
+      // The banner names the current section; the tabs, main landmark and menu are all there.
+      expect(await screen.findByText('SharpClaw / Ade')).toBeInTheDocument();
+      expect(screen.queryByText('SharpClaw 3')).not.toBeInTheDocument();
+      expect(screen.getByRole('navigation', { name: 'Main' })).toBeInTheDocument();
+      expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
+      expect(await screen.findByText('Fake provider')).toBeInTheDocument();
+      expect(await axe(container)).toHaveNoViolations();
+      await user.click(screen.getByRole('button', { name: 'Account menu (kevin)' }));
+      expect(await screen.findByRole('menuitemradio', { name: /LCARS/ })).toBeChecked();
+    } finally {
+      chooseTheme('dark');
+      localStorage.removeItem('sharpclaw.theme');
+    }
+  });
+
+  it('falls back to the default theme for an unknown stored value', () => {
+    localStorage.setItem('sharpclaw.theme', 'neon');
+    expect(getTheme()).toBe('dark');
     localStorage.removeItem('sharpclaw.theme');
   });
 

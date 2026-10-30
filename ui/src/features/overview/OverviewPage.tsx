@@ -3,7 +3,7 @@ import { useAgents, useUsage } from '../../api/hooks';
 import { errorMessage } from '../../api/errors';
 import type { AgentDto, UsageRange, UsageResponse } from '../../api/types';
 import { ErrorState, LoadingState } from '../../components/ui';
-import { CONNECTION_DOT, useConnectionLabel } from '../../components/AppShell';
+import { CONNECTION_DOT, useConnectionLabel } from '../../components/ShellParts';
 import { formatCount, formatMoney, serverNow, useServerNow } from '../../lib/time';
 import { ActivityList, useActivity } from './ActivityList';
 import { CostByModelCard, CreditsCard, RANGES, UsageCard, totalTokens } from './UsageCards';

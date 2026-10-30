@@ -5,7 +5,8 @@ type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
 const VARIANTS: Record<Variant, string> = {
   primary: 'bg-accent text-accent-fg hover:opacity-90',
-  secondary: 'border border-border bg-surface text-fg hover:bg-surface-2',
+  secondary:
+    'border border-border bg-surface text-fg hover:bg-surface-2 lcars:border-0 lcars:bg-lcars-violet lcars:text-accent-fg lcars:hover:bg-lcars-light',
   danger: 'bg-danger text-surface hover:opacity-90',
   ghost: 'text-fg hover:bg-surface-2',
 };
@@ -19,7 +20,7 @@ export const Button = forwardRef<
     <button
       ref={ref}
       type="button"
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium lcars:items-end lcars:justify-end lcars:rounded-full lcars:pb-1.5 lcars:pl-6 lcars:text-base lcars:font-normal lcars:uppercase disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       {...rest}

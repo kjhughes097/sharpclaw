@@ -7,10 +7,12 @@ import type { AgentDto } from '../api/types';
 /** Enabled agents shown inline as tabs; the rest (and every disabled agent) go into "More". */
 export const MAX_INLINE_AGENT_TABS = 6;
 
+// Under LCARS the tabs are colour pills with their label in the bottom-right corner; the colour
+// cycle and the lit (current) pill come from `.lcars-tab` in styles/index.css.
 const TAB =
-  'inline-flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm whitespace-nowrap outline-none focus-visible:outline-2';
+  'lcars-tab inline-flex min-h-11 shrink-0 items-center gap-1.5 border-b-2 px-3 text-sm whitespace-nowrap outline-none focus-visible:outline-2 lcars:min-w-24 lcars:items-end lcars:justify-end lcars:rounded-full lcars:border-b-0 lcars:px-4 lcars:pb-1 lcars:text-base lcars:text-accent-fg lcars:uppercase lcars:md:min-h-12 lcars:md:min-w-32';
 const ACTIVE = 'border-accent text-accent';
-const IDLE = 'border-transparent text-fg hover:text-accent';
+const IDLE = 'border-transparent text-fg hover:text-accent lcars:hover:text-accent-fg';
 
 const MENU_ITEM =
   'flex min-h-11 cursor-pointer items-center gap-2 rounded px-3 text-sm outline-none data-[highlighted]:bg-surface-2';
@@ -54,7 +56,7 @@ function MoreMenu({ agents, activeName }: { agents: AgentDto[]; activeName: stri
       <DropdownMenu.Portal>
         <DropdownMenu.Content
           align="start"
-          className="z-30 min-w-48 rounded-md border border-border bg-surface p-1 shadow-lg"
+          className="z-30 min-w-48 rounded-md border border-border bg-surface p-1 shadow-lg lcars:rounded-l-2xl lcars:rounded-r-none lcars:border-0 lcars:border-l-8 lcars:border-lcars-violet lcars:bg-bg"
         >
           {agents.map((agent) => (
             <DropdownMenu.Item key={agent.id} asChild className={MENU_ITEM}>
@@ -100,7 +102,7 @@ export function TabBar() {
     <nav
       ref={navRef}
       aria-label="Main"
-      className="flex items-stretch overflow-x-auto border-b border-border bg-surface px-2"
+      className="flex items-stretch overflow-x-auto border-b border-border bg-surface px-2 lcars:gap-1.5 lcars:border-b-0 lcars:bg-transparent lcars:px-0 lcars:md:flex-wrap lcars:md:justify-end lcars:md:gap-2"
     >
       <Tab to="/overview">Overview</Tab>
       <Tab to="/prompts">Prompts</Tab>
@@ -110,12 +112,12 @@ export function TabBar() {
         </Tab>
       ))}
       {more.length > 0 && <MoreMenu agents={more} activeName={activeAgent} />}
-      <span className="min-w-4 flex-1" aria-hidden="true" />
+      <span className="min-w-4 flex-1 lcars:md:min-w-0 lcars:md:flex-none" aria-hidden="true" />
       <Tab to="/approvals">
         Approvals
         {pending > 0 && (
           <span
-            className="rounded-full bg-danger px-1.5 text-xs text-surface"
+            className="rounded-full bg-danger px-1.5 text-xs text-surface lcars:bg-bg lcars:text-fg"
             aria-label={`${pending} pending`}
           >
             {pending}
