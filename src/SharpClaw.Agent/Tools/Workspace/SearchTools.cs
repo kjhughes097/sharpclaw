@@ -44,8 +44,8 @@ internal sealed class SearchTool(WorkspaceRoot root) : IAgentTool
 
     public async Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
     {
-        var (dir, _) = root.Resolve(Args.String(args, "path"), allowRoot: true);
-        if (!Directory.Exists(dir!.FullPath))
+        var dir = root.Require(Args.String(args, "path"), allowRoot: true);
+        if (!Directory.Exists(dir.FullPath))
             return ToolResult.Error("not_found", $"No directory at '{dir.Relative}'.");
         var query = Args.String(args, "query")!;
         var glob = Args.String(args, "glob");
@@ -63,11 +63,15 @@ internal sealed class SearchTool(WorkspaceRoot root) : IAgentTool
                 truncated = true;
                 break;
             }
-            if (file.Length > MaxFileBytes || WorkspaceFiles.IsBinaryFile(file.FullName))
+            if (file.Length > MaxFileBytes)
                 continue;
 
+            // Opened without following links: the walk skips them, but one could appear meanwhile.
             var relative = WorkspaceFiles.Relative(root.Path, file.FullName);
-            using var reader = new StreamReader(file.FullName, new UTF8Encoding(false));
+            await using var stream = NoFollow.OpenRead(root.Path, relative);
+            if (WorkspaceFiles.IsBinary(stream))
+                continue;
+            using var reader = new StreamReader(stream, new UTF8Encoding(false));
             var lineNumber = 0;
             while (await reader.ReadLineAsync(ct) is { } line)
             {
@@ -120,8 +124,8 @@ internal sealed class FindTool(WorkspaceRoot root) : IAgentTool
 
     public Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
     {
-        var (dir, _) = root.Resolve(Args.String(args, "path"), allowRoot: true);
-        if (!Directory.Exists(dir!.FullPath))
+        var dir = root.Require(Args.String(args, "path"), allowRoot: true);
+        if (!Directory.Exists(dir.FullPath))
             return Task.FromResult(ToolResult.Error("not_found", $"No directory at '{dir.Relative}'."));
         var pattern = Args.String(args, "pattern")!;
 

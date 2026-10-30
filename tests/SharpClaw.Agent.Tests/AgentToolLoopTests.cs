@@ -56,6 +56,11 @@ public class AgentToolLoopTests
         public Task<ApprovalDto> PollApprovalAsync(Guid approvalId, int waitSeconds, CancellationToken ct) => throw new NotSupportedException();
         public Task<string?> ClassifyRiskAsync(IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct) =>
             Task.FromResult<string?>(null);
+
+        public Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct) =>
+            throw new NotSupportedException();
+
+        public Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct) => throw new NotSupportedException();
     }
 
     private static ChatOutcome ToolCall(string id, string name, string args = "{}") =>

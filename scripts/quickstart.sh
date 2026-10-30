@@ -185,10 +185,13 @@ env_set PROVIDER_TYPE "$PROVIDER"
 if $FRESH; then
   for A in $(compose_agents); do
     contains "$A" "${NEW[@]}" && continue
-    TMP="$(mktemp)"
-    SVC="  agent-$A:" awk '$0 == ENVIRON["SVC"] { skip = 1; next }
-      skip && /^(  [^ ]|[^ \t])/ { skip = 0 } !skip' "$COMPOSE" >"$TMP"
-    cat "$TMP" >"$COMPOSE"; rm -f "$TMP"
+    # The agent's service, and its sandbox if the template gave it one.
+    for SVC in "  agent-$A:" "  sandbox-$A:"; do
+      TMP="$(mktemp)"
+      SVC="$SVC" awk '$0 == ENVIRON["SVC"] { skip = 1; next }
+        skip && /^(  [^ ]|[^ \t])/ { skip = 0 } !skip' "$COMPOSE" >"$TMP"
+      cat "$TMP" >"$COMPOSE"; rm -f "$TMP"
+    done
     env_del "$(token_var "$A")"
     # Only the template's untouched sample: never a workspace with files in it.
     [ -n "$(ls -A "$DEST/agents/$A/workspace" 2>/dev/null)" ] || rm -rf "${DEST:?}/agents/$A"

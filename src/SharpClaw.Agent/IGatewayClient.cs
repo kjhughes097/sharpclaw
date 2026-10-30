@@ -64,11 +64,29 @@ public interface IGatewayClient
     Task ReportToolCallAsync(ToolCallReportRequest report, CancellationToken ct);
 
     /// <summary>
+    /// Runs a broker tool in the gateway or the agent's sandbox (<c>POST /agent/tools/{tool}</c>).
+    /// Returns the tool result for the model; a gateway refusal becomes an error result.
+    /// </summary>
+    Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct);
+
+    /// <summary>The operator's broker settings for this agent (<c>GET /agent/tools</c>).</summary>
+    Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct);
+
+    /// <summary>
     /// Smart mode: asks the LLM to classify a call's risk (purpose <c>risk_assessment</c>, never
     /// shown to the user). Returns the reply text, or null if the call failed.
     /// </summary>
     Task<string?> ClassifyRiskAsync(
         IReadOnlyList<ChatMessage> messages, Guid correlationId, Guid threadId, CancellationToken ct);
+}
+
+/// <summary>
+/// The gateway refused to put a call in front of the human (e.g. a PR touching a blocked path):
+/// a hardline refusal with a code and message the model may see.
+/// </summary>
+public sealed class ApprovalRefusedException(string code, string message) : Exception(message)
+{
+    public string Code { get; } = code;
 }
 
 public interface ISoulProvider

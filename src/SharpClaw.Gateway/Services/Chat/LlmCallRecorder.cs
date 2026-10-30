@@ -40,13 +40,16 @@ public sealed class LlmCallRecorder
     private readonly Guid _correlationId;
     private readonly DateTime _startedAt;
     private readonly string _purpose;
+    private readonly string _model;
 
+    /// <param name="model">The model actually called; the agent's own model unless it's an auxiliary call (web search).</param>
     public LlmCallRecorder(
         SharpClawDbContext db, GatewayMetrics metrics, ILogger logger,
         AuthenticatedAgent agent, Guid threadId, Guid correlationId, DateTime startedAt,
-        string purpose = LlmCallPurpose.Chat)
+        string purpose = LlmCallPurpose.Chat, string? model = null)
     {
         _purpose = purpose;
+        _model = model ?? agent.Model;
         _db = db;
         _metrics = metrics;
         _logger = logger;
@@ -78,7 +81,7 @@ public sealed class LlmCallRecorder
             AgentId = _agent.Id,
             ThreadId = _threadId,
             CorrelationId = _correlationId,
-            Model = _agent.Model,
+            Model = _model,
             Status = outcome.Status,
             PromptTokens = outcome.PromptTokens,
             CompletionTokens = outcome.CompletionTokens,
@@ -114,21 +117,21 @@ public sealed class LlmCallRecorder
         if (outcome.Status == LlmCallStatus.Rejected)
         {
             // Rejected calls never reached the provider: count them, nothing else.
-            _metrics.RecordCall(_agent.Name, _agent.Model, outcome.Status);
+            _metrics.RecordCall(_agent.Name, _model, outcome.Status);
             return row;
         }
 
         _logger.LogInformation(
             "llm call finished: status={Status} purpose={Purpose} model={Model} prompt_tokens={PromptTokens} completion_tokens={CompletionTokens} cost_usd={CostUsd} usage_known={UsageKnown} latency_ms={LatencyMs} ttft_ms={TtftMs} error_code={ErrorCode}",
-            outcome.Status, _purpose, _agent.Model, outcome.PromptTokens, outcome.CompletionTokens, cost,
+            outcome.Status, _purpose, _model, outcome.PromptTokens, outcome.CompletionTokens, cost,
             outcome.UsageKnown, outcome.LatencyMs, outcome.TtftMs, outcome.ErrorCode);
 
-        _metrics.RecordCall(_agent.Name, _agent.Model, outcome.Status);
-        _metrics.RecordTokens(_agent.Name, _agent.Model, outcome.PromptTokens, outcome.CompletionTokens);
-        _metrics.RecordCost(_agent.Name, _agent.Model, cost);
-        _metrics.RecordDuration(_agent.Name, _agent.Model, outcome.LatencyMs / 1000.0);
+        _metrics.RecordCall(_agent.Name, _model, outcome.Status);
+        _metrics.RecordTokens(_agent.Name, _model, outcome.PromptTokens, outcome.CompletionTokens);
+        _metrics.RecordCost(_agent.Name, _model, cost);
+        _metrics.RecordDuration(_agent.Name, _model, outcome.LatencyMs / 1000.0);
         if (outcome.TtftMs is { } ttft)
-            _metrics.RecordTtft(_agent.Name, _agent.Model, ttft / 1000.0);
+            _metrics.RecordTtft(_agent.Name, _model, ttft / 1000.0);
 
         return row;
     }

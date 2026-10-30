@@ -24,4 +24,8 @@
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="SharpClaw.Gateway.Tests" />
+  </ItemGroup>
+
 </Project>

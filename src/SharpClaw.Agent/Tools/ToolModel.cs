@@ -92,6 +92,35 @@ public interface IAgentTool
     /// <summary>Short human-readable description for approval prompts. Never includes content.</summary>
     string Summarize(JsonElement args);
 
+    /// <summary>
+    /// What the smart-mode classifier sees instead of <see cref="Summarize"/>: structured, validated
+    /// fields only (e.g. tool, host, path), never model-supplied free text (external tools spec
+    /// section 8). Null means the summary is used, as for the workspace tools.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? ClassifierFields(JsonElement args) => null;
+
+    /// <summary>
+    /// True for tools the gateway always requires an approval for (<c>ToolBroker:AlwaysApprove</c>):
+    /// the dispatcher then asks the human whatever <c>allowedRiskLevel</c> or smart mode says.
+    /// </summary>
+    bool AlwaysRequiresApproval => false;
+
+    /// <summary>
+    /// True when an approval request should carry the call's arguments, so the gateway can check
+    /// them against the hash and show the human what will run (broker tools only; Q1).
+    /// </summary>
+    bool ApprovalNeedsArguments => false;
+
     /// <summary>Runs the call without any policy checks. Only <see cref="ToolDispatcher"/> may call this.</summary>
     Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct);
+
+    /// <summary>
+    /// As above, with the call's identity and approval, which broker tools pass on to the gateway.
+    /// Local tools don't need them. Only <see cref="ToolDispatcher"/> may call this.
+    /// </summary>
+    Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, ToolCallContext context, CancellationToken ct) =>
+        ExecuteUncheckedAsync(args, ct);
 }
+
+/// <summary>Who a tool call belongs to, and the approval the human gave for it (if one was needed).</summary>
+public sealed record ToolCallContext(Guid CorrelationId, Guid ThreadId, string ToolCallId, Guid? ApprovalId);

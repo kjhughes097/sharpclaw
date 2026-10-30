@@ -24,8 +24,12 @@ internal sealed class FakeTool : IAgentTool
     public Func<JsonElement, ToolResult> Execute { get; set; } = _ => ToolResult.Success(new { done = true });
     public int Executions { get; private set; }
 
+    public bool AlwaysRequiresApproval { get; init; }
+    public IReadOnlyDictionary<string, string>? Fields { get; init; }
+
     public ToolAssessment Assess(JsonElement args) => Assessment;
     public string Summarize(JsonElement args) => $"{Name} call";
+    public IReadOnlyDictionary<string, string>? ClassifierFields(JsonElement args) => Fields;
 
     public Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
     {
@@ -43,6 +47,7 @@ internal sealed class RecordingGateway : IGatewayClient
     public List<IReadOnlyList<ChatMessage>> Classifications { get; } = new();
     public string? ClassifierReply { get; set; }
     public bool FailApprovals { get; set; }
+    public Exception? ApprovalException { get; set; }
 
     public static ApprovalDto Approval(string status, string? decidedBy = null) =>
         new(Guid.NewGuid(), status, decidedBy, TestClock.Now.AddMinutes(5));
@@ -50,6 +55,8 @@ internal sealed class RecordingGateway : IGatewayClient
     public Task<ApprovalDto> RequestApprovalAsync(CreateApprovalRequest request, CancellationToken ct)
     {
         ApprovalRequests.Add(request);
+        if (ApprovalException is not null)
+            throw ApprovalException;
         if (FailApprovals)
             throw new HttpRequestException("gateway down");
         return Task.FromResult(ApprovalReplies.Dequeue());
@@ -70,6 +77,18 @@ internal sealed class RecordingGateway : IGatewayClient
         Classifications.Add(messages);
         return Task.FromResult(ClassifierReply);
     }
+
+    public List<(string Tool, InvokeToolRequest Request)> ToolInvocations { get; } = new();
+    public Func<string, InvokeToolRequest, ToolResult> ToolReply { get; set; } = (_, _) => ToolResult.Success(new { done = true });
+
+    public Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct)
+    {
+        ToolInvocations.Add((tool, request));
+        return Task.FromResult(ToolReply(tool, request));
+    }
+
+    public AgentToolPolicyResponse Policy { get; set; } = new(Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
+    public Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct) => Task.FromResult(Policy);
 
     public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => throw new NotSupportedException();
     public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct) => throw new NotSupportedException();

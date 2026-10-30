@@ -58,13 +58,13 @@ internal abstract class FileTransferTool(WorkspaceRoot root) : IAgentTool
 
     public async Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
     {
-        var (from, _) = Root.Resolve(Args.String(args, "from"));
-        var (to, _) = Root.Resolve(Args.String(args, "to"));
+        var from = Root.Require(Args.String(args, "from"));
+        var to = Root.Require(Args.String(args, "to"));
         TryOverwrite(args, out var overwrite);
 
-        if (!File.Exists(from!.FullPath))
+        if (!File.Exists(from.FullPath))
             return ToolResult.Error("not_found", $"No file at '{from.Relative}'.");
-        var overwritten = File.Exists(to!.FullPath);
+        var overwritten = File.Exists(to.FullPath);
         if (overwritten && !overwrite)
             return ToolResult.Error("exists", $"'{to.Relative}' already exists; pass overwrite: true to replace it.");
 
@@ -98,9 +98,9 @@ internal sealed class MoveTool(WorkspaceRoot root) : FileTransferTool(root)
     protected override Task<ToolResult> TransferAsync(
         WorkspaceRoot.Resolved from, WorkspaceRoot.Resolved to, bool overwritten, CancellationToken ct)
     {
-        // A rename within one filesystem is atomic.
-        Directory.CreateDirectory(Path.GetDirectoryName(to.FullPath)!);
-        File.Move(from.FullPath, to.FullPath, overwrite: overwritten);
+        // A rename within one filesystem is atomic; without overwrite it also refuses a destination
+        // that appeared since the existence check.
+        NoFollow.Move(Root.Path, from.Relative, to.Relative, overwrite: overwritten);
         return Task.FromResult(ToolResult.Success(new { from = from.Relative, to = to.Relative, overwritten }));
     }
 }
@@ -127,8 +127,8 @@ internal sealed class CopyTool(WorkspaceRoot root) : FileTransferTool(root)
         if (new FileInfo(from.FullPath).Length > WorkspaceTools.MaxWriteBytes)
             return ToolResult.Error("too_large", $"The file is larger than {WorkspaceTools.MaxWriteBytes / 1024} KB.");
 
-        var bytes = await File.ReadAllBytesAsync(from.FullPath, ct);
-        await WorkspaceFiles.WriteAtomicAsync(to.FullPath, bytes, ct);
+        var bytes = await NoFollow.ReadAllBytesAsync(Root.Path, from.Relative, ct);
+        await WorkspaceFiles.WriteAtomicAsync(Root, to, bytes, ct);
         return ToolResult.Success(new { from = from.Relative, to = to.Relative, bytes = bytes.Length, overwritten });
     }
 }

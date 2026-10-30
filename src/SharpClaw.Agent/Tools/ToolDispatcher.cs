@@ -105,7 +105,9 @@ public sealed class ToolDispatcher
             var (risk, reason) = assessment switch
             {
                 ToolAssessment.Scored s => (s.Level, s.Reason),
-                ToolAssessment.Uncertain u => await ClassifyAsync(tool.Name, summary, u.Reason, turn, ct),
+                // The human decides these anyway, so the classifier's answer couldn't change anything.
+                ToolAssessment.Uncertain u when tool.AlwaysRequiresApproval => (RiskLevel.High, $"{u.Reason} (unscored)"),
+                ToolAssessment.Uncertain u => await ClassifyAsync(tool, args, summary, u.Reason, turn, ct),
                 _ => (RiskLevel.High, "unscored"),
             };
             var tainted = turn.Tainted;
@@ -115,12 +117,12 @@ public sealed class ToolDispatcher
                 reason += "; untrusted content was read earlier in this turn";
             }
 
-            // 3. Above the allowed level, the human decides.
+            // 3. Above the allowed level, or for an always-approve tool, the human decides.
             var decision = ToolDecisions.Allowed;
             Guid? approvalId = null;
-            if (risk > _config.AllowedRiskLevel)
+            if (risk > _config.AllowedRiskLevel || tool.AlwaysRequiresApproval)
             {
-                var (approval, refusal) = await RequestApprovalAsync(call, tool, summary, risk, reason, turn, ct);
+                var (approval, refusal) = await RequestApprovalAsync(call, tool, args, summary, risk, reason, turn, ct);
                 approvalId = approval?.Id;
                 if (refusal is not null)
                     return refusal with { Risk = risk, Tainted = tainted, ApprovalId = approvalId };
@@ -132,7 +134,8 @@ public sealed class ToolDispatcher
             ToolResult result;
             try
             {
-                result = await tool.ExecuteUncheckedAsync(args, ct);
+                var context = new ToolCallContext(turn.CorrelationId, turn.ThreadId, call.Id, approvalId);
+                result = await tool.ExecuteUncheckedAsync(args, context, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -156,15 +159,18 @@ public sealed class ToolDispatcher
     /// when the call must not run; null refusal means approved. Fails closed on any error.
     /// </summary>
     private async Task<(ApprovalDto? Approval, Outcome? Refusal)> RequestApprovalAsync(
-        ToolCallRequest call, IAgentTool tool, string summary, RiskLevel risk, string reason,
+        ToolCallRequest call, IAgentTool tool, JsonElement args, string summary, RiskLevel risk, string reason,
         TurnContext turn, CancellationToken ct)
     {
         ApprovalDto approval;
         try
         {
+            // The args hash binds the approval to exactly these arguments; the gateway's broker
+            // recomputes it and refuses a call that doesn't match.
             approval = await _gateway.RequestApprovalAsync(new CreateApprovalRequest(
                 turn.CorrelationId, turn.ThreadId, call.Id, tool.Name,
-                Truncate(summary, 200), risk.ToWire(), Truncate(reason, 200)), ct);
+                Truncate(summary, 200), risk.ToWire(), Truncate(reason, 200), ToolArgsHash.Compute(args),
+                tool.ApprovalNeedsArguments ? args.Clone() : null), ct);
 
             while (approval.Status == ApprovalStatuses.Pending)
                 approval = await _gateway.PollApprovalAsync(approval.Id, ApprovalPollSeconds, ct);
@@ -172,6 +178,11 @@ public sealed class ToolDispatcher
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
+        }
+        catch (ApprovalRefusedException refused)
+        {
+            // The gateway's hardline rules (e.g. a PR touching a blocked path): never offered to the human.
+            return (null, Refused(refused.Code, refused.Message, ToolCallStatuses.Blocked, ToolDecisions.Blocked));
         }
         catch (Exception ex)
         {
@@ -197,7 +208,7 @@ public sealed class ToolDispatcher
 
     /// <summary>Smart mode: an auxiliary LLM call scores an uncertain call. Otherwise, or on failure, High.</summary>
     private async Task<(RiskLevel, string)> ClassifyAsync(
-        string toolName, string summary, string reason, TurnContext turn, CancellationToken ct)
+        IAgentTool tool, JsonElement args, string summary, string reason, TurnContext turn, CancellationToken ct)
     {
         if (!_config.SmartMode)
             return (RiskLevel.High, $"{reason} (unscored)");
@@ -205,11 +216,12 @@ public sealed class ToolDispatcher
         string? reply = null;
         try
         {
-            // Only the tool name and the content-free summary are sent, never file content.
+            // Only the tool name and either its structured fields or the content-free summary are
+            // sent, never file content or other model-supplied free text.
             reply = await _gateway.ClassifyRiskAsync(new[]
             {
                 new ChatMessage(Roles.System, ClassifierPrompt),
-                new ChatMessage(Roles.User, $"Tool: {toolName}\nCall: {summary}"),
+                new ChatMessage(Roles.User, ClassifierInput(tool, args, summary)),
             }, turn.CorrelationId, turn.ThreadId, ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -224,6 +236,15 @@ public sealed class ToolDispatcher
         return ParseClassification(reply) is { } level
             ? (level, $"{reason} (classified {level.ToWire()} by smart mode)")
             : (RiskLevel.High, $"{reason} (smart mode gave no usable answer)");
+    }
+
+    /// <summary>The classifier's view of a call. Field values are capped and JSON-encoded, so they read as data.</summary>
+    internal static string ClassifierInput(IAgentTool tool, JsonElement args, string summary)
+    {
+        if (tool.ClassifierFields(args) is not { } fields)
+            return $"Tool: {tool.Name}\nCall: {summary}";
+        var capped = fields.ToDictionary(f => f.Key, f => Truncate(f.Value, 200));
+        return $"Tool: {tool.Name}\nFields: {JsonSerializer.Serialize(capped, SharpClawJson.Options)}";
     }
 
     /// <summary>

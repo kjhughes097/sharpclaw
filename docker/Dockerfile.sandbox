@@ -1,0 +1,49 @@
+# Sandbox image (external tools spec section 6): the per-agent runner plus the toolchains that
+# sandboxed code may use (.NET SDK, Node LTS, Python 3, git, pandoc, poppler-utils). No secrets
+# baked in; runs as a non-root user with a read-only root filesystem (set by compose).
+
+# 1. The runner.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+COPY Directory.Build.props ./
+COPY src/SharpClaw.Contracts/ src/SharpClaw.Contracts/
+# The runner shares the agent's workspace path rules and no-follow I/O by source.
+COPY src/SharpClaw.Agent/Tools/Workspace/ src/SharpClaw.Agent/Tools/Workspace/
+COPY src/SharpClaw.Sandbox/ src/SharpClaw.Sandbox/
+RUN dotnet restore src/SharpClaw.Sandbox/SharpClaw.Sandbox.csproj
+RUN dotnet publish src/SharpClaw.Sandbox/SharpClaw.Sandbox.csproj -c Release -o /runner
+
+# 2. Node LTS, copied in (the distro's nodejs is older).
+FROM node:24-bookworm-slim AS node
+
+# 3. The sandbox: the .NET SDK image (Ubuntu, with git) plus the other toolchains.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS runtime
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends pandoc poppler-utils python3 python3-pip python3-venv \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+COPY --from=build /runner /opt/runner
+
+# /cache is the per-agent package cache volume (Q5); world-writable so the install's user id
+# (compose sets it) can use a fresh named volume.
+RUN mkdir -p /workspace && mkdir -m 1777 /cache
+
+# HOME lives on the /tmp tmpfs; caches on the volume. The Kestrel port is set in code.
+ENV HOME=/tmp/home \
+    DOTNET_CLI_HOME=/tmp/home \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    NUGET_PACKAGES=/cache/nuget \
+    npm_config_cache=/cache/npm \
+    PIP_CACHE_DIR=/cache/pip \
+    XDG_CACHE_HOME=/cache/xdg \
+    GIT_TERMINAL_PROMPT=0 \
+    ASPNETCORE_HTTP_PORTS=
+
+USER app
+WORKDIR /workspace
+EXPOSE 8090
+ENTRYPOINT ["dotnet", "/opt/runner/SharpClaw.Sandbox.dll"]

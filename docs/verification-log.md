@@ -180,3 +180,26 @@ Verified with the fake provider and unit tests (no secrets or external network):
   `tzdata`; a .NET program run as the `app` user in that image resolved `Europe/London` with
   `TimeZoneInfo.FindSystemTimeZoneById`, so `current_time` works in the container.
 - `docker/Dockerfile.agent` builds with the new tools.
+
+## External tools (2026-10-30)
+
+Verified with the **fake provider** on the dev stack (`sharpclaw-dev`, profile `sandboxes`,
+`sandbox-coder` enabled):
+
+- Automated tests: gateway 500, agent 267, sandbox 72, CLI 25; UI lint, typecheck, 197 Vitest
+  tests, `check:api` and build (Node 24).
+- Broker calls made by hand as the `coder` agent inside a claimed turn: `http_fetch
+  https://example.com` (HTTPS through the egress proxy's CONNECT tunnel, converted by pandoc),
+  `download_to_workspace` (file landed owned by the host user), `git_clone
+  https://github.com/octocat/Hello-World` (base commit recorded by the gateway), a clone from
+  bitbucket.org refused by the gateway (`host_not_allowed`), and `http_fetch` of
+  `169.254.169.254` refused by the proxy (`403`).
+- The runner's `/proc/1/environ` (which holds its service secret) is unreadable from code in the
+  sandbox (`PR_SET_DUMPABLE`).
+- `scripts/verify-isolation.sh`: **all checks passed**, including agents getting `407` from
+  `:8082`, `:8082` not published, `sandbox-coder` only on `sbx-coder` with no direct route out, the
+  proxy refusing metadata, LAN and gateway addresses, `401` from the client and agent listeners,
+  mounts limited to its workspace and cache, and a read-only root filesystem.
+
+Not yet verified live: `web_search` against OpenRouter, the GitHub tools against api.github.com
+(covered by a fake API), and a sandbox-to-sandbox check (the dev stack has one sandbox).

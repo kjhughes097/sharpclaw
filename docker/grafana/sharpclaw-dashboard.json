@@ -436,6 +436,90 @@
       ]
     },
     {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Broker calls by tool and status (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 69
+      },
+      "targets": [
+        {
+          "expr": "sum by (tool, status) (rate({__name__=\"sharpclaw.broker.calls\", agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "{{tool}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Broker call duration p95 by tool (s)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, tool) (rate({__name__=\"sharpclaw.broker.duration_bucket\", agent=~\"$agent\"}[5m])))",
+          "legendFormat": "{{tool}}"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Egress connections by type and status (rate/min)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 69
+      },
+      "targets": [
+        {
+          "expr": "sum by (type, status) (rate({__name__=\"sharpclaw.egress.connections\", agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "{{type}} {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Egress bytes by sandbox (rate)",
+      "datasource": "${metrics}",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 69
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (agent) (rate({__name__=\"sharpclaw.egress.bytes\", agent=~\"$agent\"}[5m]))",
+          "legendFormat": "{{agent}}"
+        }
+      ]
+    },
+    {
       "id": 11,
       "type": "logs",
       "title": "Gateway logs",
@@ -444,7 +528,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 77
       },
       "options": {
         "showTime": true,

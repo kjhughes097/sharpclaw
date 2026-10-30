@@ -51,6 +51,32 @@ describe('approvals', () => {
     );
   });
 
+  it('shows the gateway-rendered detail for a command, only for tools that have one', async () => {
+    let fetched = 0;
+    server.use(
+      http.get('*/api/approvals/:id', ({ params }) => {
+        fetched++;
+        return HttpResponse.json({
+          approval: fixtures.approval({
+            id: String(params.id),
+            toolName: 'sandbox_run',
+            detail: 'in repo/\n$ npm ci && npm test <script>x</script>',
+          }),
+        });
+      }),
+    );
+    renderWithProviders(
+      <>
+        <ApprovalCard approval={fixtures.approval({ id: 'run-1', toolName: 'sandbox_run', summary: 'run (24 chars) in repo/' })} />
+        <ApprovalCard approval={fixtures.approval({ id: 'del-1' })} />
+      </>,
+    );
+    const pre = await screen.findByLabelText('Approval details');
+    expect(pre).toHaveTextContent('$ npm ci && npm test <script>x</script>');
+    expect(pre.querySelector('script')).toBeNull();
+    expect(fetched).toBe(1);
+  });
+
   it('the highest risk needs a second confirmation', async () => {
     setServerTime('2026-10-25T12:00:00Z');
     const posted = decisions();

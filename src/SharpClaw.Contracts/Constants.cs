@@ -17,6 +17,12 @@ public static class ErrorCodes
     public const string CsrfFailed = "csrf_failed";
     public const string RateLimited = "rate_limited";
     public const string InternalError = "internal_error";
+
+    // ----- Tool broker (external tools spec) -----
+    public const string ApprovalRequired = "approval_required";
+    public const string ToolUnavailable = "tool_unavailable";
+    public const string ToolFailed = "tool_failed";
+    public const string InvalidArguments = "invalid_arguments";
 }
 
 /// <summary>Context-window defaults shared by the gateway and the agent (pre-3.3 spec section 6).</summary>
@@ -78,6 +84,9 @@ public static class LlmCallPurpose
 {
     public const string Chat = "chat";
     public const string RiskAssessment = "risk_assessment";
+
+    /// <summary>A <c>web_search</c> broker call, made by the gateway itself (external tools spec section 7.2).</summary>
+    public const string WebSearch = "web_search";
 }
 
 /// <summary>Tool-call risk levels, in increasing order (3.2 spec section 3).</summary>
