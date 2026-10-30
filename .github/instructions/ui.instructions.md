@@ -22,7 +22,7 @@ The gateway is the only trust boundary: the UI holds no secrets and talks only t
 - **Styling:** Tailwind with the semantic tokens in `src/styles/index.css`. Never hard-code colours
   (no hex/rgb or arbitrary `bg-[#…]`). Radix primitives for dialogs, menus, tabs and toasts.
 - **CSP is strict** (`style-src 'self'`, no inline scripts or styles, nothing from other origins).
-  Don't add web fonts, CDNs, `<style>` injection or libraries that inject styles. `react-remove-scroll`
+  Don't add web fonts (the LCARS theme's bundled, same-origin Antonio is the one exception), CDNs, `<style>` injection or libraries that inject styles. `react-remove-scroll`
   is aliased to `src/lib/removeScroll.tsx` for this reason.
 - **No secure context** (plain HTTP on the LAN): no `navigator.clipboard`, `crypto.randomUUID`,
   service workers or notifications. ESLint forbids them, plus `localStorage`/`sessionStorage`

@@ -25,12 +25,18 @@ bar (`components/AppShell.tsx`, `components/TabBar.tsx`). Every tab is a link:
   sets `data-theme="light"`/`"lcars"` on `<html>` (`lib/theme.ts`; Default removes it) and remembers
   it (`lib/prefs.ts`). Tokens live in `styles/index.css`; components use them (`bg-surface`,
   `text-assistant`, `fill-chart-in`…), never raw colours.
-- **LCARS:** mostly a token swap: a black field, orange accent, and peach/lavender/blue panels
-  (`bg-lcars-*`, only for LCARS). Shape changes use the `lcars:` Tailwind variant in markup, e.g.
-  `lcars:rounded-full lcars:uppercase`. It's used on the shell (the orange header and left
-  "elbow" frame on desktop, pill tabs), `Button`, `Card`, `Dialog` and the menus. Chrome uses a
-  condensed system font when one is installed (no web fonts); prose and form fields keep the
-  system UI font. Add `lcars:` classes to shared components rather than one-off pages.
+- **LCARS** (after [thelcars.com](https://www.thelcars.com/)'s classic template) is a different
+  frame as well as different colours: `AppShell` renders `components/LcarsShell.tsx` instead of its
+  own header. It has a left column of colour blocks that elbows into segmented bars around a top
+  panel (banner `SharpClaw / <section>`, status, user menu, tab pills) and the page. The theme
+  lives in a small store in `lib/theme.ts` (`useTheme`, `chooseTheme`) so the shell and the menu
+  agree. Colours are tokens plus an `lcars-*` palette for LCARS only; smaller shape changes in
+  shared components (`Button`, `Card`, `Dialog`, `TabBar`, menus) use the `lcars:` Tailwind variant.
+  Decorative parts (block codes, bars, the number cascade) are `aria-hidden`.
+- **LCARS font:** Antonio (OFL, `@fontsource/antonio`) is bundled by Vite and served from the
+  gateway, so `font-src 'self'` allows it and nothing comes from another origin. It downloads only
+  while LCARS is on. It's the one exception to "system fonts only"; don't add other fonts. Form
+  fields and code keep the system fonts.
 - **Density:** on desktop (`pointer: fine`, ≥ 768 px) the root font size is 14 px, and every
   rem-based size shrinks with it, as in the mockups. Touch screens keep 16 px and 44 px targets.
 - **Charts** (`features/overview/charts.tsx`) are plain SVG with sizes in attributes and colours from

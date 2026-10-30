@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useSyncExternalStore } from 'react';
 import { getTheme, setTheme, type Theme } from './prefs';
 
 /** Menu labels for each theme, in menu order. */
@@ -17,13 +17,32 @@ export function applyTheme(theme: Theme) {
   else document.documentElement.dataset.theme = theme;
 }
 
+// A tiny external store: the shell (which swaps layout for LCARS) and the user menu (which picks
+// the theme) must agree on the current theme.
+let current: Theme = 'dark';
+const listeners = new Set<() => void>();
+
+/** Reads the remembered theme and applies it. Call once before the first render (no flash). */
+export function initTheme() {
+  current = getTheme();
+  applyTheme(current);
+}
+
+/** Applies, remembers and broadcasts a theme. */
+export function chooseTheme(theme: Theme) {
+  setTheme(theme);
+  applyTheme(theme);
+  current = theme;
+  listeners.forEach((listener) => listener());
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
 /** The current theme and a setter that applies and remembers it. */
 export function useTheme() {
-  const [theme, setState] = useState<Theme>(getTheme);
-  const choose = (next: Theme) => {
-    setTheme(next);
-    applyTheme(next);
-    setState(next);
-  };
-  return { theme, choose };
+  const theme = useSyncExternalStore(subscribe, () => current);
+  return { theme, choose: chooseTheme };
 }

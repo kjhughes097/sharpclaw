@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@import '@fontsource/antonio/400.css';
+@import '@fontsource/antonio/700.css';
 
 /* `lcars:` utilities apply only under the LCARS theme (data-theme="lcars" on <html>). Components use
    it for the theme's shape changes (pills, elbows, uppercase); colours still come from tokens. */
@@ -53,36 +55,35 @@
   --sc-chart-out: #b7791f;
 }
 
-/* LCARS: black field, orange/peach/lavender/blue panels with black text, condensed uppercase
-   labels. The lcars-* palette colours are only meant for `lcars:` utilities. No web fonts (CSP):
-   the stack uses a condensed face when one is installed locally. */
+/* LCARS, after thelcars.com's classic template: a black field, violet text, and orange, blue,
+   violet, red and peach panels with black text. The lcars-* palette colours are only meant for
+   LCARS (`lcars:` utilities and LcarsShell). */
 :root[data-theme='lcars'] {
   color-scheme: dark;
   --sc-bg: #000000;
-  --sc-surface: #0b0b12;
-  --sc-surface-2: #1f1a2e;
-  --sc-text: #f7dcbc;
-  --sc-muted: #b6a9d0;
-  --sc-border: #4a3d66;
-  --sc-accent: #ff9900;
+  --sc-surface: #000000;
+  --sc-surface-2: #1c1628;
+  --sc-text: #baa4e5;
+  --sc-muted: #a08cc0;
+  --sc-border: #5a4a78;
+  --sc-accent: #eb943a;
   --sc-accent-fg: #000000;
   --sc-accent-soft: #3d2600;
-  --sc-danger: #ff6b6b;
+  --sc-danger: #cf4f4f;
   --sc-danger-soft: #3d1414;
-  --sc-warn: #ffcc66;
-  --sc-warn-soft: #3d3014;
+  --sc-warn: #edb378;
+  --sc-warn-soft: #3d2c14;
   --sc-ok: #99cc99;
   --sc-ok-soft: #16301c;
-  --sc-focus: #9999ff;
-  --sc-assistant: #99ccff;
-  --sc-chart-in: #9999ff;
-  --sc-chart-out: #ff9900;
-  --sc-lcars-peach: #ffcc99;
-  --sc-lcars-lavender: #cc99cc;
-  --sc-lcars-blue: #9999ff;
-  --sc-font-lcars:
-    Antonio, Oswald, 'Bebas Neue', 'Roboto Condensed', 'Ubuntu Condensed', 'Arial Narrow',
-    'Helvetica Neue Condensed', 'Liberation Sans Narrow', sans-serif-condensed, var(--font-sans);
+  --sc-focus: #fcc19f;
+  --sc-assistant: #fcc19f;
+  --sc-chart-in: #8899ff;
+  --sc-chart-out: #eb943a;
+  --sc-lcars-blue: #8899ff;
+  --sc-lcars-violet: #baa4e5;
+  --sc-lcars-peach: #ea9c72;
+  --sc-lcars-almond: #d29b7f;
+  --sc-lcars-light: #fcc19f;
 }
 
 @theme inline {
@@ -105,9 +106,11 @@
   --color-assistant: var(--sc-assistant);
   --color-chart-in: var(--sc-chart-in);
   --color-chart-out: var(--sc-chart-out);
-  --color-lcars-peach: var(--sc-lcars-peach);
-  --color-lcars-lavender: var(--sc-lcars-lavender);
   --color-lcars-blue: var(--sc-lcars-blue);
+  --color-lcars-violet: var(--sc-lcars-violet);
+  --color-lcars-peach: var(--sc-lcars-peach);
+  --color-lcars-almond: var(--sc-lcars-almond);
+  --color-lcars-light: var(--sc-lcars-light);
   --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 }
@@ -134,14 +137,74 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
-/* LCARS chrome is condensed; prose and form fields keep the readable system font. */
+/* LCARS type: Antonio (bundled from @fontsource and served same-origin, so the CSP's
+   font-src 'self' allows it; it only downloads while LCARS is on). Form fields and code keep the
+   system fonts for legibility. */
 :root[data-theme='lcars'] body {
-  font-family: var(--sc-font-lcars);
-  font-stretch: condensed;
+  font-family: Antonio, 'Arial Narrow', 'Avenir Next Condensed', sans-serif;
+  /* Without it, Chromium rounds Antonio's narrow advances at small sizes and gaps appear mid-word. */
+  text-rendering: geometricPrecision;
 }
-:root[data-theme='lcars'] :where(.markdown, textarea, input, select) {
+:root[data-theme='lcars'] :where(textarea, input, select) {
   font-family: var(--font-sans);
-  font-stretch: normal;
+}
+:root[data-theme='lcars'] :where(h1, h2, h3, th, label, legend) {
+  text-transform: uppercase;
+}
+:root[data-theme='lcars'] :where(h1) {
+  color: var(--sc-accent);
+  font-weight: 400;
+}
+/* Antonio is condensed, so LCARS uses a slightly larger root on desktop. */
+@media (min-width: 768px) and (pointer: fine) {
+  :root[data-theme='lcars'] {
+    font-size: 15px;
+  }
+}
+
+/* LcarsShell's proportions: side column width, outer and inner elbow radii, bar height. */
+.lcars-frame {
+  --lcars-side: 3rem;
+  --lcars-outer: 3.5rem;
+  --lcars-inner: 1.25rem;
+  --lcars-bar: 0.875rem;
+}
+@media (min-width: 768px) {
+  .lcars-frame {
+    --lcars-side: 9rem;
+    --lcars-outer: 6rem;
+    --lcars-inner: 2.5rem;
+    --lcars-bar: 1.5rem;
+  }
+}
+@media (min-width: 1280px) {
+  .lcars-frame {
+    --lcars-side: 12rem;
+    --lcars-outer: 8rem;
+    --lcars-inner: 3.5rem;
+    --lcars-bar: 1.75rem;
+  }
+}
+
+/* LCARS tab pills cycle through the panel colours; the current tab is "lit". */
+:root[data-theme='lcars'] .lcars-tab {
+  background: var(--sc-lcars-blue);
+}
+:root[data-theme='lcars'] a.lcars-tab:nth-of-type(4n + 2) {
+  background: var(--sc-lcars-violet);
+}
+:root[data-theme='lcars'] a.lcars-tab:nth-of-type(4n + 3) {
+  background: var(--sc-lcars-peach);
+}
+:root[data-theme='lcars'] a.lcars-tab:nth-of-type(4n + 4) {
+  background: var(--sc-danger);
+}
+:root[data-theme='lcars'] .lcars-tab[aria-current='page'] {
+  background: var(--sc-lcars-light);
+  font-weight: 700;
+}
+:root[data-theme='lcars'] .lcars-tab:hover {
+  filter: brightness(1.15);
 }
 
 :focus-visible {
