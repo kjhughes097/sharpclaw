@@ -39,7 +39,7 @@ public class SkillScriptTests : IDisposable
 
         var r = await Run($"python3 '{Script()}' data/sales.csv");
 
-        Assert.Equal(0, r.GetProperty("exitCode").GetInt32());
+        Assert.True(r.GetProperty("exitCode").GetInt32() == 0, r.GetProperty("stderr").GetString());
         var stdout = r.GetProperty("stdout").GetString()!;
         Assert.Contains("# Summary of data/sales.csv", stdout);
         Assert.Contains("- Rows: 3", stdout);
@@ -56,7 +56,7 @@ public class SkillScriptTests : IDisposable
     {
         var r = await Run($"python3 '{Script()}' missing.csv");
 
-        Assert.Equal(1, r.GetProperty("exitCode").GetInt32());
+        Assert.True(r.GetProperty("exitCode").GetInt32() == 1, r.GetProperty("stderr").GetString());
         Assert.Contains("no such file: missing.csv", r.GetProperty("stderr").GetString());
     }
 }
