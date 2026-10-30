@@ -20,8 +20,9 @@ configuration, single dispatch path) still applies.
 ### 0.1 Decisions already made
 
 - **Topology:** one **`sandbox-<agent>`** per agent runs code and parses untrusted input, and holds
-  no secrets. One small **`egress`** container is the sandboxes' only route to the internet.
-  Credentials and code execution MUST NOT share a container.
+  no secrets. Its only route to the internet is an **egress proxy built into the gateway** (section
+  5): a separate listener, not a separate container. So every outbound byte still passes through
+  the gateway. Credentials and code execution MUST NOT share a container.
 - **Placement rule:** a tool that needs a credential runs in the **gateway**, as fixed, typed calls
   to a fixed host. That is how the gateway already uses OpenRouter, and it is already where the
   secrets live. A tool that runs or parses untrusted input runs in the agent's sandbox.
@@ -31,8 +32,11 @@ configuration, single dispatch path) still applies.
   are many credentialed integrations (see [tech-debt](tech-debt.md)).
 - **Web search** runs in the gateway through OpenRouter's web plugin, and **GitHub** runs in the
   gateway with a fine-grained token.
-- **Sandbox egress while running code:** open internet, with private, loopback, link-local and LAN
-  addresses blocked by the egress proxy.
+- **Sandbox egress while running code:** open internet over HTTPS and plain HTTP, with private,
+  loopback, link-local and LAN addresses blocked by the gateway's egress proxy.
+- **No separate egress container.** One was considered and dropped: the proxy is small, and the
+  gateway is already on every sandbox network. The cost is that heavy sandbox traffic shares the
+  gateway process; see the limits in section 5 and [tech-debt](tech-debt.md).
 - **`git clone`:** public repositories only, over HTTPS, in this phase.
 - **Sandbox toolchains:** .NET SDK, Node and Python.
 - **No Docker socket**, anywhere. Sandboxes are long-lived compose services, not per-job containers.
@@ -47,7 +51,7 @@ configuration, single dispatch path) still applies.
 | Q4 | GitHub write scope. | Comment on an issue or PR, create an issue, add or remove labels. No push, no PR creation, no merges, no repository settings. |
 | Q5 | Do package caches persist between runs (NuGet, npm, pip)? | Yes, in a per-agent named volume mounted at `/cache`. It is never shared between agents. |
 | Q6 | Sandbox limits. | 2 CPUs, 2 GB memory, 256 processes, 10 minutes per run (operator-configurable, capped at 30), 1 MB of combined stdout and stderr returned (the rest goes to a file in the workspace). |
-| Q7 | Egress proxy: write our own in C#, or run Squid? | Our own in C#. It's small (CONNECT plus plain HTTP), it can pin the IP it checked, and it is unit-testable like everything else. |
+| Q7 | Egress proxy limits. | 32 concurrent connections per sandbox, 60 s idle timeout, 30 s to complete the request head, 1 GB per connection, 64 KB maximum request head. |
 
 ## 1. Goal
 
@@ -63,9 +67,10 @@ can do:
 
 | Asset | Where it lives | Protection |
 |---|---|---|
-| OpenRouter keys, GitHub token, admin key, DB | Gateway | No untrusted code and no rendering or conversion of untrusted content in the gateway; it only parses provider and GitHub JSON into typed DTOs. Each credential is used only by its own `HttpClient` with a fixed host. Nothing new can reach the gateway except through authenticated listeners. |
+| OpenRouter keys, GitHub token, admin key, DB | Gateway | No untrusted code and no rendering or conversion of untrusted content in the gateway. It parses only provider and GitHub JSON into typed DTOs, plus bounded proxy request heads (never tunnelled or body bytes). Each credential is used only by its own `HttpClient` with a fixed host. Nothing new can reach the gateway except through authenticated listeners. |
 | Other agents' workspaces | Host bind mounts | Each sandbox mounts only its own agent's workspace and sits on its own network. |
-| Home LAN, Docker networks, cloud metadata | Network | No container except `egress` has a route out. `egress` blocks private and reserved address ranges after DNS resolution. |
+| Home LAN, Docker networks, cloud metadata | Network | Sandboxes are on `internal: true` networks with no route out. Their only exit is the gateway's egress listener, which blocks private and reserved address ranges after DNS resolution. |
+| Gateway availability | Gateway | Sandbox traffic shares the gateway process, so the egress proxy enforces per-sandbox connection, time and byte limits (Q7) and never buffers bodies. |
 | Host | Docker | No Docker socket, `cap_drop: ALL`, `no-new-privileges`, non-root, read-only root filesystem, resource limits. |
 
 **Accepted risk:** code running in a sandbox can read that agent's workspace and send it anywhere
@@ -83,29 +88,30 @@ flowchart LR
   subgraph sbxnet["sbx-&lt;name&gt; (no egress), one per agent"]
     sandbox["sandbox-&lt;name&gt;<br/>/workspace (rw), /cache"]
   end
-  gateway["gateway<br/>OpenRouter keys, GitHub token, DB"]
-  egress["egress proxy<br/>no secrets"]
+  gateway["gateway<br/>OpenRouter keys, GitHub token, DB<br/>:8082 egress proxy"]
 
   agent -- "agent token" --> gateway
   gateway -- "service secret" --> sandbox
-  sandbox -- "HTTP(S) proxy" --> egress
-  egress --> internet["public internet"]
+  sandbox -- "HTTP(S) proxy, proxy credential" --> gateway
+  gateway --> internet["public internet"]
   gateway --> openrouter["OpenRouter"]
   gateway --> github["api.github.com"]
 ```
 
 - **Networks, one per sandbox so nothing can move sideways.** `internal` is unchanged: gateway and
-  agents. Each sandbox gets its own `sbx-<name>` network (`internal: true`) holding only the gateway,
-  that sandbox and `egress`. Only `egress` and the gateway are on `external`. So a sandbox can't
-  reach another sandbox, and **agents are never on any of these networks**.
-- **Gateway reachability.** The gateway's listeners are reachable from each `sbx-<name>` network
-  (Kestrel binds every interface). That is accepted: both listeners require credentials the sandbox
-  doesn't have, and login is rate-limited. `verify-isolation.sh` checks it.
+  agents. Each sandbox gets its own `sbx-<name>` network (`internal: true`) holding only the gateway
+  and that sandbox. Only the gateway is on `external`. So a sandbox can't reach another sandbox,
+  and **agents are never on any of these networks**.
+- **Gateway reachability.** All gateway listeners are reachable from each `sbx-<name>` network and
+  from `internal` (Kestrel binds every interface). That is accepted, because every listener needs a
+  credential: the client and agent listeners as today, and the egress listener a per-sandbox proxy
+  credential (section 5). Agents don't have one, so they can't use the proxy.
+  `verify-isolation.sh` checks all of this.
 - **Services.** Each sandbox listens on one port and accepts only requests carrying its service
   secret (`SANDBOX_<NAME>_SECRET` in `.env`), compared in constant time.
-- **Hardening (sandboxes and `egress`):** read-only root, `tmpfs` for `/tmp`, `cap_drop: [ALL]`,
-  `no-new-privileges`, non-root user, `restart: unless-stopped`. Sandboxes add `pids_limit`,
-  `mem_limit` and `cpus` (Q6).
+- **Hardening (sandboxes):** read-only root, `tmpfs` for `/tmp`, `cap_drop: [ALL]`,
+  `no-new-privileges`, non-root user, `restart: unless-stopped`, `pids_limit`, `mem_limit` and
+  `cpus` (Q6).
 
 ## 4. The gateway tool broker
 
@@ -136,21 +142,51 @@ On the agent side, each new tool is an `IAgentTool` whose `ExecuteUncheckedAsync
 `ToolDispatcher`, exactly as today. The gateway check in step 3 is a second, independent gate, not a
 replacement for the dispatcher.
 
-## 5. Egress proxy (`egress`)
+## 5. Egress proxy (in the gateway)
 
-A small C# forward proxy (Q7) supporting `CONNECT host:443` and plain HTTP `GET`/`POST` on port 80.
-The sandboxes get `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY=` set to it, and have no
-other route out, so tools that ignore the proxy simply fail.
+A third Kestrel listener, `:8082`, that is **never published to the host**. It is wired with
+`ListenOptions.UseConnectionHandler<EgressConnectionHandler>()`, so it is a raw TCP handler: no
+ASP.NET Core routing, middleware, auth handlers or endpoints run on it, and the client and agent
+route groups are unreachable through it. The sandboxes get
+`HTTP_PROXY=HTTPS_PROXY=http://sbx-<name>:<secret>@gateway:8082` and `NO_PROXY=` (empty). They have
+no other route out, so tools that ignore the proxy just fail.
 
-- Resolve the host itself. Reject if **any** resolved address is loopback, private (RFC 1918),
-  link-local (including `169.254.169.254`), CGNAT (`100.64.0.0/10`), multicast, unspecified,
-  IPv6 ULA or link-local, or an IPv4-mapped form of any of those. Then **connect to the checked
-  IP**, never re-resolving.
-- Ports 80 and 443 only. No SOCKS, no other protocols (so `git://` and `ssh://` fail).
-- Per-connection idle timeout and a byte cap; a per-source connection limit.
-- Logs source container, host, port, decision, bytes and duration. Never paths, query strings,
-  headers or bodies.
-- An optional operator deny-list of hosts.
+**Request handling.** The handler reads one request head, at most 64 KB and within the head
+timeout. It accepts exactly two forms and closes the connection with a fixed error response on
+anything else:
+
+- **`CONNECT host:443 HTTP/1.1`** (HTTPS). After the checks it replies `200 Connection Established`
+  and copies bytes both ways. The tunnelled TLS stream is **never parsed**.
+- **Absolute-form plain HTTP**, e.g. `GET http://host[:80]/path HTTP/1.1`, with any method. Port 80
+  only. The handler rewrites the request line to origin form (`GET /path HTTP/1.1`), sets `Host`
+  from the checked target, removes `Proxy-Authorization`, `Proxy-Connection` and the hop-by-hop
+  headers, and forces `Connection: close`. It then writes the rewritten head to the checked IP and
+  copies the rest (body and response) both ways without parsing. **One request per connection**, so
+  a client can't switch to another host partway through a connection.
+
+**Checks, for both forms, before any outbound connection:**
+
+- **Proxy authentication.** `Proxy-Authorization: Basic` MUST match a configured sandbox credential
+  (`Egress:Sandboxes:<name>:Secret`, compared in constant time). It identifies which agent the
+  traffic belongs to. Missing or wrong → `407` and close. Agents have no credential.
+- **Target address.** The handler resolves the host itself and rejects the request if **any**
+  resolved address is loopback, private (RFC 1918), link-local (including `169.254.169.254`),
+  CGNAT (`100.64.0.0/10`), multicast, unspecified, IPv6 ULA or link-local, or an IPv4-mapped form
+  of any of those. It also rejects IP-literal hosts in those ranges. Then it **connects to the
+  checked IP**, never re-resolving. This also blocks the gateway itself, other containers and the
+  LAN.
+- **Ports.** 443 for `CONNECT` and 80 for plain HTTP. No SOCKS and no other protocols, so `git://`
+  and `ssh://` fail.
+- **Operator deny-list** of hosts (optional).
+
+**Limits (Q7), so a sandbox can't starve the gateway:** concurrent connections per sandbox, head
+timeout, idle timeout, a byte cap per connection, and fixed-size copy buffers (bodies are never
+buffered whole). Over a limit, the request is refused or the connection closed.
+
+**Audit and telemetry.** Each connection is logged with agent, host, port, method (plain HTTP
+only), decision, bytes in and out, and duration, with `agent` in the log scope. Never paths, query
+strings, headers or bodies. Metrics `sharpclaw.egress.connections` (labels: agent, type
+`connect`|`http`, status) and `sharpclaw.egress.bytes` (agent).
 
 ## 6. Sandbox (`sandbox-<agent>`)
 
@@ -162,8 +198,9 @@ other route out, so tools that ignore the proxy simply fail.
   is killed so nothing lingers between runs.
 - **Mounts:** `./agents/<name>/workspace` → `/workspace` (rw), a named volume → `/cache` (Q5),
   nothing else. Runs as the same host UID as the agent so files stay editable.
-- **Environment:** proxy variables, `HOME=/tmp/home`, cache paths under `/cache`,
-  `GIT_TERMINAL_PROMPT=0`, `DOTNET_CLI_TELEMETRY_OPTOUT=1`. No secrets of any kind.
+- **Environment:** proxy variables (including the sandbox's proxy credential, which only lets it use
+  egress as itself), `HOME=/tmp/home`, cache paths under `/cache`, `GIT_TERMINAL_PROMPT=0`,
+  `DOTNET_CLI_TELEMETRY_OPTOUT=1`. No other secrets.
 
 ## 7. Tools
 
@@ -185,8 +222,8 @@ commands), except for the approval detail in Q1. Examples: `fetch example.com (m
 
 ### 7.1 `http_fetch` and `download_to_workspace`
 
-- `http` and `https` only; no credentials in the URL; at most 5 redirects, each re-checked by
-  `egress`.
+- `http` and `https` only; no credentials in the URL; at most 5 redirects, each re-checked by the
+  egress proxy.
 - `http_fetch` returns at most 64 KB to the model after conversion (`markdown` and `text` go through
   `pandoc` in the sandbox). Larger pages are truncated with `truncated: true`.
 - `download_to_workspace` streams to a temporary file and renames it. Cap 50 MB. It applies the
@@ -257,16 +294,23 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 
 - Agent: new tool names in `agent.json`, as today. Unknown names still fail startup.
 - Gateway: `ToolBroker:Agents:<name>:Tools`, `ToolBroker:AlwaysApprove`, `ToolBroker:SandboxUrl`
-  per agent, `ToolBroker:FetchAllowHosts`, `GitHub:Repos`, `WebSearch:Model`. All validated at
-  startup like every other options class.
-- Secrets: `SANDBOX_<NAME>_SECRET`, `GITHUB_TOKEN`, in `.env` only.
+  per agent, `ToolBroker:FetchAllowHosts`, `Egress:*` (listener port, limits, deny-list, per-sandbox
+  credentials), `GitHub:Repos`, `WebSearch:Model`. All validated at startup like every other options
+  class.
+- Secrets: `SANDBOX_<NAME>_SECRET` (gateway → runner), `SANDBOX_<NAME>_PROXY_SECRET` (sandbox →
+  egress), `GITHUB_TOKEN`, in `.env` only. The two sandbox secrets MUST differ.
 - Nothing is enabled by default. A stack without sandboxes or a GitHub token still runs, and the
   affected broker tools return `503 tool_unavailable`.
 
 ## 10. Tests
 
-- **Egress:** every blocked range (IPv4, IPv6, mapped), DNS that returns a mix of public and private
-  addresses (rejected), connect-to-checked-IP, port filter, redirect to a private host.
+- **Egress:** every blocked range (IPv4, IPv6, mapped, IP literals), DNS that returns a mix of public
+  and private addresses (rejected), connect-to-checked-IP, port filter, missing or wrong proxy
+  credential → `407`, the agent token rejected as a proxy credential, oversized or slow head,
+  malformed request lines, plain-HTTP rewrite (origin form, `Proxy-*` and hop-by-hop headers
+  stripped, `Connection: close`), a second request on one connection never reaching a different
+  host, per-sandbox connection limit, byte cap, no client or agent routes reachable on `:8082`.
+  Tested with an in-process fake resolver and a loopback test server allowed only in tests.
 - **Broker:** wrong listener → 404; tool not enabled for agent → 404; approval missing, wrong
   agent, wrong tool, wrong args hash, expired, or reused → 403; sandbox chosen by identity.
 - **Runner:** argv-only operations, process-group kill on timeout, output cap and log file, path
@@ -275,10 +319,11 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
   hash.
 - **GitHub client:** fixed base address, redirects not followed, token never sent to another host,
   only enum operations, repo allow-list.
-- **`verify-isolation.sh`:** agents can't reach the sandboxes or `egress`. A sandbox can't reach
-  another sandbox, can't reach the internet except through `egress`, gets
-  `401` from both gateway listeners without credentials, and can't reach the LAN. `egress` refuses
-  private targets. Each sandbox mounts only its own workspace.
+- **`verify-isolation.sh`:** agents can't reach the sandboxes, and get `407` from `:8082`. `:8082`
+  is not published to the host. A sandbox can't reach another sandbox, can't reach the internet
+  except through the proxy, gets `401` from the client and agent listeners without credentials,
+  and the proxy refuses it LAN, Docker and metadata addresses. Each sandbox mounts only its own
+  workspace.
 - **Integration:** `GatewayFixture` with fake GitHub and sandbox HTTP handlers. `FakeProvider`
   scripts for `web_search` annotations.
 
@@ -289,7 +334,7 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
 | 1 | This spec, answers to section 0.2, roadmap and architecture links, updates to the ruled-out lists |
 | 2 | Prerequisites (section 8): no-follow workspace I/O; classifier restrictions |
 | 3 | Approval `args_hash`, `ToolBroker` options, `POST /agent/tools/{tool}` with gateway-enforced approval, `broker_calls` |
-| 4 | `egress` proxy project, image, compose networks, `verify-isolation.sh` checks |
+| 4 | Egress listener in the gateway (`EgressConnectionHandler`, `Egress` options, metrics), compose networks, `verify-isolation.sh` checks |
 | 5 | Sandbox image and runner; `http_fetch`, `download_to_workspace` |
 | 6 | `web_search` (gateway) |
 | 7 | `extract_text` |
