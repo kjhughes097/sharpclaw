@@ -46,6 +46,16 @@ public sealed class WorkspaceRoot
         return (new Resolved(full, rel), null);
     }
 
+    /// <summary>
+    /// <see cref="Resolve"/> for the execute step: the call was assessed already, so a rule broken
+    /// now means the workspace changed in between (e.g. a link appeared) and the call must fail.
+    /// </summary>
+    public Resolved Require(string? relative, bool allowRoot = false)
+    {
+        var (path, error) = Resolve(relative, allowRoot);
+        return path ?? throw new WorkspacePathException(error!);
+    }
+
     /// <summary>The first existing component under the root that is a symbolic link, if any.</summary>
     private string? FirstSymlink(string full)
     {

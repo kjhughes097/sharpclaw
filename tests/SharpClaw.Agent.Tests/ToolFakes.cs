@@ -24,8 +24,12 @@ internal sealed class FakeTool : IAgentTool
     public Func<JsonElement, ToolResult> Execute { get; set; } = _ => ToolResult.Success(new { done = true });
     public int Executions { get; private set; }
 
+    public bool AlwaysRequiresApproval { get; init; }
+    public IReadOnlyDictionary<string, string>? Fields { get; init; }
+
     public ToolAssessment Assess(JsonElement args) => Assessment;
     public string Summarize(JsonElement args) => $"{Name} call";
+    public IReadOnlyDictionary<string, string>? ClassifierFields(JsonElement args) => Fields;
 
     public Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
     {

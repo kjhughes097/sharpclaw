@@ -22,36 +22,25 @@ internal static class WorkspaceFiles
         relative.Split('/').Any(segment => segment.StartsWith('.') && segment is not ("." or "..")) ||
         SensitiveExtensions.Contains(System.IO.Path.GetExtension(relative));
 
-    /// <summary>Writes via a temporary file in the same directory and a rename, so a crash never leaves a partial file.</summary>
-    public static async Task WriteAtomicAsync(string fullPath, ReadOnlyMemory<byte> content, CancellationToken ct)
-    {
-        var dir = System.IO.Path.GetDirectoryName(fullPath)!;
-        Directory.CreateDirectory(dir);
-        var temp = System.IO.Path.Combine(dir, $".{System.IO.Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
-        try
-        {
-            await using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write))
-                await stream.WriteAsync(content, ct);
-            File.Move(temp, fullPath, overwrite: true);
-        }
-        finally
-        {
-            if (File.Exists(temp))
-                File.Delete(temp);
-        }
-    }
+    /// <summary>
+    /// Writes via a temporary file in the same directory and a rename, so a crash never leaves a
+    /// partial file; never follows a symbolic link (see <see cref="NoFollow"/>).
+    /// </summary>
+    public static Task WriteAtomicAsync(WorkspaceRoot root, WorkspaceRoot.Resolved path, ReadOnlyMemory<byte> content, CancellationToken ct) =>
+        NoFollow.WriteAtomicAsync(root.Path, path.Relative, content, ct);
 
-    public static Task WriteAtomicAsync(string fullPath, string content, CancellationToken ct) =>
-        WriteAtomicAsync(fullPath, new UTF8Encoding(false).GetBytes(content), ct);
+    public static Task WriteAtomicAsync(WorkspaceRoot root, WorkspaceRoot.Resolved path, string content, CancellationToken ct) =>
+        WriteAtomicAsync(root, path, new UTF8Encoding(false).GetBytes(content), ct);
 
     public static bool IsBinary(ReadOnlySpan<byte> start) =>
         start[..Math.Min(start.Length, BinaryProbeBytes)].Contains((byte)0);
 
-    public static bool IsBinaryFile(string fullPath)
+    /// <summary>Probes the start of a stream for binary content, then rewinds it.</summary>
+    public static bool IsBinary(Stream stream)
     {
-        using var stream = File.OpenRead(fullPath);
         var buffer = new byte[BinaryProbeBytes];
         var read = stream.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
+        stream.Seek(0, SeekOrigin.Begin);
         return IsBinary(buffer.AsSpan(0, read));
     }
 

@@ -92,6 +92,19 @@ public interface IAgentTool
     /// <summary>Short human-readable description for approval prompts. Never includes content.</summary>
     string Summarize(JsonElement args);
 
+    /// <summary>
+    /// What the smart-mode classifier sees instead of <see cref="Summarize"/>: structured, validated
+    /// fields only (e.g. tool, host, path), never model-supplied free text (external tools spec
+    /// section 8). Null means the summary is used, as for the workspace tools.
+    /// </summary>
+    IReadOnlyDictionary<string, string>? ClassifierFields(JsonElement args) => null;
+
+    /// <summary>
+    /// True for tools the gateway always requires an approval for (<c>ToolBroker:AlwaysApprove</c>):
+    /// the dispatcher then asks the human whatever <c>allowedRiskLevel</c> or smart mode says.
+    /// </summary>
+    bool AlwaysRequiresApproval => false;
+
     /// <summary>Runs the call without any policy checks. Only <see cref="ToolDispatcher"/> may call this.</summary>
     Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct);
 }

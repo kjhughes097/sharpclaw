@@ -117,9 +117,11 @@ sequenceDiagram
    OpenAI-style SSE. Deltas are teed to the thread (`delta`, plus `ActiveTurnBuffers` for
    `snapshot`). Every call is recorded in `llm_calls` (append-only) and requested tool calls in `tool_calls`.
 5. **Tools.** For each tool call the agent's `ToolDispatcher` applies hardline rules → risk
-   (smart-mode classifier for uncertain calls) → taint bump → approval if above `allowedRiskLevel`
-   (`POST /agent/approvals` then poll; the human decides via `POST /api/approvals/{id}`) → execute →
-   report (`POST /agent/tool-calls`).
+   (smart-mode classifier for uncertain calls; it sees a tool's structured fields when it has them,
+   never model-supplied free text) → taint bump → approval if above `allowedRiskLevel`, or always
+   for an always-approve tool (`POST /agent/approvals` then poll; the human decides via
+   `POST /api/approvals/{id}`) → execute → report (`POST /agent/tool-calls`). Workspace file I/O
+   opens every path component without following symbolic links (`NoFollow`).
 6. **Finish.** `POST /agent/threads/{id}/messages` stores the tool exchanges plus the reply in one
    transaction and emits `message.completed`; or `POST /agent/messages/{id}/fail` emits `error`.
    Either way, pending approvals for the turn are expired.
@@ -209,6 +211,8 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 
 - Listener separation is by local port; the wrong listener returns `404` (`HealthAndListenerTests`).
 - Only `ToolDispatcher` may call `IAgentTool.ExecuteUncheckedAsync` (`ToolArchitectureTests`).
+- Workspace tools never follow a symbolic link, even one created after the path was checked
+  (`WorkspaceToolsTests.NoFollow`).
 - No agent tool executes code or shell commands. Tool policy is read only from read-only config,
   never from the workspace.
 - No prompt or reply content, soul, tool arguments or results, tokens, keys, passwords or cookies

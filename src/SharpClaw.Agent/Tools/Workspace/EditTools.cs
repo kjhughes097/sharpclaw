@@ -45,11 +45,11 @@ internal sealed class EditTool(WorkspaceRoot root) : IAgentTool
 
     public async Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
     {
-        var (path, _) = root.Resolve(Args.String(args, "path"));
-        if (!File.Exists(path!.FullPath))
+        var path = root.Require(Args.String(args, "path"));
+        if (!File.Exists(path.FullPath))
             return ToolResult.Error("not_found", $"No file at '{path.Relative}'.");
 
-        var bytes = await File.ReadAllBytesAsync(path.FullPath, ct);
+        var bytes = await NoFollow.ReadAllBytesAsync(root.Path, path.Relative, ct);
         if (bytes.Length > WorkspaceTools.MaxWriteBytes)
             return ToolResult.Error("too_large", $"The file is larger than {WorkspaceTools.MaxWriteBytes / 1024} KB; it can't be edited.");
         if (WorkspaceFiles.IsBinary(bytes))
@@ -71,7 +71,7 @@ internal sealed class EditTool(WorkspaceRoot root) : IAgentTool
         if (size > WorkspaceTools.MaxWriteBytes)
             return ToolResult.Error("too_large", $"The edited file would be larger than {WorkspaceTools.MaxWriteBytes / 1024} KB.");
 
-        await WorkspaceFiles.WriteAtomicAsync(path.FullPath, updated, ct);
+        await WorkspaceFiles.WriteAtomicAsync(root, path, updated, ct);
         return ToolResult.Success(new { path = path.Relative, bytes = size });
     }
 
@@ -123,11 +123,11 @@ internal sealed class AppendTool(WorkspaceRoot root) : IAgentTool
 
     public async Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
     {
-        var (path, _) = root.Resolve(Args.String(args, "path"));
+        var path = root.Require(Args.String(args, "path"));
         var addition = new UTF8Encoding(false).GetBytes(Args.String(args, "content")!);
-        var created = !File.Exists(path!.FullPath);
+        var created = !File.Exists(path.FullPath);
 
-        var existing = created ? Array.Empty<byte>() : await File.ReadAllBytesAsync(path.FullPath, ct);
+        var existing = created ? Array.Empty<byte>() : await NoFollow.ReadAllBytesAsync(root.Path, path.Relative, ct);
         var size = existing.Length + addition.Length;
         if (size > WorkspaceTools.MaxWriteBytes)
             return ToolResult.Error("too_large", $"The file would be larger than {WorkspaceTools.MaxWriteBytes / 1024} KB.");
@@ -135,7 +135,7 @@ internal sealed class AppendTool(WorkspaceRoot root) : IAgentTool
         var combined = new byte[size];
         existing.CopyTo(combined, 0);
         addition.CopyTo(combined, existing.Length);
-        await WorkspaceFiles.WriteAtomicAsync(path.FullPath, combined, ct);
+        await WorkspaceFiles.WriteAtomicAsync(root, path, combined, ct);
         return ToolResult.Success(new { path = path.Relative, bytes = size, created });
     }
 }

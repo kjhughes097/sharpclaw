@@ -53,13 +53,17 @@ public static class WorkspaceTools
 
         public Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
         {
-            var (path, _) = root.Resolve(Args.String(args, "path"), allowRoot: true);
-            if (!Directory.Exists(path!.FullPath))
+            var path = root.Require(Args.String(args, "path"), allowRoot: true);
+            if (!Directory.Exists(path.FullPath))
                 return Task.FromResult(ToolResult.Error("not_found", $"No directory at '{path.Relative}'."));
 
-            var all = new DirectoryInfo(path.FullPath).EnumerateFileSystemInfos()
-                .OrderBy(i => i.Name, StringComparer.Ordinal)
-                .ToList();
+            // Enumerated through a no-follow directory handle, so a swapped-in link can't redirect it.
+            var (handle, dirPath) = NoFollow.OpenDirectory(root.Path, path.Relative);
+            List<FileSystemInfo> all;
+            using (handle)
+                all = new DirectoryInfo(dirPath).EnumerateFileSystemInfos()
+                    .OrderBy(i => i.Name, StringComparer.Ordinal)
+                    .ToList();
             var entries = all.Take(MaxListEntries).Select(i => new
             {
                 name = i.Name,
@@ -101,12 +105,12 @@ public static class WorkspaceTools
 
         public async Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
         {
-            var (path, _) = root.Resolve(Args.String(args, "path"));
-            if (!File.Exists(path!.FullPath))
+            var path = root.Require(Args.String(args, "path"));
+            if (!File.Exists(path.FullPath))
                 return ToolResult.Error("not_found", $"No file at '{path.Relative}'.");
             TryOffset(args, out var requested);
 
-            await using var stream = File.OpenRead(path.FullPath);
+            await using var stream = NoFollow.OpenRead(root.Path, path.Relative);
             var length = stream.Length;
             var start = Math.Min(requested, length);
             stream.Seek(start, SeekOrigin.Begin);
@@ -187,11 +191,11 @@ public static class WorkspaceTools
 
         public async Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
         {
-            var (path, _) = root.Resolve(Args.String(args, "path"));
+            var path = root.Require(Args.String(args, "path"));
             var content = Args.String(args, "content")!;
-            var created = !File.Exists(path!.FullPath);
+            var created = !File.Exists(path.FullPath);
 
-            await WorkspaceFiles.WriteAtomicAsync(path.FullPath, content, ct);
+            await WorkspaceFiles.WriteAtomicAsync(root, path, content, ct);
             return ToolResult.Success(new { path = path.Relative, bytes = Encoding.UTF8.GetByteCount(content), created });
         }
     }
@@ -213,13 +217,13 @@ public static class WorkspaceTools
 
         public Task<ToolResult> ExecuteUncheckedAsync(JsonElement args, CancellationToken ct)
         {
-            var (path, _) = root.Resolve(Args.String(args, "path"));
-            if (Directory.Exists(path!.FullPath))
+            var path = root.Require(Args.String(args, "path"));
+            if (Directory.Exists(path.FullPath))
                 return Task.FromResult(ToolResult.Error("not_a_file", "Only files can be deleted, not directories."));
             if (!File.Exists(path.FullPath))
                 return Task.FromResult(ToolResult.Error("not_found", $"No file at '{path.Relative}'."));
 
-            File.Delete(path.FullPath);
+            NoFollow.Delete(root.Path, path.Relative);
             return Task.FromResult(ToolResult.Success(new { path = path.Relative, deleted = true }));
         }
     }
