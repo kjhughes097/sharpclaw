@@ -53,6 +53,12 @@ bar (`components/AppShell.tsx`, `components/TabBar.tsx`). Every tab is a link:
   thread's trace totals.
 - **Tool rows** pair each tool call with its model round through the trace's `llmCallId`, and match
   a turn's approvals by tool name (approvals carry no tool-call id).
+- **Agent skills** (`features/agents/AgentSkills.tsx`, [skills spec](sharpclaw-skills-spec.md)):
+  the agent tab lists the skills the agent reported at startup (`agent.skills`, name and
+  description) with "Reported <relative time>" from `skillsReportedAt`. Empty states: "No skills
+  reported" when `skillsReportedAt` is null, "No skills loaded" when the report was empty. It reads
+  only the agent query (no new endpoint or event: the list changes only when the agent restarts,
+  and the tab refetches when opened). Descriptions are operator text, rendered as plain text.
 
 ## Approval details (external tools)
 
