@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using SharpClaw.Agent.Skills;
 using SharpClaw.Agent.Tools;
 using SharpClaw.Contracts;
 
@@ -17,16 +18,19 @@ public sealed class AgentLoop
     private readonly ILogger<AgentLoop> _logger;
     private readonly TimeProvider _time;
     private readonly AgentTools? _tools;
+    private readonly string? _skillIndex;
 
     private static readonly TimeSpan DisabledSleep = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan MinBackoff = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxBackoff = TimeSpan.FromSeconds(30);
 
     /// <param name="tools">The agent's tools; null runs chat-only, as in 3.1.</param>
+    /// <param name="skills">The skill library, loaded only when <c>skill_read</c> is enabled.</param>
     public AgentLoop(IGatewayClient client, ISoulProvider soul, AgentConfig config,
-        ILogger<AgentLoop> logger, TimeProvider time, AgentTools? tools = null)
+        ILogger<AgentLoop> logger, TimeProvider time, AgentTools? tools = null, SkillLibrary? skills = null)
     {
         _tools = tools;
+        _skillIndex = skills?.PromptIndex;
         _client = client;
         _soul = soul;
         _config = config;
@@ -102,15 +106,15 @@ public sealed class AgentLoop
 
         try
         {
-            var soul = _soul.Read();
-            var context = await _client.GetContextAsync(msg.ThreadId, ReserveTokens(soul), ct);
+            var system = SystemPrompt(_soul.Read());
+            var context = await _client.GetContextAsync(msg.ThreadId, ReserveTokens(system), ct);
             if (context.FailCode is not null)
             {
                 await _client.FailAsync(msg.Id, context.FailCode, ct);
                 _logger.LogWarning("message failed: outcome={Outcome}", context.FailCode);
                 return LoopOutcome.Processed;
             }
-            var messages = new List<ChatMessage> { new(Roles.System, soul) };
+            var messages = new List<ChatMessage> { new(Roles.System, system) };
             messages.AddRange(context.Messages);
 
             var (reply, failCode, exchanges) = await RunTurnAsync(messages, new TurnContext(msg.Id, msg.ThreadId), ct);
@@ -189,13 +193,21 @@ public sealed class AgentLoop
     }
 
     /// <summary>
-    /// The gateway fits history into the window minus this: the soul message and the tool schemas
-    /// sent with every call, estimated exactly as the gateway estimates the chat request.
+    /// The one system message: the soul (read fresh each turn), then the skill index (built once at
+    /// startup) when there is one. One message, so the gateway's history fitting is unchanged.
     /// </summary>
-    private int ReserveTokens(string soul)
+    private string SystemPrompt(string soul) =>
+        _skillIndex is null ? soul : soul.TrimEnd() + "\n\n" + _skillIndex;
+
+    /// <summary>
+    /// The gateway fits history into the window minus this: the system message (soul plus skill
+    /// index) and the tool schemas sent with every call, estimated exactly as the gateway estimates
+    /// the chat request.
+    /// </summary>
+    private int ReserveTokens(string system)
     {
         var schemaChars = _tools is null ? 0 : ToolSchemas.JsonLength(_tools.Registry.Tools);
-        return ContextDefaults.Tokens(soul.Length) + ContextDefaults.MessageOverheadTokens + ContextDefaults.Tokens(schemaChars);
+        return ContextDefaults.Tokens(system.Length) + ContextDefaults.MessageOverheadTokens + ContextDefaults.Tokens(schemaChars);
     }
 
     private async Task SafeFail(Guid messageId, string reason)

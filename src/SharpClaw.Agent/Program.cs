@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SharpClaw.Agent;
+using SharpClaw.Agent.Skills;
 using SharpClaw.Agent.Tools;
 using SharpClaw.Agent.Tools.Broker;
 using SharpClaw.Agent.Tools.Utility;
@@ -61,5 +62,10 @@ else
         string.Join(",", toolConfig.Tools), toolConfig.AllowedRiskLevel.ToWire(), toolConfig.SmartMode, toolConfig.MaxToolIterations);
 }
 
-var loop = new AgentLoop(gateway, soul, config, loggerFactory.CreateLogger<AgentLoop>(), TimeProvider.System, tools);
+// Skills are on only when skill_read is enabled (skills spec Q8); the index is built once, here.
+SkillLibrary? skills = toolConfig?.Tools.Contains(SkillTools.ReadName) == true
+    ? SkillLibrary.Load(config.SkillsPath, loggerFactory.CreateLogger<SkillLibrary>())
+    : null;
+
+var loop = new AgentLoop(gateway, soul, config, loggerFactory.CreateLogger<AgentLoop>(), TimeProvider.System, tools, skills);
 return await loop.RunAsync(cts.Token);
