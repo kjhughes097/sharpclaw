@@ -132,13 +132,24 @@ public sealed class GatewayFixture : IAsyncDisposable
         return (body!.Agent, body.Token.Value);
     }
 
+    private static readonly HashSet<int> Handed = new();
+
+    /// <summary>
+    /// An ephemeral port nobody in this test run has been given yet. The OS can hand the same free
+    /// port to two lookups in a row (say, the client and agent listeners), so each is remembered.
+    /// </summary>
     public static int FreePort()
     {
-        var l = new TcpListener(IPAddress.Loopback, 0);
-        l.Start();
-        var port = ((IPEndPoint)l.LocalEndpoint).Port;
-        l.Stop();
-        return port;
+        while (true)
+        {
+            var l = new TcpListener(IPAddress.Loopback, 0);
+            l.Start();
+            var port = ((IPEndPoint)l.LocalEndpoint).Port;
+            l.Stop();
+            lock (Handed)
+                if (Handed.Add(port))
+                    return port;
+        }
     }
 
     public async ValueTask DisposeAsync()

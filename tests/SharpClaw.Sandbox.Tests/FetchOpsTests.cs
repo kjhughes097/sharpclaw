@@ -57,7 +57,7 @@ public class FetchOpsTests : IAsyncLifetime
     {
         var r = Parse(await Fetch(new { url = _server.Url("/page") }));
 
-        Assert.True(r.GetProperty("ok").GetBoolean());
+        Assert.True(r.GetProperty("ok").GetBoolean(), r.GetRawText());
         var content = r.GetProperty("content").GetString()!;
         Assert.Contains("# Title", content);
         Assert.Contains("[link](/x)", content);
@@ -98,6 +98,7 @@ public class FetchOpsTests : IAsyncLifetime
     public async Task Redirects_are_followed_and_checked_hop_by_hop()
     {
         var ok = Parse(await Fetch(new { url = _server.Url("/redirect") }));
+        Assert.True(ok.GetProperty("ok").GetBoolean(), ok.GetRawText());
         Assert.Equal(_server.Url("/page"), ok.GetProperty("url").GetString());
 
         Assert.Equal("too_many_redirects", Parse(await Fetch(new { url = _server.Url("/loop/0") })).GetProperty("error").GetString());

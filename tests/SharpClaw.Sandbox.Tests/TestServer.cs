@@ -31,13 +31,21 @@ public sealed class TestServer : IAsyncDisposable
         return this;
     }
 
+    private static readonly HashSet<int> Handed = new();
+
+    /// <summary>An ephemeral port not yet given to another test in this run.</summary>
     public static int FreePort()
     {
-        var l = new TcpListener(IPAddress.Loopback, 0);
-        l.Start();
-        var port = ((IPEndPoint)l.LocalEndpoint).Port;
-        l.Stop();
-        return port;
+        while (true)
+        {
+            var l = new TcpListener(IPAddress.Loopback, 0);
+            l.Start();
+            var port = ((IPEndPoint)l.LocalEndpoint).Port;
+            l.Stop();
+            lock (Handed)
+                if (Handed.Add(port))
+                    return port;
+        }
     }
 
     public static IResult Html(string html) => Results.Text(html, "text/html; charset=utf-8");

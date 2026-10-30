@@ -108,9 +108,9 @@ public sealed class HttpFetchOp(Fetcher fetcher, IReadOnlyDictionary<string, str
         var text = Decode(body, response.Content.Headers.ContentType);
         if (isHtml && format != "raw")
         {
-            var converted = await ConvertAsync(body, format, ct);
+            var (converted, exitCode) = await ConvertAsync(body, format, ct);
             if (converted is null)
-                return OpResult.Error("conversion_failed", "The page could not be converted; try format raw.");
+                return OpResult.Error("conversion_failed", $"The page could not be converted (pandoc exit {exitCode}); try format raw.");
             text = converted;
         }
 
@@ -126,12 +126,12 @@ public sealed class HttpFetchOp(Fetcher fetcher, IReadOnlyDictionary<string, str
         });
     }
 
-    private async Task<string?> ConvertAsync(byte[] html, string format, CancellationToken ct)
+    private async Task<(string? Text, int ExitCode)> ConvertAsync(byte[] html, string format, CancellationToken ct)
     {
         var result = await ProcessRunner.RunAsync(new ProcessSpec(
             "pandoc", ["--sandbox", "-f", "html", "-t", format == "markdown" ? "gfm" : "plain", "--wrap=none"],
             Path.GetTempPath(), Timeout, 4 * 1024 * 1024, childEnv, Stdin: html), ct);
-        return result is { ExitCode: 0, TimedOut: false } ? Encoding.UTF8.GetString(result.Stdout) : null;
+        return (result is { ExitCode: 0, TimedOut: false } ? Encoding.UTF8.GetString(result.Stdout) : null, result.ExitCode);
     }
 
     internal static async Task<(byte[] Body, bool Truncated)> ReadCappedAsync(HttpContent content, int max, CancellationToken ct)

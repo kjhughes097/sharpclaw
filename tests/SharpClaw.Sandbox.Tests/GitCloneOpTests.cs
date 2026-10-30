@@ -22,6 +22,7 @@ public class GitCloneOpTests : IDisposable
         var realGit = File.Exists("/usr/bin/git") ? "/usr/bin/git" : "/bin/git";
         File.WriteAllText(Path.Combine(_bin, "git"), $$"""
             #!/bin/bash
+            [ "$1" = "--probe" ] && exit 0
             printf '%s\n' "$*" >> "{{_log}}"
             if [ "$7" = "clone" ]; then
               target="${@: -1}"
@@ -33,6 +34,34 @@ public class GitCloneOpTests : IDisposable
             exec {{realGit}} "$@"
             """.Replace("\r", ""));
         File.SetUnixFileMode(Path.Combine(_bin, "git"), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        WaitUntilExecutable(Path.Combine(_bin, "git"));
+    }
+
+    /// <summary>
+    /// A freshly written script can briefly fail to exec with ETXTBSY (exit 126): a process forked
+    /// elsewhere in this test run may still hold the write handle until it execs. Retry until clean.
+    /// </summary>
+    private static void WaitUntilExecutable(string script)
+    {
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            try
+            {
+                using var probe = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(script, "--probe")
+                {
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                })!;
+                probe.WaitForExit();
+                if (probe.ExitCode != 126)
+                    return;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // .NET reports the failed exec itself.
+            }
+            Thread.Sleep(20);
+        }
     }
 
     public void Dispose()
