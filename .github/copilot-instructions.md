@@ -11,7 +11,8 @@ network-isolated workloads that hold no provider keys and reach the world only v
   [pre-3.3 foundations](../docs/sharpclaw-pre-3.3-foundations-spec.md) →
   [3.3 (web UI)](../docs/sharpclaw-3.3-implementation-spec.md) →
   [3.3.1 (tabbed UI redesign)](../docs/sharpclaw-3.3.1-ui-redesign-spec.md) →
-  [external tools](../docs/sharpclaw-external-tools-spec.md) (accepted, being built in task order). Build only what they describe;
+  [external tools](../docs/sharpclaw-external-tools-spec.md) (accepted, being built in task order) →
+  [skills](../docs/sharpclaw-skills-spec.md) (accepted, not yet built). Build only what they describe;
   anything still in an "Out of scope" list (agent-to-agent, retries, non-streaming completions,
   Postgres, Docker socket access, network or code-execution tools other than those in the external
   tools spec, stop/cancel turn, message

@@ -183,6 +183,8 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 - Network tools mediated by the gateway (design agreed in the 3.2 spec)
 - More agent-local tools (workspace search/find/edit/append/move/copy, read paging,
   `current_time`, `calculate`): see the [agent tools spec](sharpclaw-agent-tools-spec.md)
+- Skills: operator-curated instructions (and scripts) on a shared read-only `/skills` volume,
+  loaded on demand with `skill_read`: see the [skills spec](sharpclaw-skills-spec.md)
 
 ## Phase 3.5 — Agent-to-agent messaging *(outline)*
 
