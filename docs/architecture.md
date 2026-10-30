@@ -302,7 +302,8 @@ Optional, per agent ([external tools spec](sharpclaw-external-tools-spec.md) sec
 `sandbox-<name>` service (compose profile `sandboxes`) runs the runner and the .NET, Node and Python
 toolchains, as the install's user, read-only root, `cap_drop: ALL`, `no-new-privileges`, 2 CPUs,
 2 GB, 256 processes. It sits only on its own `sbx-<name>` network (`internal: true`) with the
-gateway, mounts only its agent's workspace (rw) and a per-agent cache volume, and reaches the
+gateway, mounts only its agent's workspace (rw), a per-agent cache volume and the skill library
+(`/skills`, ro, so skill scripts can run through `sandbox_run`), and reaches the
 internet only through the egress proxy with its own credential. The gateway calls it at
 `ToolBroker:Agents:<name>:SandboxUrl` with `SANDBOX_<NAME>_SECRET`; the runner makes itself
 non-dumpable and starts every child (argv only, through `setsid`) with an allow-listed environment
