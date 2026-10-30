@@ -1,7 +1,7 @@
 # SharpClaw V3 — External Tools Spec (network, GitHub, sandboxed code)
 
 **Audience:** an implementing coding agent (and the human reviewing its work).
-**Status:** **draft**. Not ready to implement until the open questions in section 0.2 are answered.
+**Status:** **accepted**, not yet implemented. Build it in the task order in section 11.
 **Scope:** the first agent tools that reach beyond the agent's own workspace: fetching from the
 web, web search, the GitHub API, cloning public repositories, extracting text from HTML and PDF,
 and running code. This is a **deliberate change to the trust model**: it replaces section 6 ("Ruled
@@ -41,9 +41,11 @@ configuration, single dispatch path) still applies.
 - **Sandbox toolchains:** .NET SDK, Node and Python.
 - **No Docker socket**, anywhere. Sandboxes are long-lived compose services, not per-job containers.
 
-### 0.2 Open questions (answer before implementing)
+### 0.2 Resolved questions
 
-| # | Question | Proposed answer |
+Kept as numbered entries because the rest of this spec refers to them as Q1–Q7.
+
+| # | Question | Decision |
 |---|---|---|
 | Q1 | The approval prompt for `sandbox_run` is useless without the command, but summaries must never contain model-supplied text. | The approval **detail** (`GET /api/approvals/{id}`) shows the command, capped at 1,000 characters. The event, the list view, logs and the smart-mode classifier only ever see `run (412 chars) in repo/`. |
 | Q2 | Which tools does the gateway always require an approval for, whatever the agent's `allowedRiskLevel`? | `sandbox_run`, `github_create_pr` and every GitHub write. Configured in gateway options (`ToolBroker:AlwaysApprove`), never by the agent. |
@@ -395,7 +397,7 @@ account and add it to `GitHub:Repos`. The gateway checks at call time that
 
 | # | Task |
 |---|---|
-| 1 | This spec, answers to section 0.2, roadmap and architecture links, updates to the ruled-out lists |
+| 1 | This spec and its decisions (section 0.2), roadmap and architecture links, updates to the ruled-out lists |
 | 2 | Prerequisites (section 8): no-follow workspace I/O; classifier restrictions |
 | 3 | Approval `args_hash`, `ToolBroker` options, `POST /agent/tools/{tool}` with gateway-enforced approval, `broker_calls` |
 | 4 | Egress listener in the gateway (`EgressConnectionHandler`, `Egress` options, metrics), compose networks, `verify-isolation.sh` checks |

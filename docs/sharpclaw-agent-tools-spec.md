@@ -166,7 +166,10 @@ cautious** assessment wins: `Uncertain` over a score, and the higher score other
 
 ## 6. Ruled out
 
-Not to be built as agent tools, now or later, without a deliberate change to the trust model:
+Not to be built as tools that run **inside the agent container**, now or later. The
+[external tools spec](sharpclaw-external-tools-spec.md) changes the trust model so that network
+access, `git clone`, running code and GitHub calls are possible, but only through the gateway,
+in a per-agent sandbox or in the gateway itself. Nothing below may ever run in the agent:
 
 - shell or command execution, running scripts, code, tests or build tools;
 - `git` operations (hooks and config can execute code), including cloning repositories;

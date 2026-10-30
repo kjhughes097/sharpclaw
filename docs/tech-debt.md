@@ -68,7 +68,7 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Chart bars are hover-only for sighted users | Keyboard and screen-reader users get the same figures from a visually hidden table per chart, not a focusable tooltip. |
 | Live tool rows need the live stream | After a page load mid-turn, rows for tools requested earlier in that turn appear only once the turn finishes (a fresh stream doesn't replay `tool.requested`); the approval card still shows. Unchanged from 3.3. |
 
-## Accepted by design (external tools spec, draft)
+## Accepted by design (external tools spec)
 
 | Item | Notes |
 |---|---|
