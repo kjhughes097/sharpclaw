@@ -87,8 +87,9 @@ public static class SkillTools
                 result["nextOffset"] = page.NextOffset;
 
             // A discovery hint, so the model knows what else it can load without a listing tool.
+            // Hidden folders are skipped: a cloned skill's .git would otherwise fill the cap.
             if (path.Relative == SkillLibrary.SkillFile)
-                result["files"] = WorkspaceFiles.Walk(skill.Directory)
+                result["files"] = WorkspaceFiles.Walk(skill.Directory, skipHidden: true)
                     .Select(f => WorkspaceFiles.Relative(skill.Directory, f.FullName))
                     .Where(f => f != SkillLibrary.SkillFile)
                     .Take(MaxListedFiles)
