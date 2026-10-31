@@ -10,6 +10,9 @@ public static class FailReasons
     public const string AgentError = "agent_error";
     public const string ToolLoopLimit = "tool_loop_limit";
 
+    /// <summary>The turn's own tool calls and results outgrew the window (not the user's message).</summary>
+    public const string TurnTooLarge = "turn_too_large";
+
     /// <summary>Readable text for a fail code; unknown codes get a generic sentence that names the code.</summary>
     public static string Describe(string code) => code switch
     {
@@ -17,6 +20,7 @@ public static class FailReasons
         ErrorCodes.LoopLimitExceeded => "The agent made too many model calls for this message.",
         ToolLoopLimit => "The agent kept calling tools without finishing, so it stopped.",
         ErrorCodes.ContextTooLarge => "That is too large for the model's context window. Shorten it or start a new chat.",
+        TurnTooLarge => "The agent's tool results outgrew the model's context window. Ask for a smaller step, or give the agent a model with a larger window.",
         ErrorCodes.ProviderError => "The model provider returned an error. Try again.",
         ErrorCodes.ProviderTimeout => "The model provider timed out. Try again.",
         AgentError => "The agent hit an internal error.",

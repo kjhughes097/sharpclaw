@@ -207,4 +207,28 @@ public class AgentToolLoopTests
         Assert.Equal(new[] { "loop_limit_exceeded" }, gw.Failures);
         Assert.Empty(gw.Replies);
     }
+
+    [Fact]
+    public async Task Context_too_large_on_the_first_call_is_the_users_message()
+    {
+        var (loop, gw, _) = Create();
+        gw.Outcomes.Enqueue(ChatOutcome.Fail(ErrorCodes.ContextTooLarge));
+
+        await loop.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(new[] { ErrorCodes.ContextTooLarge }, gw.Failures);
+    }
+
+    [Fact]
+    public async Task Context_too_large_after_tool_rounds_is_reported_as_turn_too_large()
+    {
+        var (loop, gw, _) = Create();
+        gw.Outcomes.Enqueue(ToolCall("call_1", "t"));
+        gw.Outcomes.Enqueue(ChatOutcome.Fail(ErrorCodes.ContextTooLarge));
+
+        await loop.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(new[] { FailReasons.TurnTooLarge }, gw.Failures);
+        Assert.Contains("tool results", FailReasons.Describe(FailReasons.TurnTooLarge));
+    }
 }

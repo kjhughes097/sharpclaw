@@ -48,6 +48,8 @@ const MESSAGES: Record<
   budget_exceeded: () => `Daily budget used up. Resets at ${budgetResetLocalTime()}.`,
   context_too_large: () =>
     "That is too large for the model's context window. Shorten it or start a new chat.",
+  turn_too_large: () =>
+    "The agent's tool results outgrew the model's context window. Ask for a smaller step, or give the agent a model with a larger window.",
   provider_error: () => 'The model provider returned an error. Try again.',
   provider_timeout: () => 'The model provider timed out. Try again.',
   agent_error: () => 'The agent hit an internal error.',

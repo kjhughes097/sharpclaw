@@ -159,8 +159,9 @@ public sealed class AgentLoop
         for (var round = 0; ; round++)
         {
             var chat = await _client.StreamChatAsync(messages, tools, turn.CorrelationId, turn.ThreadId, ct);
+            // After the first round the overflow is the turn's own tool traffic, not the user's message.
             if (!chat.Success)
-                return (null, chat.FailCode, exchanges);
+                return (null, round > 0 && chat.FailCode == ErrorCodes.ContextTooLarge ? FailReasons.TurnTooLarge : chat.FailCode, exchanges);
             if (chat.ToolCalls.Count == 0)
                 return (chat.Content ?? "", null, exchanges);
 

@@ -39,6 +39,10 @@ describe('error mapping table', () => {
     expect(messageForCode('context_too_large')).toBe(
       "That is too large for the model's context window. Shorten it or start a new chat.",
     ));
+  it('turn_too_large', () =>
+    expect(messageForCode('turn_too_large')).toBe(
+      "The agent's tool results outgrew the model's context window. Ask for a smaller step, or give the agent a model with a larger window.",
+    ));
   it('provider_error', () =>
     expect(messageForCode('provider_error')).toBe('The model provider returned an error. Try again.'));
   it('provider_timeout', () =>
