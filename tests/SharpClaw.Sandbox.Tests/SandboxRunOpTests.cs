@@ -38,15 +38,20 @@ public class SandboxRunOpTests : IDisposable
     }
 
     [Fact]
-    public async Task Output_beyond_1_MB_goes_to_a_log_file_in_the_workspace()
+    public async Task Output_beyond_16_KB_is_saved_whole_to_a_log_file_in_the_workspace()
     {
-        var (r, _) = await Run(new { command = "head -c 1200000 /dev/zero | tr '\\0' 'a'" });
+        var (r, _) = await Run(new { command = "head -c 1200000 /dev/zero | tr '\\0' 'a'; echo boom >&2" });
 
         Assert.True(r.GetProperty("truncated").GetBoolean());
+        Assert.Equal(16 * 1024, SandboxRunOp.MaxOutputBytes);
         Assert.Equal(SandboxRunOp.MaxOutputBytes, r.GetProperty("stdout").GetString()!.Length);
         var log = r.GetProperty("logPath").GetString()!;
         Assert.StartsWith(".sandbox/logs/run-", log);
-        Assert.Equal(1_200_000 - SandboxRunOp.MaxOutputBytes, new FileInfo(_ws.File(log)).Length);
+        // The complete output, both streams, not just what didn't fit inline.
+        var text = await File.ReadAllTextAsync(_ws.File(log));
+        Assert.Equal(1_200_000 + "boom\n".Length, text.Length);
+        Assert.EndsWith("boom\n", text);
+        Assert.Equal(text.Length, r.GetProperty("logBytes").GetInt64());
     }
 
     [Fact]

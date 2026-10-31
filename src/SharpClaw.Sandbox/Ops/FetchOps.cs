@@ -54,13 +54,15 @@ public sealed class Fetcher(IOutboundHttp http)
 }
 
 /// <summary>
-/// <c>http_fetch</c> (spec section 7.1): a page as Markdown, plain text or raw, at most 64 KB to
-/// the model. HTML is converted by <c>pandoc --sandbox</c> (no file or network access), with a
-/// fixed argv; other text types are returned as they are; binary content is refused.
+/// <c>http_fetch</c> (spec section 7.1): a page as Markdown, plain text or raw. HTML is converted by
+/// <c>pandoc --sandbox</c> (no file or network access), with a fixed argv; other text types are
+/// returned as they are; binary content is refused. The first 16 KB comes back inline; a longer page
+/// is saved whole to <c>savedPath</c> in the workspace for the model to page through (<see cref="Spill"/>).
 /// </summary>
-public sealed class HttpFetchOp(Fetcher fetcher, IReadOnlyDictionary<string, string> childEnv) : IRunnerOp
+public sealed class HttpFetchOp(Fetcher fetcher, IReadOnlyDictionary<string, string> childEnv, WorkspaceRoot workspace, TimeProvider time)
+    : IRunnerOp
 {
-    public const int MaxResultBytes = 64 * 1024;
+    public const int MaxResultBytes = Spill.InlineBytes;
     public const int MaxBodyBytes = 5 * 1024 * 1024;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
 
@@ -115,6 +117,20 @@ public sealed class HttpFetchOp(Fetcher fetcher, IReadOnlyDictionary<string, str
         }
 
         var (content, truncated) = Truncate(text, MaxResultBytes);
+        var bytes = Encoding.UTF8.GetByteCount(text);
+        string? savedPath = null;
+        if (truncated)
+        {
+            savedPath = Spill.NewPath("fetch", "fetch", format == "markdown" ? "md" : "txt", time);
+            try
+            {
+                await NoFollow.WriteAtomicAsync(workspace.Path, savedPath, Encoding.UTF8.GetBytes(text), ct);
+            }
+            catch (WorkspacePathException)
+            {
+                savedPath = null; // the folder was tampered with: the preview still stands
+            }
+        }
         return OpResult.Success(new
         {
             url = fetched.Url.ToString(),
@@ -123,6 +139,8 @@ public sealed class HttpFetchOp(Fetcher fetcher, IReadOnlyDictionary<string, str
             format,
             content,
             truncated = truncated || bodyTruncated,
+            bytes,
+            savedPath,
         });
     }
 
