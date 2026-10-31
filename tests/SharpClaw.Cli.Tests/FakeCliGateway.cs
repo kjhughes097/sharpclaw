@@ -22,7 +22,7 @@ public partial class CliTests
         public Task<CreatedAgentResponse> CreateAgentAsync(string name, string model, double budget, int? contextWindow = null)
         {
             LastContextWindow = contextWindow;
-            var agent = new AgentDto(Guid.NewGuid(), name, model, budget, true, TestClock.Now, 0, budget);
+            var agent = new AgentDto(Guid.NewGuid(), name, model, budget, true, TestClock.Now, 0, budget, Array.Empty<AgentSkillDto>());
             var token = new TokenValueDto(Guid.NewGuid(), "sc_fake-token", "sc_fake-", null);
             return Task.FromResult(new CreatedAgentResponse(agent, token));
         }
@@ -31,13 +31,13 @@ public partial class CliTests
             Task.FromResult(new AgentListResponse(Array.Empty<AgentDto>()));
 
         public Task<AgentDto> GetAgentAsync(string idOrName) =>
-            Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, "m", 1, true, TestClock.Now, 0, 1));
+            Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, "m", 1, true, TestClock.Now, 0, 1, Array.Empty<AgentSkillDto>()));
 
         public Task<AgentDto> PatchAgentAsync(string idOrName, string? model, double? budget, bool? enabled, int? contextWindow = null)
         {
             LastContextWindow = contextWindow;
             return Task.FromResult(new AgentDto(Guid.NewGuid(), idOrName, model ?? "m", budget ?? 1, enabled ?? true, TestClock.Now, 0, 1,
-                contextWindow));
+                Array.Empty<AgentSkillDto>(), contextWindow));
         }
 
         public Task<CreatedTokenResponse> IssueTokenAsync(string agent, DateTime? expiresAt) =>

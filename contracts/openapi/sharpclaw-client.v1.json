@@ -120,6 +120,19 @@
             "format": "double",
             "type": "number"
           },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/AgentSkillDto"
+            },
+            "type": "array"
+          },
+          "skillsReportedAt": {
+            "format": "date-time",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "todaySpendUsd": {
             "format": "double",
             "type": "number"
@@ -133,7 +146,8 @@
           "enabled",
           "createdAt",
           "todaySpendUsd",
-          "remainingUsd"
+          "remainingUsd",
+          "skills"
         ],
         "type": "object"
       },
@@ -148,6 +162,21 @@
         },
         "required": [
           "agents"
+        ],
+        "type": "object"
+      },
+      "AgentSkillDto": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "description"
         ],
         "type": "object"
       },
