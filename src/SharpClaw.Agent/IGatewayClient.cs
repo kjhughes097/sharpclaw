@@ -28,8 +28,12 @@ public sealed record ChatOutcome(bool Success, string? Content, string? FailCode
     public static ChatOutcome Fail(string code) => new(false, null, code);
 }
 
-/// <summary>The model-ready history for a turn, or a fail code (e.g. <c>context_too_large</c>).</summary>
-public sealed record ContextResult(IReadOnlyList<ChatMessage> Messages, string? FailCode = null)
+/// <summary>
+/// The model-ready history for a turn and the agent's context window, or a fail code (e.g.
+/// <c>context_too_large</c>).
+/// </summary>
+public sealed record ContextResult(
+    IReadOnlyList<ChatMessage> Messages, string? FailCode = null, int WindowTokens = ContextDefaults.DefaultWindowTokens)
 {
     public static ContextResult Fail(string code) => new(Array.Empty<ChatMessage>(), code);
 }

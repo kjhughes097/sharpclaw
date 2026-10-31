@@ -33,6 +33,25 @@ public class ContextTests
             estimator.Estimate(new ContextMessage(Roles.Assistant, null, new[] { call })));
     }
 
+    [Fact]
+    public void The_agents_turn_budget_estimates_exactly_like_the_gateway()
+    {
+        // The agent compacts a turn to fit what the gateway's preflight will accept: they must agree.
+        var messages = new[]
+        {
+            new ChatMessage(Roles.System, "soul"),
+            new ChatMessage(Roles.User, "hello é"),
+            new ChatMessage(Roles.Assistant, null, new[] { new ChatToolCall("call_1", "http_fetch", """{"url":"https://x.test/"}""") }),
+            new ChatMessage(Roles.Tool, new string('a', 1001), ToolCallId: "call_1"),
+        };
+        var gateway = new TokenEstimator(new ContextOptions()).Estimate(messages.Select(m => new ContextMessage(m.Role, m.Content,
+            m.ToolCalls?.Select(c => new ContextToolCall(c.Id, "function", new ContextFunction(c.Name, c.Arguments))).ToList(),
+            m.ToolCallId)));
+
+        Assert.Equal(gateway, SharpClaw.Agent.TurnBudget.Estimate(messages, schemaChars: 0));
+        Assert.Equal(SharpClaw.Agent.TurnBudget.ReplyReserveTokens, new ContextOptions().ReplyReserveTokens);
+    }
+
     /// <summary>A thread of turns, each a user message of <c>chars</c> characters plus a reply.</summary>
     private static (List<Message> Rows, List<Guid> UserIds) Thread(params int[] chars)
     {
