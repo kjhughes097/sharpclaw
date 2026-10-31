@@ -27,7 +27,7 @@ var soul = new SoulProvider(config, loggerFactory.CreateLogger<SoulProvider>());
 // Tool policy is read once, from read-only config. A bad config stops the agent rather than
 // silently granting (or dropping) tools.
 // Every tool the agent knows; the config picks the subset this agent may offer.
-var knownTools = WorkspaceTools.Names.Concat(UtilityTools.Names).Concat(AgentBrokerTools.Names).ToArray();
+var knownTools = WorkspaceTools.Names.Concat(UtilityTools.Names).Concat(AgentBrokerTools.Names).Concat(SkillTools.Names).ToArray();
 AgentToolConfig? toolConfig;
 try
 {
@@ -38,6 +38,11 @@ catch (AgentToolConfigException ex)
     logger.LogError("invalid tool config at {Path}: {Error}", config.ToolConfigPath, ex.Message);
     return 1;
 }
+
+// Skills are on only when skill_read is enabled (skills spec Q8); the index is built once, here.
+SkillLibrary? skills = toolConfig?.Tools.Contains(SkillTools.ReadName) == true
+    ? SkillLibrary.Load(config.SkillsPath, loggerFactory.CreateLogger<SkillLibrary>())
+    : null;
 
 AgentTools? tools = null;
 if (toolConfig is null)
@@ -53,7 +58,8 @@ else
         : BrokerPolicy.Conservative;
     var available = WorkspaceTools.All(config.WorkspacePath)
         .Concat(UtilityTools.All(TimeProvider.System))
-        .Concat(AgentBrokerTools.All(gateway, policy, config.WorkspacePath));
+        .Concat(AgentBrokerTools.All(gateway, policy, config.WorkspacePath))
+        .Concat(SkillTools.All(skills ?? SkillLibrary.Empty));
     var registry = new ToolRegistry(available, toolConfig.Tools);
     var dispatcher = new ToolDispatcher(registry, toolConfig, gateway, loggerFactory.CreateLogger<ToolDispatcher>());
     tools = new AgentTools(registry, dispatcher, toolConfig.MaxToolIterations);
@@ -62,10 +68,9 @@ else
         string.Join(",", toolConfig.Tools), toolConfig.AllowedRiskLevel.ToWire(), toolConfig.SmartMode, toolConfig.MaxToolIterations);
 }
 
-// Skills are on only when skill_read is enabled (skills spec Q8); the index is built once, here.
-SkillLibrary? skills = toolConfig?.Tools.Contains(SkillTools.ReadName) == true
-    ? SkillLibrary.Load(config.SkillsPath, loggerFactory.CreateLogger<SkillLibrary>())
-    : null;
+// Only an agent with skill_read reports (Q8); an empty library still reports, clearing old skills.
+if (skills is not null)
+    await SkillReport.SendAsync(gateway, skills, logger, cts.Token);
 
 var loop = new AgentLoop(gateway, soul, config, loggerFactory.CreateLogger<AgentLoop>(), TimeProvider.System, tools, skills);
 return await loop.RunAsync(cts.Token);
