@@ -187,6 +187,7 @@ done
 
 API_KEY=""
 MODEL="fake/model"
+WINDOW=""
 if [ "$PROVIDER" = OpenRouter ]; then
   HAVE_KEY="$(env_get OPENROUTER_API_KEY)"
   while :; do
@@ -207,6 +208,16 @@ if [ "$PROVIDER" = OpenRouter ]; then
     esac
   done
   ask MODEL "Model for new agents (any OpenRouter model id)" "$DEFAULT_MODEL"
+  # The agents' context window: the smallest any of the model's providers offers (OpenRouter may
+  # route to any of them). Without it the gateway assumes 32k tokens, which tool results outgrow fast.
+  WINDOW="$(curl -s --max-time 10 "https://openrouter.ai/api/v1/models/$MODEL/endpoints" \
+    | grep -oE '"context_length":[0-9]+' | cut -d: -f2 | sort -n | head -n1 || true)"
+  if [ -n "$WINDOW" ] && [ "$WINDOW" -ge 1000 ] && [ "$WINDOW" -le 2000000 ]; then
+    echo "  Context window: $WINDOW tokens."
+  else
+    echo "  Couldn't look up $MODEL's context window; agents use the gateway default (32000 tokens)."
+    WINDOW=""
+  fi
 fi
 
 # --- 3. Agents ---
@@ -251,7 +262,7 @@ fi
 echo
 echo "Ready to set up:"
 echo "  install:  $DEST"
-echo "  provider: $PROVIDER${API_KEY:+ (model $MODEL for new agents, \$$BUDGET/day each)}"
+echo "  provider: $PROVIDER${API_KEY:+ (model $MODEL for new agents, \$$BUDGET/day each${WINDOW:+, $WINDOW-token window})}"
 [ ${#EXISTING[@]} -gt 0 ] && echo "  keep:     ${EXISTING[*]}"
 [ ${#NEW[@]} -gt 0 ] && echo "  create:   ${NEW[*]}"
 [ -n "$USER_NAME" ] && echo "  user:     $USER_NAME (a password is generated and shown at the end)"
@@ -350,7 +361,7 @@ quiet docker compose up -d --wait gateway
 
 for A in "${NEW[@]}"; do
   BODY="$(curl -sS -w '\n%{http_code}' "${AUTH[@]}" -X POST "$BASE/api/agents" \
-    -d "{\"name\":\"$A\",\"model\":\"$MODEL\",\"dailyBudgetUsd\":$BUDGET}")"
+    -d "{\"name\":\"$A\",\"model\":\"$MODEL\",\"dailyBudgetUsd\":$BUDGET${WINDOW:+,\"contextWindowTokens\":$WINDOW}}")"
   if [ "$(echo "$BODY" | tail -n1)" = "409" ]; then
     # The agent exists in the database but .env lost its token: issue a fresh one.
     BODY="$(curl -sS -w '\n%{http_code}' "${AUTH[@]}" -X POST "$BASE/api/agents/$A/tokens" -d '{}')"
@@ -365,7 +376,7 @@ done
 if [ "$PROVIDER" = OpenRouter ]; then
   for A in "${EXISTING[@]}"; do
     if curl -sS "${AUTH[@]}" "$BASE/api/agents/$A" | grep -q '"model":"fake/model"'; then
-      curl -fsS "${AUTH[@]}" -X PATCH "$BASE/api/agents/$A" -d "{\"model\":\"$MODEL\"}" >/dev/null
+      curl -fsS "${AUTH[@]}" -X PATCH "$BASE/api/agents/$A" -d "{\"model\":\"$MODEL\"${WINDOW:+,\"contextWindowTokens\":$WINDOW}}" >/dev/null
       echo "    agent '$A' switched to $MODEL"
     fi
   done

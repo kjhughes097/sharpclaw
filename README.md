@@ -40,7 +40,7 @@ It asks a few questions (press Enter for the default):
 | Question | Default | Notes |
 |---|---|---|
 | Install location | `~/sharpclaw` | Where your config, agents and database live (outside the repo) |
-| Model provider | `1` Fake | **Fake:** canned replies such as `Fake reply to: hello`, no account or cost, enough to explore the UI, approvals and audit. **OpenRouter:** real models; it asks for your [API key](https://openrouter.ai/keys) (checked on the spot) and a model for new agents (`openai/gpt-4o-mini`) |
+| Model provider | `1` Fake | **Fake:** canned replies such as `Fake reply to: hello`, no account or cost, enough to explore the UI, approvals and audit. **OpenRouter:** real models; it asks for your [API key](https://openrouter.ai/keys) (checked on the spot) and a model for new agents (`openai/gpt-4o-mini`), whose context window it looks up so agents use all of it (otherwise `Context:DefaultWindowTokens`, 32k) |
 | Agents | `assistant` | Name your first agent, then keep adding names; Enter on an empty line when you're done |
 | Web UI user name | your login name | A password is generated and shown once at the end |
 
