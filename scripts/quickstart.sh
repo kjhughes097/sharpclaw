@@ -99,7 +99,7 @@ sandbox_remove() {
 # Gives an agent its own sandbox (the template's sandbox-coder pattern) and all broker tools at the
 # gateway. Idempotent: only adds what is missing, so it also finishes off the template's coder.
 sandbox_add() {
-  local A="$1" SECRET PROXY KEY LINES=""
+  local A="$1" SECRET PROXY KEY GATEWAY_ENV=""
   SECRET="$(sandbox_var "$A")"; PROXY="$(sandbox_var "$A" PROXY_)"
   # Two different secrets: gateway -> sandbox, and sandbox -> egress proxy.
   [ -n "$(env_get "$SECRET")" ] || env_set "$SECRET" "$(openssl rand -hex 32)"
@@ -115,9 +115,9 @@ sandbox_add() {
              "ToolBroker__Agents__${A}__SandboxUrl: http://sandbox-$A:8090" \
              "ToolBroker__Agents__${A}__SandboxSecret: \${$SECRET:-}" \
              "Egress__Sandboxes__${A}__Secret: \${$PROXY:-}"; do
-    grep -q "^      ${KEY%%:*}:" "$COMPOSE" || LINES+="      $KEY"$'\n'
+    grep -q "^      ${KEY%%:*}:" "$COMPOSE" || GATEWAY_ENV+="      $KEY"$'\n'
   done
-  [ -z "$LINES" ] || L="$LINES" compose_awk '$0 == "    ports:" && !done {
+  [ -z "$GATEWAY_ENV" ] || L="$GATEWAY_ENV" compose_awk '$0 == "    ports:" && !done {
       printf "%s", ENVIRON["L"]; done = 1 } { print }'
 
   if ! grep -qx "  sandbox-$A:" "$COMPOSE"; then
