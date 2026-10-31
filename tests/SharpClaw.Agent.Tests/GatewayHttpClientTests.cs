@@ -123,6 +123,29 @@ public class GatewayHttpClientTests
         Assert.Equal(LlmCallPurpose.RiskAssessment, handler.LastRequest!.Headers.GetValues("X-SharpClaw-Purpose").Single());
     }
 
+    [Fact]
+    public async Task Skill_report_puts_the_whole_set_and_throws_with_the_status_on_refusal()
+    {
+        string? body = null;
+        var handler = new StubHandler(req =>
+        {
+            body = req.Content!.ReadAsStringAsync().Result;
+            return new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+        var client = new GatewayHttpClient(new HttpClient(handler), Config);
+
+        await client.ReportSkillsAsync(new[] { new AgentSkillDto("daily-notes", "Keep notes.") }, CancellationToken.None);
+
+        Assert.Equal(HttpMethod.Put, handler.LastRequest!.Method);
+        Assert.Equal("http://gw:8081/agent/skills", handler.LastRequest.RequestUri!.ToString());
+        Assert.Equal("""{"skills":[{"name":"daily-notes","description":"Keep notes."}]}""", body);
+
+        var refusing = new GatewayHttpClient(new HttpClient(new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest))), Config);
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(() =>
+            refusing.ReportSkillsAsync(Array.Empty<AgentSkillDto>(), CancellationToken.None));
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+    }
+
     private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
         public HttpRequestMessage? LastRequest { get; private set; }

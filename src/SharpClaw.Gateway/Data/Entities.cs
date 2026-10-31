@@ -15,7 +15,18 @@ public class Agent
     /// <summary>Last authenticated agent-listener request; updated at most once a minute.</summary>
     public DateTime? LastSeenAt { get; set; }
 
+    /// <summary>When the agent last reported its skills (<c>PUT /agent/skills</c>); null if never.</summary>
+    public DateTime? SkillsReportedAt { get; set; }
+
     public List<AgentToken> Tokens { get; set; } = new();
+}
+
+/// <summary>A skill the agent reported loading at startup (skills spec section 9.2).</summary>
+public class AgentSkill
+{
+    public Guid AgentId { get; set; }
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
 }
 
 public class AgentToken

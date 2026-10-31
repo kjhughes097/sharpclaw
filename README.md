@@ -46,7 +46,9 @@ It asks a few questions (press Enter for the default):
 
 After a summary and a confirmation it builds the images, creates the install, starts the gateway,
 creates each agent ($1/day budget) with its token saved in `.env`, creates your user and starts
-every agent in its own container. Once the images are built that takes under a minute (the first
+every agent in its own container, each with its own **sandbox** (`sandbox-<name>`) and every
+[external tool](#external-tools) enabled (`ToolBroker__Agents__<name>__AllTools: "true"` in
+`compose.yml`, and listed in its `agent.json`; risky calls still ask for your approval). Once the images are built that takes under a minute (the first
 image build takes a few minutes).
 
 Open **http://127.0.0.1:8080**, sign in with the printed user name and password, pick **Prompts**,
@@ -57,7 +59,9 @@ install: edit it and `docker compose restart agent-<name>`.
 
 Re-run `scripts/quickstart.sh` and point it at the same install. It keeps your existing agents,
 tokens and user, lets you switch to OpenRouter (agents still on the fake model are moved to the
-model you pick), and asks for any more agents to add. Budgets and models can also be changed per
+model you pick), and asks for any more agents to add. Any agent without a sandbox gets one (and
+`AllTools` at the gateway); an existing agent's `agent.json` is left alone, so add the broker tools
+there yourself to use them. Budgets and models can also be changed per
 agent on its tab in the web UI (**Settings**).
 
 ### Day to day
@@ -267,6 +271,7 @@ A missing file runs the agent without tools; an invalid one stops it (exit code 
 | `workspace_delete` | high |
 | `current_time` | low (UTC, or an IANA zone such as `Europe/London`) |
 | `calculate` | low (arithmetic only: `+ - * / % ^`, `abs round floor ceil sqrt min max`) |
+| `skill_read` | low (reads a file of a loaded skill; see [Skills](#skills)) |
 
 The full rules and caps are in the [agent tools spec](docs/sharpclaw-agent-tools-spec.md).
 
@@ -326,11 +331,12 @@ the smart-mode classifier only ever see a content-free summary such as `run (412
 **Enabling a sandbox.** The template has one for `coder`. `scripts/install.sh` writes two different
 secrets into `.env` (`SANDBOX_CODER_SECRET` for gateway → sandbox, `SANDBOX_CODER_PROXY_SECRET` for
 sandbox → egress proxy). Set `COMPOSE_PROFILES=sandboxes` in `.env`, list the tools for the agent in
-`compose.yml` (e.g. `ToolBroker__Agents__coder__Tools__0: http_fetch`), add them to
+`compose.yml` (e.g. `ToolBroker__Agents__coder__Tools__0: http_fetch`, or
+`ToolBroker__Agents__coder__AllTools: "true"` for all of them), add them to
 `agents/coder/config/agent.json`, and `docker compose up -d`. For another agent, copy the
 `sandbox-coder` service and its `sbx-coder` network and cache volume, add the network to the
 gateway, and add its `ToolBroker__Agents__<name>__Sandbox*` and `Egress__Sandboxes__<name>__Secret`
-lines.
+lines. `scripts/quickstart.sh` does all of this for every agent it sets up.
 
 **GitHub.** Create a fine-grained token for your own account limited to **selected repositories**
 (contents read, issues write, pull requests write) and put it in `.env` as `GITHUB_TOKEN`. That is
@@ -353,6 +359,51 @@ token ever enters a sandbox, and an existing branch is never moved), and opens t
 then runs as a fork PR: no repository secrets, and GitHub holds a first-time contributor's run for
 your approval.
 
+### Skills
+
+Skills are reusable know-how you write once and share across agents: a folder with a `SKILL.md`
+(YAML frontmatter with `name` and `description`, then Markdown instructions) and optionally
+`references/`, `assets/` and `scripts/`. This is the open **Agent Skills** layout, so skills written
+for other agent runtimes work unchanged. See the [skills spec](docs/sharpclaw-skills-spec.md).
+
+```markdown
+---
+name: daily-notes
+description: Keep a dated daily notes file in the workspace. Use when the user asks to note, log or journal something.
+---
+
+# Daily notes
+...
+```
+
+- **Where they live.** One shared library, `skills/` in your install, mounted **read-only** at
+  `/skills` in every agent container (and in an agent's sandbox, so skill scripts can run there).
+  The template ships `daily-notes`, `research-brief` and `csv-summary` (a Python script, with a
+  fallback for agents without a sandbox).
+- **Turning them on.** An agent uses skills only when `skill_read` is in the `tools` list of its
+  `agent.json` (the template's agents have it).
+- **How the model uses them.** Only an index (each skill's name and description) goes into the
+  system prompt. The model loads a skill's `SKILL.md`, and any other file in it, on demand with
+  `skill_read`, so a skill costs tokens only when it's used. Write descriptions that say both
+  *what* the skill does and *when* to use it.
+- **Picking up changes.** The index is built when the agent starts: restart the agent
+  (`docker compose restart agent-<name>`) after adding, removing or renaming a skill or changing a
+  description. Edits to a skill's other contents are read live.
+- **Rules.** The folder name must equal `name` (lowercase letters, digits, single hyphens, at most
+  64 characters); the description is 1–1,024 characters; `SKILL.md` is at most 64 KB. An invalid
+  skill is skipped with a warning in the agent's log (`skill <dir> skipped: <reason>`) and the rest
+  still load. At most 100 skills, and a 16 KB index.
+- **Skills can't grant anything.** Fields such as `allowed-tools` are ignored: tools and risk
+  levels come only from `agent.json`. A skill's scripts can be read but never run in the agent;
+  they can only run in the agent's sandbox through `sandbox_run` (e.g.
+  `python3 /skills/csv-summary/scripts/summarize.py data/sales.csv`), which always needs your
+  approval and shows you the command.
+
+> **Review third-party skills before adding them.** Skill contents are trusted like `soul.md`:
+> reading one does not raise the risk of later tool calls. A skill copied from the internet can
+> carry instructions you wouldn't give your agent (prompt injection), so read every file in it
+> first.
+
 ## Your install
 
 The repo is for building; you run SharpClaw from a separate install directory (default
@@ -367,6 +418,7 @@ SQLite database. The repo ships a sample in [docker/template/](docker/template/)
 | `agents/<name>/config/soul.md` | The agent's persona (system prompt) |
 | `agents/<name>/config/agent.json` | The agent's tool policy (see [Agent tools](#agent-tools)) |
 | `agents/<name>/workspace/` | The only files the agent (and its sandbox, if it has one) can read and write |
+| `skills/<name>/` | The shared [skill library](#skills), read-only to every agent |
 | `data/` | The gateway's SQLite database |
 
 **Manual setup.** `scripts/quickstart.sh` runs these steps for you; to do them by hand:
@@ -388,7 +440,7 @@ SQLite database. The repo ships a sample in [docker/template/](docker/template/)
 5. Create your web UI user: `sharpclaw users create <name>`.
 
 **Adding an agent.** Copy an `agent-*` service in `compose.yml` and rename it, its token variable
-and its mount paths; create `agents/<name>/config/soul.md`, `agent.json` and an empty
+and its mount paths (keep the `./skills:/skills:ro` line); create `agents/<name>/config/soul.md`, `agent.json` and an empty
 `workspace/`; then `sharpclaw agents create <name> …`, put the token in `.env` and
 `docker compose up -d`. Or just re-run `scripts/quickstart.sh`, which does all of that for you.
 
@@ -451,6 +503,7 @@ ASP.NET `__` syntax).
 | `Context:CharsPerToken` | `4` | Estimation heuristic |
 | `Context:MessageOverheadTokens` | `4` | Added per message |
 | `ToolBroker:Agents:<name>:Tools` | empty | Broker tools the agent may call (the operator's gate) |
+| `ToolBroker:Agents:<name>:AllTools` | `false` | `true`: the agent may call every broker tool and `Tools` is ignored (the quick start sets this) |
 | `ToolBroker:Agents:<name>:SandboxUrl` / `SandboxSecret` | empty | The agent's sandbox runner and its service secret (`SANDBOX_<NAME>_SECRET`); empty secret: no sandbox (`503 tool_unavailable`) |
 | `ToolBroker:AlwaysApprove` | `sandbox_run`, `github_write`, `github_create_pr` | Tools the gateway never runs without a matching approval; `ToolBroker__AlwaysApprove__0=` (empty) clears it |
 | `ToolBroker:ApprovalUseSeconds` | `600` | An approval must be used this soon after it was decided |
@@ -471,7 +524,8 @@ Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 
 **Agent** (environment): `GATEWAY_URL` (required), `AGENT_TOKEN` (required), `SOUL_PATH`
 (`/config/soul.md`), `AGENT_CONFIG_PATH` (`/config/agent.json`, tool policy), `WORKSPACE_PATH`
-(`/workspace`), `LONG_POLL_SECONDS` (`30`), `LOG_LEVEL` (`Information`).
+(`/workspace`), `SKILLS_PATH` (`/skills`, the read-only skill library), `LONG_POLL_SECONDS` (`30`),
+`LOG_LEVEL` (`Information`).
 
 **Sandbox runner** (environment, set by compose): `SANDBOX_SECRET` (required, at least 16
 characters), `HTTP_PROXY`/`HTTPS_PROXY` (`http://sbx-<name>:<proxy secret>@gateway:8082`),
@@ -521,12 +575,14 @@ cd ~/sharpclaw && bash <repo>/scripts/verify-isolation.sh
 
 It checks that the agent network cannot reach the public internet but can reach the gateway agent
 listener, that port 8081 is not published to the host, that each route group returns `404` on the
-wrong port, and that the agent container's root filesystem and `/config` are read-only. With
+wrong port, that the agent container's root filesystem and `/config` are read-only, and that
+`/skills` is mounted read-only in each running agent and doesn't overlap `/workspace`. With
 sandboxes running it also checks that port 8082 is not published, that agents can't reach a
 sandbox and get `407` from the egress proxy, and, per sandbox, that it is only on its own network,
 has no direct route out, reaches the internet through the proxy with its credential, is refused
 metadata/LAN/gateway addresses, gets `401` from the client and agent listeners, can't reach other
-sandboxes, mounts only its own workspace and cache, and has a read-only root filesystem.
+sandboxes, mounts only its own workspace and cache (plus `/skills`, read-only), and has a read-only
+root filesystem.
 
 ## Development
 
@@ -598,6 +654,6 @@ Behaviour is specified phase by phase; later specs win where they differ:
 [3.3](docs/sharpclaw-3.3-implementation-spec.md) (web UI) →
 [3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign), plus the
 [agent tools spec](docs/sharpclaw-agent-tools-spec.md), the
-[external tools spec](docs/sharpclaw-external-tools-spec.md) and the accepted [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
+[external tools spec](docs/sharpclaw-external-tools-spec.md) and the [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
 ([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the
 [post-3.3 codebase review](docs/post-phase-3.3-codebase-review.md) are historical working notes.

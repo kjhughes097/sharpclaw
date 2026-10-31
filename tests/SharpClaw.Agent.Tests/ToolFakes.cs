@@ -90,6 +90,16 @@ internal sealed class RecordingGateway : IGatewayClient
     public AgentToolPolicyResponse Policy { get; set; } = new(Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
     public Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct) => Task.FromResult(Policy);
 
+    /// <summary>Every skill report sent; <see cref="SkillReportException"/> makes the next ones throw.</summary>
+    public List<IReadOnlyList<AgentSkillDto>> SkillReports { get; } = new();
+    public Exception? SkillReportException { get; set; }
+
+    public Task ReportSkillsAsync(IReadOnlyList<AgentSkillDto> skills, CancellationToken ct)
+    {
+        SkillReports.Add(skills);
+        return SkillReportException is null ? Task.CompletedTask : Task.FromException(SkillReportException);
+    }
+
     public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => throw new NotSupportedException();
     public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct) => throw new NotSupportedException();
     public Task<ChatOutcome> StreamChatAsync(IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,

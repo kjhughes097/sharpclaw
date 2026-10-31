@@ -57,7 +57,7 @@ public static class AgentsEndpoints
         db.AgentTokens.Add(tokenEntity);
         await db.SaveChangesAsync(ct);
 
-        var dto = AgentQueries.ToDto(agent, 0);
+        var dto = AgentQueries.ToDto(agent, 0, Array.Empty<AgentSkillDto>());
         var response = new CreatedAgentResponse(dto, tokenValue);
         return Results.Json(response, SharpClawJson.Options, statusCode: 201);
     }
@@ -71,9 +71,10 @@ public static class AgentsEndpoints
             .GroupBy(c => c.AgentId)
             .Select(g => new { g.Key, Total = g.Sum(c => c.CostUsd) })
             .ToDictionaryAsync(x => x.Key, x => x.Total, ct);
+        var skills = await AgentQueries.SkillsByAgentAsync(db, null, ct);
 
         var dtos = agents
-            .Select(a => AgentQueries.ToDto(a, spend.GetValueOrDefault(a.Id)))
+            .Select(a => AgentQueries.ToDto(a, spend.GetValueOrDefault(a.Id), skills.GetValueOrDefault(a.Id) ?? Array.Empty<AgentSkillDto>()))
             .ToList();
         return Results.Json(new AgentListResponse(dtos), SharpClawJson.Options);
     }
@@ -85,7 +86,8 @@ public static class AgentsEndpoints
         if (agent is null)
             return ApiResults.NotFound("Agent not found.");
         var spend = await AgentQueries.TodaySpendAsync(db, time, agent.Id, ct);
-        return Results.Json(AgentQueries.ToDto(agent, spend), SharpClawJson.Options);
+        var skills = await AgentQueries.SkillsAsync(db, agent.Id, ct);
+        return Results.Json(AgentQueries.ToDto(agent, spend, skills), SharpClawJson.Options);
     }
 
     private static async Task<IResult> PatchAgent(
@@ -120,7 +122,8 @@ public static class AgentsEndpoints
 
         await db.SaveChangesAsync(ct);
         var spend = await AgentQueries.TodaySpendAsync(db, time, agent.Id, ct);
-        return Results.Json(AgentQueries.ToDto(agent, spend), SharpClawJson.Options);
+        var skills = await AgentQueries.SkillsAsync(db, agent.Id, ct);
+        return Results.Json(AgentQueries.ToDto(agent, spend, skills), SharpClawJson.Options);
     }
 
     private static async Task<IResult> IssueToken(

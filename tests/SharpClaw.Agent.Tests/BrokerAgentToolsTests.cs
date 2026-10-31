@@ -264,6 +264,7 @@ public class BrokerAgentToolsTests : IDisposable
     private sealed class FailingPolicyGateway : IGatewayClient
     {
         public Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct) => throw new HttpRequestException("down");
+        public Task ReportSkillsAsync(IReadOnlyList<AgentSkillDto> skills, CancellationToken ct) => throw new NotSupportedException();
         public Task<ToolResult> InvokeToolAsync(string tool, InvokeToolRequest request, CancellationToken ct) => throw new NotSupportedException();
         public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => throw new NotSupportedException();
         public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct) => throw new NotSupportedException();

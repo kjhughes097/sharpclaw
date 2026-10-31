@@ -95,6 +95,38 @@ public partial class ToolBrokerTests
     }
 
     [Fact]
+    public async Task AllTools_enables_every_broker_tool_whatever_the_list_says()
+    {
+        var handler = new FakeBrokerHandler(BrokerTools.HttpFetch, BrokerTools.WebSearch);
+        var config = Config("assistant", BrokerTools.HttpFetch);
+        config["ToolBroker:Agents:assistant:AllTools"] = "true";
+        await using var fx = await GatewayAsync(config, handler);
+        var t = await fx.ClaimedTurnAsync();
+
+        Assert.Equal(HttpStatusCode.OK, (await t.InvokeAsync(BrokerTools.WebSearch, new { query = "q" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await t.InvokeAsync("no_such_tool", new { }, toolCallId: "call_2")).StatusCode);
+        Assert.Equal(BrokerTools.WebSearch, Assert.Single(handler.Calls).Tool);
+
+        using var c = fx.AgentClient(t.Token);
+        var policy = await c.GetFromJsonAsync<AgentToolPolicyResponse>("/agent/tools", SharpClawJson.Options);
+        Assert.Equal(BrokerTools.All, policy!.Tools);
+        Assert.Equal(BrokerTools.DefaultAlwaysApprove.Order(), policy.AlwaysApprove);
+    }
+
+    [Fact]
+    public async Task AllTools_false_keeps_the_listed_tools_only()
+    {
+        var handler = new FakeBrokerHandler(BrokerTools.HttpFetch, BrokerTools.WebSearch);
+        var config = Config("assistant", BrokerTools.HttpFetch);
+        config["ToolBroker:Agents:assistant:AllTools"] = "false";
+        await using var fx = await GatewayAsync(config, handler);
+        var t = await fx.ClaimedTurnAsync();
+
+        Assert.Equal(HttpStatusCode.NotFound, (await t.InvokeAsync(BrokerTools.WebSearch, new { query = "q" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await t.InvokeAsync(BrokerTools.HttpFetch, new { url = "https://example.com/" }, toolCallId: "call_2")).StatusCode);
+    }
+
+    [Fact]
     public async Task Outside_a_claimed_turn_returns_404()
     {
         var handler = new FakeBrokerHandler(BrokerTools.HttpFetch);

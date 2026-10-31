@@ -1,6 +1,8 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using SharpClaw.Agent.Skills;
 using SharpClaw.Agent.Tools;
+using SharpClaw.Agent.Tools.Broker;
 using SharpClaw.Agent.Tools.Utility;
 using SharpClaw.Agent.Tools.Workspace;
 
@@ -9,7 +11,8 @@ namespace SharpClaw.Agent.Tests;
 public class AgentToolConfigTests : IDisposable
 {
     // The same union Program.cs passes in.
-    private static readonly string[] Known = WorkspaceTools.Names.Concat(UtilityTools.Names).ToArray();
+    private static readonly string[] Known = WorkspaceTools.Names.Concat(UtilityTools.Names)
+        .Concat(AgentBrokerTools.Names).Concat(SkillTools.Names).ToArray();
     private readonly string _path = Path.Combine(Path.GetTempPath(), $"agent-config-{Guid.NewGuid():N}.json");
 
     public void Dispose() => File.Delete(_path);
@@ -65,6 +68,7 @@ public class AgentToolConfigTests : IDisposable
         var config = Load(JsonSerializer.Serialize(new { tools = Known }))!;
         Assert.Equal(Known, config.Tools);
         Assert.Contains("current_time", config.Tools);
+        Assert.Contains("skill_read", config.Tools);
     }
 
     [Theory]
@@ -76,6 +80,7 @@ public class AgentToolConfigTests : IDisposable
         var config = AgentToolConfig.Load(path, Known);
         Assert.NotNull(config);
         Assert.NotEmpty(config.Tools);
+        Assert.Contains(SkillTools.ReadName, config.Tools);
     }
 
     private static string RepoRoot([CallerFilePath] string thisFile = "") =>

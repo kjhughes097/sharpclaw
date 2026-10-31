@@ -9,8 +9,14 @@ namespace SharpClaw.Agent.Tools.Workspace;
 /// </summary>
 public sealed class WorkspaceRoot
 {
-    public WorkspaceRoot(string root) =>
+    /// <param name="label">What the root is called in error reasons the model sees ("workspace", "skill").</param>
+    public WorkspaceRoot(string root, string label = "workspace")
+    {
         Path = System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(root));
+        _label = label;
+    }
+
+    private readonly string _label;
 
     public string Path { get; }
 
@@ -24,20 +30,20 @@ public sealed class WorkspaceRoot
     public (Resolved? Path, string? Error) Resolve(string? relative, bool allowRoot = false)
     {
         if (string.IsNullOrWhiteSpace(relative) || relative.Trim() is "." or "./")
-            return allowRoot ? (new Resolved(Path, "."), null) : (null, "a path inside the workspace is required");
+            return allowRoot ? (new Resolved(Path, "."), null) : (null, $"a path inside the {_label} is required");
 
         if (relative.Contains('\0'))
             return (null, "path contains a null character");
         var normalised = relative.Replace('\\', '/');
         if (normalised.StartsWith('/') || System.IO.Path.IsPathRooted(normalised))
-            return (null, "absolute paths are not allowed; use a path relative to the workspace");
+            return (null, $"absolute paths are not allowed; use a path relative to the {_label}");
 
         var full = System.IO.Path.GetFullPath(System.IO.Path.Combine(Path, normalised));
         var inside = full == Path || full.StartsWith(Path + System.IO.Path.DirectorySeparatorChar, StringComparison.Ordinal);
         if (!inside)
-            return (null, "path resolves outside the workspace");
+            return (null, $"path resolves outside the {_label}");
         if (full == Path && !allowRoot)
-            return (null, "a path inside the workspace is required");
+            return (null, $"a path inside the {_label} is required");
 
         if (FirstSymlink(full) is { } link)
             return (null, $"symbolic links are not allowed ({link})");
