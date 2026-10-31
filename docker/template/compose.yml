@@ -117,8 +117,9 @@ services:
       - ./skills:/skills:ro
 
   sandbox-coder:
-    # The coder's sandbox: its own workspace (rw) and cache, its own network, egress only through
-    # the gateway's proxy with its own credential.
+    # The coder's sandbox: its own workspace (rw) and cache, the skill library (ro, so skill scripts
+    # can run through sandbox_run), its own network, egress only through the gateway's proxy with
+    # its own credential.
     <<: *sandbox
     environment:
       SANDBOX_SECRET: ${SANDBOX_CODER_SECRET:-}
@@ -129,3 +130,4 @@ services:
     volumes:
       - ./agents/coder/workspace:/workspace
       - sandbox-coder-cache:/cache
+      - ./skills:/skills:ro

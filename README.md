@@ -372,7 +372,9 @@ description: Keep a dated daily notes file in the workspace. Use when the user a
 ```
 
 - **Where they live.** One shared library, `skills/` in your install, mounted **read-only** at
-  `/skills` in every agent container. The template ships `daily-notes` and `research-brief`.
+  `/skills` in every agent container (and in an agent's sandbox, so skill scripts can run there).
+  The template ships `daily-notes`, `research-brief` and `csv-summary` (a Python script, with a
+  fallback for agents without a sandbox).
 - **Turning them on.** An agent uses skills only when `skill_read` is in the `tools` list of its
   `agent.json` (the template's agents have it).
 - **How the model uses them.** Only an index (each skill's name and description) goes into the
@@ -388,7 +390,9 @@ description: Keep a dated daily notes file in the workspace. Use when the user a
   still load. At most 100 skills, and a 16 KB index.
 - **Skills can't grant anything.** Fields such as `allowed-tools` are ignored: tools and risk
   levels come only from `agent.json`. A skill's scripts can be read but never run in the agent;
-  they can only run in the agent's sandbox through `sandbox_run`, which always needs your approval.
+  they can only run in the agent's sandbox through `sandbox_run` (e.g.
+  `python3 /skills/csv-summary/scripts/summarize.py data/sales.csv`), which always needs your
+  approval and shows you the command.
 
 > **Review third-party skills before adding them.** Skill contents are trusted like `soul.md`:
 > reading one does not raise the risk of later tool calls. A skill copied from the internet can
@@ -571,7 +575,8 @@ sandboxes running it also checks that port 8082 is not published, that agents ca
 sandbox and get `407` from the egress proxy, and, per sandbox, that it is only on its own network,
 has no direct route out, reaches the internet through the proxy with its credential, is refused
 metadata/LAN/gateway addresses, gets `401` from the client and agent listeners, can't reach other
-sandboxes, mounts only its own workspace and cache, and has a read-only root filesystem.
+sandboxes, mounts only its own workspace and cache (plus `/skills`, read-only), and has a read-only
+root filesystem.
 
 ## Development
 

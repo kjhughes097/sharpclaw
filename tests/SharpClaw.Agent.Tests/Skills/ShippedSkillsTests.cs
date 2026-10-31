@@ -19,6 +19,7 @@ public class ShippedSkillsTests
 
         Assert.Contains("daily-notes", dirs);
         Assert.Contains("research-brief", dirs);
+        Assert.Contains("csv-summary", dirs);
         Assert.Equal(dirs, library.Skills.Select(s => s.Name));
         Assert.DoesNotContain(log.Lines, l => l.Contains("skipped"));
     }

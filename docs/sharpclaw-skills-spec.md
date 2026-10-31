@@ -1,7 +1,7 @@
 # SharpClaw V3 — Skills Spec
 
 **Audience:** an implementing coding agent (and the human reviewing its work).
-**Status:** **accepted**, not yet implemented. Build it in the task order in section 14.
+**Status:** **implemented** (tasks 1–7 in section 14).
 **Scope:** operator-curated **skills**: folders of instructions, reference files, templates and
 (optionally) scripts that every agent can load when a task needs them. Skills are read from a
 shared, read-only volume. The agent loads them with one new read-only tool, and the gateway and

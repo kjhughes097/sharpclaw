@@ -164,9 +164,19 @@ else
     MOUNTS=$(docker inspect -f '{{range .Mounts}}{{.Destination}}={{.Source}} {{end}}' "$CID" | xargs -n1 | sort | xargs)
     BAD=$(echo "$MOUNTS" | xargs -n1 | grep -vE "^/workspace=.*/agents/$N/workspace$|^/cache=|^/skills=" || true)
     if [ -z "$BAD" ] && echo "$MOUNTS" | grep -qE "/workspace=.*/agents/$N/workspace"; then
-      pass "sandbox-$N mounts only its own workspace (and its cache)"
+      pass "sandbox-$N mounts only its own workspace (and its cache and the skill library)"
     else
       fail "sandbox-$N mounts: $MOUNTS"
+    fi
+
+    # The skill library is optional in a sandbox, but read-only when it is there.
+    SKILLS_RW=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/skills"}}{{.RW}}{{end}}{{end}}' "$CID")
+    if [ -n "$SKILLS_RW" ]; then
+      if [ "$SKILLS_RW" = "false" ] && ! docker compose exec -T "sandbox-$N" sh -c 'touch /skills/write-test' 2>/dev/null; then
+        pass "sandbox-$N /skills is read-only"
+      else
+        fail "sandbox-$N /skills is writable"
+      fi
     fi
 
     if docker compose exec -T "sandbox-$N" sh -c 'touch /rootfs-write-test' 2>/dev/null; then
