@@ -11,8 +11,9 @@ Images are built from the repo checkout (`scripts/build-images.sh`), not here.
 ## First run
 
 If you ran `scripts/quickstart.sh` from the repo, this is already done: the agents' tokens are in
-`.env`, your web UI user exists, and everything is running. Open `http://localhost:8080`. Re-run it
-(pointing at this directory) to switch provider or add agents.
+`.env`, your web UI user exists, and everything is running. Open `http://localhost:8080` (or the
+interface and port you chose). Re-run it (pointing at this directory) to switch provider, change the
+interface or ports, add agents, or overwrite `compose.yml` or an agent with fresh defaults.
 
 By hand:
 

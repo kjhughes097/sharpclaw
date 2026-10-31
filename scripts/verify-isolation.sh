@@ -9,6 +9,11 @@ NET="${PROJECT}_internal"
 CURL_IMAGE="curlimages/curl:latest"
 FAILURES=0
 
+# Secrets for the proxy checks, and any non-default listener ports, come from the install's .env.
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+AGENT_PORT="${AGENT_PORT:-8081}"
+EGRESS_PORT="${EGRESS_PORT:-8082}"
+
 pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1"; FAILURES=$((FAILURES + 1)); }
 
@@ -20,25 +25,25 @@ else
 fi
 
 echo "== 1b. Gateway agent listener is reachable from the internal network =="
-if docker run --rm --network "$NET" "$CURL_IMAGE" -sS --max-time 8 http://gateway:8081/healthz | grep -q '"status":"ok"'; then
-  pass "http://gateway:8081/healthz is reachable from $NET"
+if docker run --rm --network "$NET" "$CURL_IMAGE" -sS --max-time 8 http://gateway:$AGENT_PORT/healthz | grep -q '"status":"ok"'; then
+  pass "http://gateway:$AGENT_PORT/healthz is reachable from $NET"
 else
-  fail "http://gateway:8081/healthz was NOT reachable from $NET"
+  fail "http://gateway:$AGENT_PORT/healthz was NOT reachable from $NET"
 fi
 
-echo "== 2. Agent port 8081 is NOT published to the host =="
-if curl -sS --max-time 3 http://127.0.0.1:8081/healthz >/dev/null 2>&1; then
-  fail "http://127.0.0.1:8081 is reachable from the host (port must not be published)"
+echo "== 2. Agent port $AGENT_PORT is NOT published to the host =="
+if curl -sS --max-time 3 http://127.0.0.1:$AGENT_PORT/healthz >/dev/null 2>&1; then
+  fail "http://127.0.0.1:$AGENT_PORT is reachable from the host (port must not be published)"
 else
-  pass "http://127.0.0.1:8081 is not reachable from the host"
+  pass "http://127.0.0.1:$AGENT_PORT is not reachable from the host"
 fi
 
 echo "== 3a. Client routes return 404 on the agent port =="
-CODE=$(docker run --rm --network "$NET" "$CURL_IMAGE" -s -o /dev/null -w "%{http_code}" --max-time 8 http://gateway:8081/api/agents)
+CODE=$(docker run --rm --network "$NET" "$CURL_IMAGE" -s -o /dev/null -w "%{http_code}" --max-time 8 http://gateway:$AGENT_PORT/api/agents)
 if [ "$CODE" = "404" ]; then
-  pass "GET /api/agents on :8081 returned 404"
+  pass "GET /api/agents on :$AGENT_PORT returned 404"
 else
-  fail "GET /api/agents on :8081 returned $CODE (expected 404)"
+  fail "GET /api/agents on :$AGENT_PORT returned $CODE (expected 404)"
 fi
 
 echo "== 3b. Agent routes return 404 on the client port =="
@@ -95,30 +100,28 @@ done
 
 # ----- External tools: the egress proxy and sandboxes (external tools spec section 10) -----
 
-# Secrets for the proxy checks come from the install's .env.
-if [ -f .env ]; then set -a; . ./.env; set +a; fi
 curl_on() { local NETWORK="$1"; shift; docker run --rm --network "$NETWORK" "$CURL_IMAGE" -s --max-time 10 "$@"; }
 upper() { echo "$1" | tr 'a-z-' 'A-Z_'; }
 SANDBOXES=$(docker compose ps --services --status running | sed -n 's/^sandbox-//p')
 
-echo "== 5a. Egress port 8082 is NOT published to the host =="
-if curl -sS --max-time 3 http://127.0.0.1:8082 >/dev/null 2>&1; then
-  fail "127.0.0.1:8082 is reachable from the host (the egress port must not be published)"
+echo "== 5a. Egress port $EGRESS_PORT is NOT published to the host =="
+if curl -sS --max-time 3 http://127.0.0.1:$EGRESS_PORT >/dev/null 2>&1; then
+  fail "127.0.0.1:$EGRESS_PORT is reachable from the host (the egress port must not be published)"
 else
-  pass "127.0.0.1:8082 is not reachable from the host"
+  pass "127.0.0.1:$EGRESS_PORT is not reachable from the host"
 fi
 
 if [ -z "$SANDBOXES" ]; then
   echo "(no sandbox-* services running: skipping sandbox checks; start them with COMPOSE_PROFILES=sandboxes)"
 else
   echo "== 5b. Agents get 407 from the egress proxy (they have no proxy credential) =="
-  CODE=$(curl_on "$NET" -o /dev/null -w "%{http_connect}" -x http://gateway:8082 https://example.com)
-  if [ "$CODE" = "407" ]; then pass "CONNECT via gateway:8082 from $NET returned 407"; else fail "CONNECT via gateway:8082 from $NET returned '$CODE' (expected 407)"; fi
+  CODE=$(curl_on "$NET" -o /dev/null -w "%{http_connect}" -x http://gateway:$EGRESS_PORT https://example.com)
+  if [ "$CODE" = "407" ]; then pass "CONNECT via gateway:$EGRESS_PORT from $NET returned 407"; else fail "CONNECT via gateway:$EGRESS_PORT from $NET returned '$CODE' (expected 407)"; fi
 
   for N in $SANDBOXES; do
     SBX_NET="${PROJECT}_sbx-$N"
     SECRET_VAR="SANDBOX_$(upper "$N")_PROXY_SECRET"
-    PROXY="http://sbx-$N:${!SECRET_VAR:-}@gateway:8082"
+    PROXY="http://sbx-$N:${!SECRET_VAR:-}@gateway:$EGRESS_PORT"
     CID=$(docker compose ps -q "sandbox-$N")
 
     echo "== 6. sandbox-$N =="
@@ -147,7 +150,7 @@ else
     CODE=$(curl_on "$SBX_NET" -o /dev/null -w "%{http_connect}" -x "$PROXY" https://gateway:8080/)
     if [ "$CODE" = "403" ]; then pass "proxy refuses CONNECT gateway:8080"; else fail "CONNECT gateway:8080 returned '$CODE' (expected 403)"; fi
 
-    for URL in http://gateway:8080/api/agents http://gateway:8081/agent/inbox; do
+    for URL in http://gateway:8080/api/agents http://gateway:$AGENT_PORT/agent/inbox; do
       CODE=$(curl_on "$SBX_NET" -o /dev/null -w "%{http_code}" "$URL")
       if [ "$CODE" = "401" ]; then pass "$URL from $SBX_NET needs credentials (401)"; else fail "$URL from $SBX_NET returned '$CODE' (expected 401)"; fi
     done

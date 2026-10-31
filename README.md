@@ -40,12 +40,17 @@ It asks a few questions (press Enter for the default):
 | Question | Default | Notes |
 |---|---|---|
 | Install location | `~/sharpclaw` | Where your config, agents and database live (outside the repo) |
+| Overwrite `compose.yml`? | `n` | Only when the install already has one. `y` replaces it with the template's (the old one is saved as `compose.yml.bak-<timestamp>`); your agents are put back into it |
+| Overwrite agent `<name>`? | `n` | Asked for each existing agent. `y` resets its `soul.md` and `agent.json` (the old `config/` is saved as `config.bak-<timestamp>`) and its model and daily limit; its token and workspace are kept |
 | Model provider | `1` Fake | **Fake:** canned replies such as `Fake reply to: hello`, no account or cost, enough to explore the UI, approvals and audit. **OpenRouter:** real models; it asks for your [API key](https://openrouter.ai/keys) (checked on the spot) and a model for new agents (`openai/gpt-4o-mini`), whose context window it looks up so agents use all of it (otherwise `Context:DefaultWindowTokens`, 32k) |
-| Agents | `assistant` | Name your first agent, then keep adding names; Enter on an empty line when you're done |
+| Interface | `localhost` | Where the web UI and client API are published: `localhost`, `all` (`0.0.0.0`) or one of the host's IPv4 addresses (`CLIENT_BIND`). Plain HTTP: never port-forward it |
+| Ports | `8080`, `8081`, `8082` | The client port on the host (`CLIENT_PORT`), and the internal agent (`AGENT_PORT`) and egress proxy (`EGRESS_PORT`) listeners, which are never published |
+| Agents | `assistant` | Name your first agent, then keep adding names; Enter on an empty line when you're done. If `agents/<name>/config` already exists it asks whether to overwrite it |
+| Daily spend limit | `$10` | Asked for each agent being created or overwritten |
 | Web UI user name | your login name | A password is generated and shown once at the end |
 
 After a summary and a confirmation it builds the images, creates the install, starts the gateway,
-creates each agent ($1/day budget) with its token saved in `.env`, creates your user and starts
+creates each agent (with the daily limit you gave it) with its token saved in `.env`, creates your user and starts
 every agent in its own container, each with its own **sandbox** (`sandbox-<name>`) and every
 [external tool](#external-tools) enabled (`ToolBroker__Agents__<name>__AllTools: "true"` in
 `compose.yml`, and listed in its `agent.json`; risky calls still ask for your approval). Once the images are built that takes under a minute (the first
@@ -58,10 +63,11 @@ install: edit it and `docker compose restart agent-<name>`.
 ### Use real models, add agents
 
 Re-run `scripts/quickstart.sh` and point it at the same install. It keeps your existing agents,
-tokens and user, lets you switch to OpenRouter (agents still on the fake model are moved to the
-model you pick), and asks for any more agents to add. Any agent without a sandbox gets one (and
-`AllTools` at the gateway); an existing agent's `agent.json` is left alone, so add the broker tools
-there yourself to use them. Budgets and models can also be changed per
+tokens and user unless you choose to overwrite them, lets you switch to OpenRouter (agents still on
+the fake model are moved to the model you pick), change the interface and ports, and asks for any
+more agents to add. Any agent without a sandbox gets one (and
+`AllTools` at the gateway); an existing agent's `agent.json` is left alone unless you overwrite the
+agent, so add the broker tools there yourself to use them. Budgets and models can also be changed per
 agent on its tab in the web UI (**Settings**).
 
 ### Day to day
@@ -461,7 +467,9 @@ plain HTTP, so **never port-forward it** from your router.
 on the same host needs its own `COMPOSE_PROJECT_NAME` and `CLIENT_PORT`.
 
 Containers are started and stopped by you. The gateway never touches the Docker socket, and the
-agent port 8081 and egress proxy port 8082 are never published.
+agent port (`AGENT_PORT`, default 8081) and egress proxy port (`EGRESS_PORT`, default 8082) are
+never published. Change those two only if they clash with something; the template passes them to
+the gateway (`Listeners__AgentPort`, `Egress__Port`), the agents and the sandboxes.
 
 ## Configuration
 
@@ -532,7 +540,7 @@ Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 `LOG_LEVEL` (`Information`).
 
 **Sandbox runner** (environment, set by compose): `SANDBOX_SECRET` (required, at least 16
-characters), `HTTP_PROXY`/`HTTPS_PROXY` (`http://sbx-<name>:<proxy secret>@gateway:8082`),
+characters), `HTTP_PROXY`/`HTTPS_PROXY` (`http://sbx-<name>:<proxy secret>@gateway:${EGRESS_PORT:-8082}`),
 `SANDBOX_WORKSPACE` (`/workspace`), `SANDBOX_CACHE` (`/cache`), `SANDBOX_PORT` (`8090`). Child
 processes get only an allow-listed environment, never `SANDBOX_SECRET`.
 

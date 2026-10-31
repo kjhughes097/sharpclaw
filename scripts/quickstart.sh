@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
 # Interactive setup from a fresh clone to a running SharpClaw. It asks where to install, which model
-# provider to use (Fake to try it out, or OpenRouter with your API key), which agents to create and
-# your web UI user name, then builds the images, creates the install, creates the agents (tokens go
-# straight into .env) and your user, and starts everything. Every agent gets its own sandbox and
-# all broker tools (ToolBroker__Agents__<name>__AllTools). Needs only Docker (with compose), curl
-# and openssl on the host.
+# provider to use (Fake to try it out, or OpenRouter with your API key), the interface and ports the
+# gateway listens on, which agents to create (and each one's daily spend limit) and your web UI user
+# name, then builds the images, creates the install, creates the agents (tokens go straight into
+# .env) and your user, and starts everything. Every agent gets its own sandbox and all broker tools
+# (ToolBroker__Agents__<name>__AllTools). Needs only Docker (with compose), curl and openssl on the
+# host.
 #
 #   scripts/quickstart.sh [dir]     (dir skips the install-location question)
 #
-# Safe to re-run on an existing install: it never overwrites your files, keeps existing agents,
-# tokens and users, and lets you switch provider or add more agents. CLIENT_PORT=<port> in the
-# environment publishes a new install on another port (e.g. for a second install on this host,
-# together with COMPOSE_PROJECT_NAME).
+# Safe to re-run on an existing install: it keeps tokens and users, and only overwrites compose.yml
+# or an existing agent's config when you say so (the old files are backed up first). It lets you
+# switch provider, change the listen address and ports, or add more agents. CLIENT_PORT=<port> in
+# the environment sets the default client port (e.g. for a second install on this host, together
+# with COMPOSE_PROJECT_NAME).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 NAME_RE='^[a-z0-9][a-z0-9-]{1,31}$'        # agent names (the gateway's rule)
 USER_RE='^[a-z0-9][a-z0-9._-]{1,31}$'      # web UI user names
 DEFAULT_MODEL="openai/gpt-4o-mini"
-BUDGET=1
+DEFAULT_BUDGET=10                          # USD per agent per day
+CONTAINER_CLIENT_PORT=8080                 # the client listener inside the gateway container
+TS="$(date +%Y%m%d-%H%M%S)"                # suffix for backups of overwritten files
 
 for CMD in docker curl openssl; do
   command -v "$CMD" >/dev/null || { echo "quickstart: '$CMD' is required" >&2; exit 1; }
@@ -36,6 +40,44 @@ ask_secret() { # ask_secret VAR "question" (not echoed)
   read -r -s -p "$2: " reply || { echo; echo "quickstart: cancelled" >&2; exit 1; }
   echo >&2
   printf -v "$1" '%s' "$reply"
+}
+ask_yn() { # ask_yn VAR "question" y|n  (sets VAR to true or false)
+  local answer
+  while :; do
+    ask answer "$2 (y/n)" "$3"
+    case "${answer,,}" in
+      y|yes) printf -v "$1" true; return ;;
+      n|no) printf -v "$1" false; return ;;
+    esac
+    echo "  Please answer y or n."
+  done
+}
+ask_port() { # ask_port VAR "question" default
+  local port
+  while :; do
+    ask port "$2" "$3"
+    if [[ "$port" =~ ^[0-9]{1,5}$ ]] && [ "$((10#$port))" -ge 1 ] && [ "$((10#$port))" -le 65535 ]; then
+      printf -v "$1" '%s' "$((10#$port))"; return
+    fi
+    echo "  A port number from 1 to 65535."
+  done
+}
+declare -A BUDGETS=()
+ask_budget() { # ask_budget agent  (sets BUDGETS[agent], in USD per day)
+  local amount
+  while :; do
+    ask amount "Daily spend limit for '$1' in USD" "$DEFAULT_BUDGET"
+    amount="${amount#\$}"
+    # awk normalises it to a valid JSON number (no leading zeros).
+    if [[ "$amount" =~ ^[0-9]+(\.[0-9]{1,2})?$ ]] && awk -v a="$amount" 'BEGIN { exit !(a > 0) }'; then
+      BUDGETS[$1]="$(awk -v a="$amount" 'BEGIN { print a + 0 }')"; return
+    fi
+    echo "  An amount above 0, such as 10 or 2.50."
+  done
+}
+backup() { # backup path  (copies a file or directory to path.bak-<timestamp>)
+  cp -a "$1" "$1.bak-$TS"
+  echo "    backed up $1 to $1.bak-$TS"
 }
 
 # --- .env helpers. awk with ENVIRON, not sed, so any value is written literally; rewriting through
@@ -131,8 +173,8 @@ sandbox_add() {
     <<: *sandbox
     environment:
       SANDBOX_SECRET: \${$SECRET:-}
-      HTTP_PROXY: http://sbx-$A:\${$PROXY:-}@gateway:8082
-      HTTPS_PROXY: http://sbx-$A:\${$PROXY:-}@gateway:8082
+      HTTP_PROXY: http://sbx-$A:\${$PROXY:-}@gateway:\${EGRESS_PORT:-8082}
+      HTTPS_PROXY: http://sbx-$A:\${$PROXY:-}@gateway:\${EGRESS_PORT:-8082}
       NO_PROXY: ""
     networks: [sbx-$A]
     volumes:
@@ -155,6 +197,22 @@ add_broker_tools() {
   cat "$tmp" >"$FILE"; rm -f "$tmp"
 }
 
+# Writes an agent's config: the template's own for a sample agent, otherwise a copy of the
+# assistant's renamed, with every broker tool. An existing config is backed up first; other files
+# in it are left alone.
+write_agent_config() {
+  local A="$1" CFG="$DEST/agents/$1/config" SRC="$REPO/docker/template/agents/$1/config" TITLE
+  [ -d "$CFG" ] && backup "$CFG"
+  mkdir -p "$CFG"
+  if [ -d "$SRC" ]; then cp "$SRC"/* "$CFG/"
+  else
+  TITLE="$(echo "${A:0:1}" | tr 'a-z' 'A-Z')${A:1}"
+  cp "$REPO/docker/template/agents/assistant/config/agent.json" "$CFG/"
+  sed "1s/.*/# $TITLE/" "$REPO/docker/template/agents/assistant/config/soul.md" >"$CFG/soul.md"
+  fi
+  add_broker_tools "$CFG/agent.json"
+}
+
 echo "SharpClaw quick start. Press Enter to accept the [default]."
 echo
 
@@ -165,10 +223,24 @@ ENV="$DEST/.env"
 COMPOSE="$DEST/compose.yml"
 FRESH=true; [ -f "$COMPOSE" ] && FRESH=false
 
-# Agents that already exist in this install (have a token) are kept as they are.
+OVERWRITE_COMPOSE=false
+if ! $FRESH; then
+  echo "$COMPOSE already exists."
+  ask_yn OVERWRITE_COMPOSE "Overwrite it with a fresh copy of the template? (it is backed up; your agents are kept)" n
+fi
+
+# Agents that already exist in this install (have a token) are kept; each can be overwritten, which
+# resets its soul.md, agent.json, model and daily limit but keeps its token and workspace.
 EXISTING=()
+RESET=()
 for A in $(compose_agents); do [ -n "$(env_get "$(token_var "$A")")" ] && EXISTING+=("$A"); done
-if [ ${#EXISTING[@]} -gt 0 ]; then echo "Existing install with agents: ${EXISTING[*]}"; fi
+if [ ${#EXISTING[@]} -gt 0 ]; then
+  echo "Existing install with agents: ${EXISTING[*]}"
+  for A in "${EXISTING[@]}"; do
+    ask_yn YES "  Overwrite agent '$A'? (resets its persona, tool policy, model and daily limit)" n
+    if $YES; then RESET+=("$A"); fi
+  done
+fi
 
 # --- 2. Provider ---
 echo
@@ -220,15 +292,64 @@ if [ "$PROVIDER" = OpenRouter ]; then
   fi
 fi
 
-# --- 3. Agents ---
+# --- 3. Network ---
 echo
+echo "Network: the web UI and client API are published on one host interface. The agent and egress"
+echo "proxy listeners stay inside Docker's networks and are never published."
+BIND_DEFAULT="$(env_get CLIENT_BIND)"
+case "$BIND_DEFAULT" in ""|127.0.0.1) BIND_DEFAULT=localhost ;; 0.0.0.0) BIND_DEFAULT=all ;; esac
+while :; do
+  ask BIND "Interface to listen on (localhost, all, or one of this host's IPv4 addresses)" "$BIND_DEFAULT"
+  case "${BIND,,}" in
+    localhost|127.0.0.1) BIND=127.0.0.1; break ;;
+    all|0.0.0.0|'*') BIND=0.0.0.0; break ;;
+  esac
+  if [[ "$BIND" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] &&
+     [ "${BASH_REMATCH[1]}" -le 255 ] && [ "${BASH_REMATCH[2]}" -le 255 ] &&
+     [ "${BASH_REMATCH[3]}" -le 255 ] && [ "${BASH_REMATCH[4]}" -le 255 ]; then break; fi
+  echo "  Enter localhost, all, or an IPv4 address such as 192.168.1.20."
+done
+[ "$BIND" = 127.0.0.1 ] || echo "  Reachable from other machines over plain HTTP: never port-forward it from your router."
+
+DEFAULT_CLIENT_PORT="${CLIENT_PORT:-$(env_get CLIENT_PORT)}"
+ask_port PORT_CLIENT "Web UI and client API port (on the host)" "${DEFAULT_CLIENT_PORT:-8080}"
+# A compose.yml from before these ports were configurable has them fixed: only a fresh one honours them.
+PORTS_CONFIGURABLE=true
+if ! $FRESH && ! $OVERWRITE_COMPOSE && ! grep -q 'AGENT_PORT' "$COMPOSE"; then PORTS_CONFIGURABLE=false; fi
+PORT_AGENT=8081; PORT_EGRESS=8082
+if $PORTS_CONFIGURABLE; then
+  DEFAULT_AGENT_PORT="$(env_get AGENT_PORT)"; DEFAULT_EGRESS_PORT="$(env_get EGRESS_PORT)"
+  while :; do
+    ask_port PORT_AGENT "Agent listener port (internal)" "${DEFAULT_AGENT_PORT:-8081}"
+    ask_port PORT_EGRESS "Egress proxy port (internal)" "${DEFAULT_EGRESS_PORT:-8082}"
+    if [ "$PORT_AGENT" = "$CONTAINER_CLIENT_PORT" ] || [ "$PORT_EGRESS" = "$CONTAINER_CLIENT_PORT" ]; then
+      echo "  $CONTAINER_CLIENT_PORT is the client listener inside the gateway container; choose another."
+    elif [ "$PORT_AGENT" = "$PORT_EGRESS" ]; then
+      echo "  The agent and egress ports must differ."
+    else break; fi
+  done
+else
+  echo "  This compose.yml has the agent and egress ports fixed at 8081 and 8082 (overwrite it to change them)."
+fi
+
+# --- 4. Agents ---
+echo
+echo "Agents: each one gets its own container, persona (soul.md), tool policy and workspace."
 NEW=()
+OVERWRITE_CFG=()   # new agents whose existing config directory you chose to overwrite
+ask_overwrite_cfg() { # ask_overwrite_cfg agent  (only when its config directory already exists)
+  [ -d "$DEST/agents/$1/config" ] || return 0
+  local yes
+  ask_yn yes "  agents/$1/config already exists. Overwrite it with the defaults? (it is backed up)" n
+  if $yes; then OVERWRITE_CFG+=("$1"); fi
+}
 # Agents in an existing compose.yml with no token yet are finished off rather than dropped.
 if ! $FRESH; then
   for A in $(compose_agents); do contains "$A" "${EXISTING[@]}" || NEW+=("$A"); done
   [ ${#NEW[@]} -gt 0 ] && echo "compose.yml also defines ${NEW[*]} without a token; they will be created."
 fi
-echo "Agents: each one gets its own container, persona (soul.md), tool policy and workspace."
+for A in "${NEW[@]}"; do ask_overwrite_cfg "$A"; ask_budget "$A"; done
+for A in "${RESET[@]}"; do ask_budget "$A"; done
 while :; do
   if [ $((${#EXISTING[@]} + ${#NEW[@]})) -eq 0 ]; then
     ask NAME "Name of your first agent" "assistant"
@@ -242,11 +363,13 @@ while :; do
   elif contains "$NAME" "${EXISTING[@]}" "${NEW[@]}"; then
     echo "  '$NAME' is already on the list."
   else
+    ask_overwrite_cfg "$NAME"
+    ask_budget "$NAME"
     NEW+=("$NAME")
   fi
 done
 
-# --- 4. Web UI user (only for a new database) ---
+# --- 5. Web UI user (only for a new database) ---
 USER_NAME=""
 if [ ! -e "$DEST/data/sharpclaw.db" ]; then
   echo
@@ -259,12 +382,21 @@ if [ ! -e "$DEST/data/sharpclaw.db" ]; then
   done
 fi
 
+with_budgets() { local A out=(); for A in "$@"; do out+=("$A (\$${BUDGETS[$A]}/day)"); done; echo "${out[*]}"; }
+case "$BIND" in 127.0.0.1) BIND_LABEL="localhost" ;; 0.0.0.0) BIND_LABEL="all interfaces" ;; *) BIND_LABEL="$BIND" ;; esac
+KEEP=()
+for A in "${EXISTING[@]}"; do contains "$A" "${RESET[@]}" || KEEP+=("$A"); done
+
 echo
 echo "Ready to set up:"
 echo "  install:  $DEST"
-echo "  provider: $PROVIDER${API_KEY:+ (model $MODEL for new agents, \$$BUDGET/day each${WINDOW:+, $WINDOW-token window})}"
-[ ${#EXISTING[@]} -gt 0 ] && echo "  keep:     ${EXISTING[*]}"
-[ ${#NEW[@]} -gt 0 ] && echo "  create:   ${NEW[*]}"
+$OVERWRITE_COMPOSE && echo "  compose:  overwrite compose.yml with the template's (backed up first)"
+echo "  provider: $PROVIDER${API_KEY:+ (model $MODEL for new agents${WINDOW:+, $WINDOW-token window})}"
+echo "  network:  $BIND_LABEL, port $PORT_CLIENT (internal: agent $PORT_AGENT, egress $PORT_EGRESS)"
+[ ${#KEEP[@]} -gt 0 ] && echo "  keep:     ${KEEP[*]}"
+[ ${#RESET[@]} -gt 0 ] && echo "  reset:    $(with_budgets "${RESET[@]}")"
+[ ${#NEW[@]} -gt 0 ] && echo "  create:   $(with_budgets "${NEW[@]}")"
+[ ${#OVERWRITE_CFG[@]} -gt 0 ] && echo "  replace config (backed up first): ${OVERWRITE_CFG[*]}"
 [ -n "$USER_NAME" ] && echo "  user:     $USER_NAME (a password is generated and shown at the end)"
 ask GO "Continue? (Y/n)" "Y"
 [[ "${GO,,}" =~ ^y ]] || { echo "Nothing changed."; exit 0; }
@@ -284,42 +416,51 @@ echo "==> Building images (the first build takes a few minutes; later ones are c
 quiet "$REPO/scripts/build-images.sh"
 
 echo "==> Creating the install in $DEST"
+# Agent directories that were already there: pruning sample agents below never deletes these.
+PRE_DIRS=()
+for D in "$DEST"/agents/*/; do [ -d "$D" ] && PRE_DIRS+=("$(basename "$D")"); done
+if $OVERWRITE_COMPOSE; then
+  backup "$COMPOSE"
+  cp "$REPO/docker/template/compose.yml" "$COMPOSE"
+fi
 "$REPO/scripts/install.sh" "$DEST" | grep -v '^$' | sed 's/^/    /'
 DEST="$(cd "$DEST" && pwd)"; ENV="$DEST/.env"; COMPOSE="$DEST/compose.yml"
 
 env_set PROVIDER_TYPE "$PROVIDER"
 [ -n "$API_KEY" ] && env_set OPENROUTER_API_KEY "$API_KEY"
-[ -n "${CLIENT_PORT:-}" ] && env_set CLIENT_PORT "$CLIENT_PORT"
+env_set CLIENT_BIND "$BIND"
+env_set CLIENT_PORT "$PORT_CLIENT"
+# Always written, so agent and sandbox services added below match the gateway even when an older
+# compose.yml has the ports fixed (PORT_AGENT/PORT_EGRESS are then 8081/8082).
+env_set AGENT_PORT "$PORT_AGENT"
+env_set EGRESS_PORT "$PORT_EGRESS"
 
-# A fresh install starts with the template's sample agents; drop the ones you didn't pick.
-if $FRESH; then
+# A fresh (or overwritten) compose.yml starts with the template's sample agents; drop the ones you
+# didn't pick or already had.
+if $FRESH || $OVERWRITE_COMPOSE; then
   for A in $(compose_agents); do
-    contains "$A" "${NEW[@]}" && continue
+    contains "$A" "${EXISTING[@]}" "${NEW[@]}" && continue
     # The agent's service, and its sandbox if the template gave it one.
     remove_block "  agent-$A:"
     sandbox_remove "$A"
     env_del "$(token_var "$A")"
-    # Only the template's untouched sample: never a workspace with files in it.
-    [ -n "$(ls -A "$DEST/agents/$A/workspace" 2>/dev/null)" ] || rm -rf "${DEST:?}/agents/$A"
+    # Only the template's untouched sample: never a directory that was already there, nor a
+    # workspace with files in it.
+    contains "$A" "${PRE_DIRS[@]}" || [ -n "$(ls -A "$DEST/agents/$A/workspace" 2>/dev/null)" ] ||
+      rm -rf "${DEST:?}/agents/$A"
   done
 fi
 
 ADDED_SANDBOX=()
-# Each new agent: config (the template's own, or a copy of the assistant's renamed), workspace,
-# token line and compose service.
-for A in "${NEW[@]}"; do
-  if [ ! -d "$DEST/agents/$A/config" ]; then
-    mkdir -p "$DEST/agents/$A/config"
-    SRC="$REPO/docker/template/agents/$A/config"
-    if [ -d "$SRC" ]; then cp "$SRC"/* "$DEST/agents/$A/config/"
-    else
-      TITLE="$(echo "${A:0:1}" | tr 'a-z' 'A-Z')${A:1}"
-      cp "$REPO/docker/template/agents/assistant/config/agent.json" "$DEST/agents/$A/config/"
-      sed "1s/.*/# $TITLE/" "$REPO/docker/template/agents/assistant/config/soul.md" \
-        >"$DEST/agents/$A/config/soul.md"
-    fi
-    add_broker_tools "$DEST/agents/$A/config/agent.json"
+# Config for each new agent that has none, and for the agents you chose to overwrite.
+for A in "${NEW[@]}" "${RESET[@]}"; do
+  if [ ! -d "$DEST/agents/$A/config" ] || contains "$A" "${OVERWRITE_CFG[@]}" "${RESET[@]}"; then
+    write_agent_config "$A"
   fi
+done
+# Workspace, token line and compose service for every agent you keep (an overwritten compose.yml
+# needs the services of agents the template doesn't have put back).
+for A in "${EXISTING[@]}" "${NEW[@]}"; do
   mkdir -p "$DEST/agents/$A/workspace"
   VAR="$(token_var "$A")"
   [ -n "$(grep -E "^$VAR=" "$ENV" || true)" ] || env_set "$VAR" ""
@@ -330,7 +471,7 @@ for A in "${NEW[@]}"; do
   agent-$A:
     <<: *agent
     environment:
-      GATEWAY_URL: http://gateway:8081
+      GATEWAY_URL: http://gateway:\${AGENT_PORT:-8081}
       AGENT_TOKEN: \${$VAR}
       AGENT_CONFIG_PATH: /config/agent.json
     volumes:
@@ -342,17 +483,17 @@ YAML
 done
 
 # Every agent gets its own sandbox and, at the gateway, all broker tools (AllTools). Agents that
-# existed before keep their agent.json: add broker tools there yourself to use them.
+# existed before keep their agent.json (unless overwritten): add broker tools there yourself.
 for A in $(compose_agents); do
   grep -qx "  sandbox-$A:" "$COMPOSE" && grep -q "^      ToolBroker__Agents__${A}__AllTools:" "$COMPOSE" && continue
   sandbox_add "$A"
-  contains "$A" "${NEW[@]}" || ADDED_SANDBOX+=("$A")
+  contains "$A" "${NEW[@]}" "${RESET[@]}" || ADDED_SANDBOX+=("$A")
 done
 PROFILES="$(env_get COMPOSE_PROFILES)"
 [[ ",$PROFILES," == *,sandboxes,* ]] || env_set COMPOSE_PROFILES "${PROFILES:+$PROFILES,}sandboxes"
 
-PORT="$(env_get CLIENT_PORT)"; PORT="${PORT:-8080}"
-BASE="http://127.0.0.1:$PORT"
+# The script talks to the gateway on loopback when it listens on every interface.
+BASE="http://$([ "$BIND" = 0.0.0.0 ] && echo 127.0.0.1 || echo "$BIND"):$PORT_CLIENT"
 AUTH=(-H "Authorization: Bearer $(env_get ADMIN_KEY)" -H "Content-Type: application/json")
 
 cd "$DEST"
@@ -360,21 +501,32 @@ echo "==> Starting the gateway ($PROVIDER provider) on $BASE"
 quiet docker compose up -d --wait gateway
 
 for A in "${NEW[@]}"; do
+  B="${BUDGETS[$A]}"
   BODY="$(curl -sS -w '\n%{http_code}' "${AUTH[@]}" -X POST "$BASE/api/agents" \
-    -d "{\"name\":\"$A\",\"model\":\"$MODEL\",\"dailyBudgetUsd\":$BUDGET${WINDOW:+,\"contextWindowTokens\":$WINDOW}}")"
+    -d "{\"name\":\"$A\",\"model\":\"$MODEL\",\"dailyBudgetUsd\":$B${WINDOW:+,\"contextWindowTokens\":$WINDOW}}")"
   if [ "$(echo "$BODY" | tail -n1)" = "409" ]; then
-    # The agent exists in the database but .env lost its token: issue a fresh one.
+    # The agent exists in the database but .env lost its token: issue a fresh one, and apply the
+    # model and limit chosen now.
     BODY="$(curl -sS -w '\n%{http_code}' "${AUTH[@]}" -X POST "$BASE/api/agents/$A/tokens" -d '{}')"
+    curl -fsS "${AUTH[@]}" -X PATCH "$BASE/api/agents/$A" \
+      -d "{\"model\":\"$MODEL\",\"dailyBudgetUsd\":$B${WINDOW:+,\"contextWindowTokens\":$WINDOW}}" >/dev/null
   fi
   TOKEN="$(echo "$BODY" | grep -oE '"value":"sc_[^"]+"' | cut -d'"' -f4 || true)"
   [ -n "$TOKEN" ] || { echo "quickstart: could not create agent '$A': $(echo "$BODY" | head -n1)" >&2; exit 1; }
   env_set "$(token_var "$A")" "$TOKEN"
-  echo "    agent '$A' created (model $MODEL, \$$BUDGET/day)"
+  echo "    agent '$A' created (model $MODEL, \$$B/day)"
+done
+
+# Overwritten agents keep their token; they get the model and limit chosen now.
+for A in "${RESET[@]}"; do
+  curl -fsS "${AUTH[@]}" -X PATCH "$BASE/api/agents/$A" \
+    -d "{\"model\":\"$MODEL\",\"dailyBudgetUsd\":${BUDGETS[$A]}${WINDOW:+,\"contextWindowTokens\":$WINDOW}}" >/dev/null
+  echo "    agent '$A' reset (model $MODEL, \$${BUDGETS[$A]}/day)"
 done
 
 # Switching to OpenRouter: agents still on the fake model get the real one.
 if [ "$PROVIDER" = OpenRouter ]; then
-  for A in "${EXISTING[@]}"; do
+  for A in "${KEEP[@]}"; do
     if curl -sS "${AUTH[@]}" "$BASE/api/agents/$A" | grep -q '"model":"fake/model"'; then
       curl -fsS "${AUTH[@]}" -X PATCH "$BASE/api/agents/$A" -d "{\"model\":\"$MODEL\"${WINDOW:+,\"contextWindowTokens\":$WINDOW}}" >/dev/null
       echo "    agent '$A' switched to $MODEL"
@@ -392,10 +544,13 @@ fi
 
 echo "==> Starting the agents"
 quiet docker compose up -d --remove-orphans
+# Overwritten agents pick up their new soul and tool policy on restart.
+for A in "${RESET[@]}"; do quiet docker compose restart "agent-$A"; done
 rm -f "$LOG"
 
 echo
 echo "SharpClaw is running: open $BASE"
+[ "$BIND" = 0.0.0.0 ] && echo "  (or http://<this host's address>:$PORT_CLIENT from other devices)"
 if [ -n "$PASSWORD" ]; then
   echo "  user:     $USER_NAME"
   echo "  password: $PASSWORD   (shown once; change it under Account in the web UI)"

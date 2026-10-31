@@ -15,11 +15,12 @@ applyTo: ["docker/**", "scripts/verify-isolation.sh", "scripts/build-images.sh",
   `sbx-<name>` network (`internal: true`), which holds just it and the gateway; never put an agent or
   another sandbox on it. Mounts: its agent's workspace (rw), a per-agent named cache volume and the
   shared skill library `./skills:/skills:ro`, nothing else. Its environment holds only `SANDBOX_SECRET` and the proxy variables
-  (`http://sbx-<name>:<proxy secret>@gateway:8082`); the two secrets come from `.env` and must
+  (`http://sbx-<name>:<proxy secret>@gateway:${EGRESS_PORT:-8082}`); the two secrets come from `.env` and must
   differ. No Docker socket, ever.
 - Publish only the client port, bound to loopback by default:
-  `${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}:8080`. Ports 8081 (agent) and 8082 (egress
-  proxy) must never be published.
+  `${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}:8080`. The agent port (`${AGENT_PORT:-8081}`,
+  `Listeners__AgentPort`) and egress proxy port (`${EGRESS_PORT:-8082}`, `Egress__Port`) must never
+  be published; agents reach the gateway at `http://gateway:${AGENT_PORT:-8081}`.
 - Images: multi-stage (`sdk` → `aspnet`/`runtime`), run as the built-in non-root `app` user (there
   is no `adduser` in the .NET images), no secrets baked in. The gateway image sets
   `ASPNETCORE_HTTP_PORTS=` because Kestrel ports are configured in code.
