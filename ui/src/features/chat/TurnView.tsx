@@ -64,8 +64,10 @@ function SpeakerLabel({ name, at }: { name: string; at: string | null | undefine
 }
 
 /**
- * One turn (3.3.1 spec section 6.3): the user's message in a raised block, the agent's reply (or
- * the streaming bubble) in the assistant colour, then the tool rows and any approval cards.
+ * One turn (3.3.1 spec section 6.3): the user's message in a raised block, then the tool rows and
+ * any approval cards, then the agent's reply (or the streaming bubble) in the assistant colour.
+ * The reply comes last, in the order things happened, so on a turn with many tool calls it lands
+ * at the bottom where the pinned scroll is, not above rows that pushed it off screen.
  */
 export function TurnView({
   turn,
@@ -122,6 +124,21 @@ export function TurnView({
         </div>
       )}
 
+      <ToolActivity
+        tools={turn.tools}
+        interim={turn.interim}
+        live={turn.reply ? [] : live?.tools}
+        trace={trace}
+        llmCalls={llmCalls}
+        approvals={approvals}
+        turnInFlight={inFlight}
+        expandByDefault={expandTools}
+      />
+
+      {approvals.map((approval) => (
+        <ApprovalCard key={approval.id} approval={approval} />
+      ))}
+
       {(turn.reply || inFlight) && (
         <div>
           <SpeakerLabel name={agentName} at={turn.reply?.createdAt ?? claimedAt} />
@@ -140,21 +157,6 @@ export function TurnView({
           </div>
         </div>
       )}
-
-      <ToolActivity
-        tools={turn.tools}
-        interim={turn.interim}
-        live={turn.reply ? [] : live?.tools}
-        trace={trace}
-        llmCalls={llmCalls}
-        approvals={approvals}
-        turnInFlight={inFlight}
-        expandByDefault={expandTools}
-      />
-
-      {approvals.map((approval) => (
-        <ApprovalCard key={approval.id} approval={approval} />
-      ))}
     </li>
   );
 }

@@ -477,6 +477,22 @@ describe('tool activity', () => {
     );
     expect(await screen.findByText('workspace_list')).toBeInTheDocument();
     expect(screen.getByText(/running…/)).toBeInTheDocument();
+    // The thinking bubble stays below the live rows, at the bottom of the turn.
+    const rows = screen.getByRole('list', { name: 'Tool activity' });
+    expect(rows.compareDocumentPosition(screen.getByText(/Thinking…/))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
+  it('puts the reply after the tool rows, in the order things happened', async () => {
+    useThread({ messages: toolRows });
+    renderApp(`/prompts/${T}`);
+    const row = await screen.findByRole('button', { name: /workspace_read/ });
+    const reply = screen.getByText('Done');
+    expect(screen.getByText('read notes').compareDocumentPosition(row)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(row.compareDocumentPosition(reply)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });
 
