@@ -20,21 +20,20 @@ By hand:
 1. Check `.env`: `ADMIN_KEY` and `SHARPCLAW_UID`/`SHARPCLAW_GID` are filled in for you. Set
    `OPENROUTER_API_KEY` (or `PROVIDER_TYPE=Fake`) and, optionally, the OTLP endpoints.
 2. Start the gateway: `docker compose up -d gateway`
-3. Create the agents and paste each token into `.env` (`AGENT_ASSISTANT_TOKEN`,
-   `AGENT_CODER_TOKEN`):
+3. Create the agent and paste its token into `.env` (`AGENT_ASSISTANT_TOKEN`):
    ```bash
-   sharpclaw agents create assistant --model <id> --daily-budget 1
-   sharpclaw agents create coder --model <id> --daily-budget 1
+   sharpclaw agents create assistant --model <id> --daily-budget 10
    ```
 4. Start the agents: `docker compose up -d`
 5. Create your web UI user: `sharpclaw users create <name>`, then open `http://localhost:8080`.
 
 ## Adding an agent
 
-1. Copy an `agent-*` service block in `compose.yml` and rename it, its token variable and its
-   mount paths (keep the `./skills:/skills:ro` line).
-2. Create `agents/<name>/config/soul.md`, `agents/<name>/config/agent.json` and an empty
-   `agents/<name>/workspace/` owned by `SHARPCLAW_UID`.
+1. Copy the `agent-assistant` service block (and its `sandbox-assistant`, `sbx-assistant`
+   network and cache volume, for external tools) in `compose.yml` and rename it, its token
+   variable and its mount paths (keep the `./skills:/skills:ro` line).
+2. Create `agents/<name>/config/soul.md`, `agents/<name>/config/agent.json` (copy the assistant's
+   and edit) and an empty `agents/<name>/workspace/` owned by `SHARPCLAW_UID`.
 3. `sharpclaw agents create <name> …`, add the token to `.env`, `docker compose up -d`.
 
 ## Skills

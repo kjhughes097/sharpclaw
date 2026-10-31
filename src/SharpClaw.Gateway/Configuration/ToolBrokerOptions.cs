@@ -100,7 +100,7 @@ public sealed class BrokerAgentOptions
     public bool Allows(string tool) =>
         BrokerTools.All.Contains(tool) && (AllTools || Tools.Contains(tool, StringComparer.Ordinal));
 
-    /// <summary>The agent's own sandbox runner, e.g. <c>http://sandbox-coder:8090</c>. Empty: no sandbox tools.</summary>
+    /// <summary>The agent's own sandbox runner, e.g. <c>http://sandbox-assistant:8090</c>. Empty: no sandbox tools.</summary>
     public string? SandboxUrl { get; set; }
 
     /// <summary>Service secret the gateway presents to the runner (<c>SANDBOX_&lt;NAME&gt;_SECRET</c>).</summary>

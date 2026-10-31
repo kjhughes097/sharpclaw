@@ -14,6 +14,8 @@ DEST="$(cd "$DEST" && pwd)"
 SKIPPED=()
 while IFS= read -r -d '' FILE; do
   REL="${FILE#"$TEMPLATE"/}"
+  # .env.example is only the source of .env (below), not part of the install.
+  [ "$REL" = .env.example ] && continue
   # An existing install decides which agents it has: don't bring back a sample agent its
   # compose.yml no longer defines (e.g. one the quick start left out).
   if [[ "$REL" == agents/* ]] && [ -f "$DEST/compose.yml" ]; then
@@ -34,8 +36,8 @@ if [ ! -e "$DEST/.env" ]; then
   (umask 077 && cp "$TEMPLATE/.env.example" "$DEST/.env")
   sed -i \
     -e "s/^ADMIN_KEY=$/ADMIN_KEY=$(openssl rand -hex 32)/" \
-    -e "s/^SANDBOX_CODER_SECRET=$/SANDBOX_CODER_SECRET=$(openssl rand -hex 32)/" \
-    -e "s/^SANDBOX_CODER_PROXY_SECRET=$/SANDBOX_CODER_PROXY_SECRET=$(openssl rand -hex 32)/" \
+    -e "s/^SANDBOX_ASSISTANT_SECRET=$/SANDBOX_ASSISTANT_SECRET=$(openssl rand -hex 32)/" \
+    -e "s/^SANDBOX_ASSISTANT_PROXY_SECRET=$/SANDBOX_ASSISTANT_PROXY_SECRET=$(openssl rand -hex 32)/" \
     -e "s/^SHARPCLAW_UID=$/SHARPCLAW_UID=$(id -u)/" \
     -e "s/^SHARPCLAW_GID=$/SHARPCLAW_GID=$(id -g)/" \
     "$DEST/.env"

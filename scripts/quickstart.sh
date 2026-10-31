@@ -138,8 +138,8 @@ sandbox_remove() {
   env_del "$(sandbox_var "$A")"; env_del "$(sandbox_var "$A" PROXY_)"
 }
 
-# Gives an agent its own sandbox (the template's sandbox-coder pattern) and all broker tools at the
-# gateway. Idempotent: only adds what is missing, so it also finishes off the template's coder.
+# Gives an agent its own sandbox (the template's sandbox-assistant pattern) and all broker tools at
+# the gateway. Idempotent: only adds what is missing, so it also finishes off the template's sample.
 sandbox_add() {
   local A="$1" SECRET PROXY KEY GATEWAY_ENV=""
   SECRET="$(sandbox_var "$A")"; PROXY="$(sandbox_var "$A" PROXY_)"
@@ -197,19 +197,16 @@ add_broker_tools() {
   cat "$tmp" >"$FILE"; rm -f "$tmp"
 }
 
-# Writes an agent's config: the template's own for a sample agent, otherwise a copy of the
-# assistant's renamed, with every broker tool. An existing config is backed up first; other files
-# in it are left alone.
+# Writes an agent's config from the template's single sample agent (assistant): its agent.json with
+# every broker tool, and its soul.md with the heading renamed to the agent. An existing config is
+# backed up first; other files in it are left alone.
 write_agent_config() {
-  local A="$1" CFG="$DEST/agents/$1/config" SRC="$REPO/docker/template/agents/$1/config" TITLE
+  local A="$1" CFG="$DEST/agents/$1/config" SRC="$REPO/docker/template/agents/assistant/config" TITLE
   [ -d "$CFG" ] && backup "$CFG"
   mkdir -p "$CFG"
-  if [ -d "$SRC" ]; then cp "$SRC"/* "$CFG/"
-  else
   TITLE="$(echo "${A:0:1}" | tr 'a-z' 'A-Z')${A:1}"
-  cp "$REPO/docker/template/agents/assistant/config/agent.json" "$CFG/"
-  sed "1s/.*/# $TITLE/" "$REPO/docker/template/agents/assistant/config/soul.md" >"$CFG/soul.md"
-  fi
+  cp "$SRC/agent.json" "$CFG/"
+  sed "1s/.*/# $TITLE/" "$SRC/soul.md" >"$CFG/soul.md"
   add_broker_tools "$CFG/agent.json"
 }
 
@@ -452,9 +449,14 @@ if $FRESH || $OVERWRITE_COMPOSE; then
 fi
 
 ADDED_SANDBOX=()
-# Config for each new agent that has none, and for the agents you chose to overwrite.
+# Config for each new agent: written fresh unless it was already there before this run (the
+# template's copy from install.sh doesn't count, so the sample gets the broker tools too), and for
+# the agents you chose to overwrite (backed up first).
 for A in "${NEW[@]}" "${RESET[@]}"; do
-  if [ ! -d "$DEST/agents/$A/config" ] || contains "$A" "${OVERWRITE_CFG[@]}" "${RESET[@]}"; then
+  if contains "$A" "${OVERWRITE_CFG[@]}" "${RESET[@]}"; then
+    write_agent_config "$A"
+  elif ! contains "$A" "${PRE_DIRS[@]}" || [ ! -d "$DEST/agents/$A/config" ]; then
+    rm -rf "${DEST:?}/agents/$A/config"
     write_agent_config "$A"
   fi
 done

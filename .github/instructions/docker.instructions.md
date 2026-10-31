@@ -27,8 +27,9 @@ applyTo: ["docker/**", "scripts/verify-isolation.sh", "scripts/build-images.sh",
 - The runtime images have no `curl`; the gateway healthcheck is `dotnet SharpClaw.Gateway.dll --healthcheck`.
 - **The repo builds; installs run.** Nothing personal lives in the repo. `scripts/build-images.sh`
   builds `sharpclaw-gateway`/`sharpclaw-agent` images; `scripts/install.sh [dir]` copies
-  `docker/template/` (image-only `compose.yml`, `.env.example`, sample agents `assistant` and
-  `coder`) into an install directory (default `~/sharpclaw`) without overwriting. The template
+  `docker/template/` (image-only `compose.yml`, the single sample agent `assistant` with its
+  sandbox, skills) into an install directory (default `~/sharpclaw`) without overwriting, and
+  writes `.env` from `.env.example` (which is not copied itself). The template
   compose must never use `build:` or repo-relative paths; the gateway and agents run as
   `${SHARPCLAW_UID}:${SHARPCLAW_GID}` and the database is the `./data` bind mount.
 - Secrets live in the install's `.env` (mode 600). Never commit `.env` or tokens.

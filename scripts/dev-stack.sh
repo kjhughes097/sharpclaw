@@ -20,6 +20,10 @@ sed -i \
   -e 's/^CLIENT_PORT=.*/CLIENT_PORT=8090/' \
   -e 's/^PROVIDER_TYPE=.*/PROVIDER_TYPE=Fake/' \
   "$DEV/.env"
+# A .env from before the template's sandbox moved to the assistant lacks its secrets.
+for VAR in SANDBOX_ASSISTANT_SECRET SANDBOX_ASSISTANT_PROXY_SECRET; do
+  grep -qE "^$VAR=.+" "$DEV/.env" || { sed -i "/^$VAR=/d" "$DEV/.env"; echo "$VAR=$(openssl rand -hex 32)" >>"$DEV/.env"; }
+done
 
 cd "$DEV"
 docker compose up -d gateway

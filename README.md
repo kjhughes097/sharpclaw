@@ -104,7 +104,7 @@ flowchart LR
     end
     subgraph internal["internal network: no internet"]
       assistant["agent-assistant<br/>soul + tool policy (read-only)<br/>workspace (read-write)"]
-      coder["agent-coder<br/>…"]
+      more["agent-&lt;name&gt;<br/>…"]
     end
   end
 
@@ -117,7 +117,7 @@ flowchart LR
   agentapi --> core
   core --> db
   assistant -- "agent token" --> agentapi
-  coder -- "agent token" --> agentapi
+  more -- "agent token" --> agentapi
   core -- "provider key" --> llm
   core -. "OTLP metrics and logs" .-> otel
 ```
@@ -338,13 +338,13 @@ what will happen: the command for `sandbox_run`, the text for `github_write`, an
 branch and every changed file (with line counts) for `github_create_pr`. Lists, events, logs and
 the smart-mode classifier only ever see a content-free summary such as `run (412 chars) in repo/`.
 
-**Enabling a sandbox.** The template has one for `coder`. `scripts/install.sh` writes two different
-secrets into `.env` (`SANDBOX_CODER_SECRET` for gateway → sandbox, `SANDBOX_CODER_PROXY_SECRET` for
+**Enabling a sandbox.** The template's sample agent, `assistant`, has one. `scripts/install.sh` writes two different
+secrets into `.env` (`SANDBOX_ASSISTANT_SECRET` for gateway → sandbox, `SANDBOX_ASSISTANT_PROXY_SECRET` for
 sandbox → egress proxy). Set `COMPOSE_PROFILES=sandboxes` in `.env`, list the tools for the agent in
-`compose.yml` (e.g. `ToolBroker__Agents__coder__Tools__0: http_fetch`, or
-`ToolBroker__Agents__coder__AllTools: "true"` for all of them), add them to
-`agents/coder/config/agent.json`, and `docker compose up -d`. For another agent, copy the
-`sandbox-coder` service and its `sbx-coder` network and cache volume, add the network to the
+`compose.yml` (e.g. `ToolBroker__Agents__assistant__Tools__0: http_fetch`, or
+`ToolBroker__Agents__assistant__AllTools: "true"` for all of them), add them to
+`agents/assistant/config/agent.json`, and `docker compose up -d`. For another agent, copy the
+`sandbox-assistant` service and its `sbx-assistant` network and cache volume, add the network to the
 gateway, and add its `ToolBroker__Agents__<name>__Sandbox*` and `Egress__Sandboxes__<name>__Secret`
 lines. `scripts/quickstart.sh` does all of this for every agent it sets up.
 
@@ -418,8 +418,9 @@ description: Keep a dated daily notes file in the workspace. Use when the user a
 
 The repo is for building; you run SharpClaw from a separate install directory (default
 `~/sharpclaw`) that holds your `compose.yml`, `.env`, agent souls and policies, workspaces and the
-SQLite database. The repo ships a sample in [docker/template/](docker/template/) (two agents,
-`assistant` and `coder`); the install's own `README.md` is a short operating guide.
+SQLite database. The repo ships a sample in [docker/template/](docker/template/) (one agent,
+`assistant`, which is also the starting point for every agent the quick start creates); the
+install's own `README.md` is a short operating guide.
 
 | Path in the install | What it is |
 |---|---|
@@ -435,24 +436,25 @@ SQLite database. The repo ships a sample in [docker/template/](docker/template/)
 
 1. Build the images (`sharpclaw-gateway`, `sharpclaw-agent` and `sharpclaw-sandbox`, tagged `:<git-sha>` and `:latest`):
    `scripts/build-images.sh`
-2. Create the install: `scripts/install.sh [dir]`. It copies the template without overwriting
-   anything, writes `.env` (mode 600, a generated `ADMIN_KEY`, your uid/gid) and creates `data/`
-   and the workspaces.
+2. Create the install: `scripts/install.sh [dir]`. It copies the template (one sample agent,
+   `assistant`) without overwriting anything, writes `.env` (mode 600, a generated `ADMIN_KEY` and
+   sandbox secrets, your uid/gid) and creates `data/` and the workspaces.
 3. In the install, set `OPENROUTER_API_KEY` (or `PROVIDER_TYPE=Fake`) in `.env`, then
    `docker compose up -d gateway`.
-4. Create the agents, copy each token into `.env` as `AGENT_ASSISTANT_TOKEN` / `AGENT_CODER_TOKEN`,
-   and start everything:
+4. Create the agent, copy its token into `.env` as `AGENT_ASSISTANT_TOKEN`, and start everything:
    ```bash
-   sharpclaw agents create assistant --model <id> --daily-budget 1
-   sharpclaw agents create coder --model <id> --daily-budget 1
+   sharpclaw agents create assistant --model <id> --daily-budget 10
    docker compose up -d
    ```
 5. Create your web UI user: `sharpclaw users create <name>`.
 
-**Adding an agent.** Copy an `agent-*` service in `compose.yml` and rename it, its token variable
-and its mount paths (keep the `./skills:/skills:ro` line); create `agents/<name>/config/soul.md`, `agent.json` and an empty
-`workspace/`; then `sharpclaw agents create <name> …`, put the token in `.env` and
-`docker compose up -d`. Or just re-run `scripts/quickstart.sh`, which does all of that for you.
+**Adding an agent.** Copy the `agent-assistant` service (and, for external tools, its sandbox) in
+`compose.yml` and rename it, its token variable and its mount paths (keep the
+`./skills:/skills:ro` line); create `agents/<name>/config/soul.md`, `agent.json` (start from the
+assistant's) and an empty `workspace/`; then `sharpclaw agents create <name> …`, put the token in
+`.env` and `docker compose up -d`. Or just re-run `scripts/quickstart.sh`, which does all of that
+for you: every agent it creates starts from the assistant's `agent.json` (plus every broker tool)
+and `soul.md` (with the agent's name as the heading), ready for you to edit.
 
 **Upgrading.** `git pull && scripts/build-images.sh` in the repo, then `docker compose up -d` in
 the install. To pin or roll back, set `SHARPCLAW_TAG` in `.env` to an image tag
