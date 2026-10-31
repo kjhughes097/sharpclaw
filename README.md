@@ -312,12 +312,12 @@ be in the agent's `agent.json` **and** listed for it by the operator in the gate
 
 | Tool | Runs in | Risk | Notes |
 |---|---|---|---|
-| `http_fetch` | sandbox | low for `ToolBroker:FetchAllowHosts`, else medium | Markdown/text/raw, 64 KB; untrusted |
+| `http_fetch` | sandbox | low for `ToolBroker:FetchAllowHosts`, else medium | Markdown/text/raw; first 16 KB inline, a longer page saved whole under `.sandbox/fetch/` to page through with `workspace_read`; untrusted |
 | `download_to_workspace` | sandbox | medium; scripts, executables and dotfiles uncertain | 50 MB |
 | `web_search` | gateway | low | OpenRouter web plugin on `WebSearch:Model`; recorded in `llm_calls` and counts against the budget; untrusted |
 | `extract_text` | sandbox | low; script/dotfile output uncertain | `.html` → Markdown, `.pdf` → text, into a new workspace file |
 | `git_clone` | sandbox | medium | Public repos over HTTPS from `ToolBroker:CloneAllowHosts` (github.com, gitlab.com); shallow, no hooks |
-| `sandbox_run` | sandbox | high, **always approved** | `bash -c` in a workspace folder; 10 min (operator max 30); 1 MB of output, the rest in a log file; untrusted |
+| `sandbox_run` | sandbox | high, **always approved** | `bash -c` in a workspace folder; 10 min (operator max 30); first 16 KB of output inline, the complete output in a log file under `.sandbox/logs/`; untrusted |
 | `github_read` | gateway | low | Issues, PRs, diffs, comments, files; untrusted |
 | `github_write` | gateway | high, **always approved** | Comment, create issue, add/remove labels |
 | `github_create_pr` | gateway + sandbox | high, **always approved** | PR from your machine user's fork (below) |

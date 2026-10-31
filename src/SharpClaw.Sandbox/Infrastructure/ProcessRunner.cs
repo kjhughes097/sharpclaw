@@ -11,11 +11,12 @@ public sealed record ProcessSpec(
     int MaxOutputBytes,
     IReadOnlyDictionary<string, string> Environment,
     byte[]? Stdin = null,
-    Stream? Overflow = null);
+    Stream? Transcript = null);
 
 /// <summary>
 /// What a child did. <see cref="Stdout"/> and <see cref="Stderr"/> share one byte budget; anything
-/// beyond it went to the overflow stream (if any) and <see cref="Truncated"/> is set.
+/// beyond it is dropped and <see cref="Truncated"/> is set. The transcript stream (if any) gets all
+/// of the output, both streams in the order it arrived.
 /// </summary>
 public sealed record ProcessResult(int ExitCode, bool TimedOut, byte[] Stdout, byte[] Stderr, bool Truncated);
 
@@ -49,7 +50,7 @@ public static class ProcessRunner
 
         using var process = Process.Start(psi) ?? throw new InvalidOperationException("process did not start");
         var group = process.Id; // setsid makes the child its own group leader
-        var budget = new OutputBudget(spec.MaxOutputBytes, spec.Overflow);
+        var budget = new OutputBudget(spec.MaxOutputBytes, spec.Transcript);
         var stdout = new MemoryStream();
         var stderr = new MemoryStream();
         var readOut = CaptureAsync(process.StandardOutput.BaseStream, stdout, budget);
@@ -115,8 +116,8 @@ public static class ProcessRunner
         }
     }
 
-    /// <summary>One byte budget shared by stdout and stderr; the rest goes to the overflow stream.</summary>
-    private sealed class OutputBudget(int max, Stream? overflow)
+    /// <summary>One byte budget shared by stdout and stderr; every chunk also goes to the transcript.</summary>
+    private sealed class OutputBudget(int max, Stream? transcript)
     {
         private readonly SemaphoreSlim _lock = new(1, 1);
         private int _remaining = max;
@@ -132,11 +133,9 @@ public static class ProcessRunner
                 kept.Write(chunk.Span[..keep]);
                 _remaining -= keep;
                 if (keep < chunk.Length)
-                {
                     Truncated = true;
-                    if (overflow is not null)
-                        await overflow.WriteAsync(chunk[keep..]);
-                }
+                if (transcript is not null)
+                    await transcript.WriteAsync(chunk);
             }
             finally
             {

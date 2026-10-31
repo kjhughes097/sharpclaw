@@ -48,7 +48,8 @@ public class FetchOpsTests : IAsyncLifetime
     private static JsonElement Args(object args) => JsonSerializer.SerializeToElement(args);
     private static JsonElement Parse(OpResult r) => JsonDocument.Parse(r.Json).RootElement;
 
-    private Task<OpResult> Fetch(object args) => new HttpFetchOp(_fetcher, ChildEnvironment.Build()).RunAsync(Args(args), default);
+    private Task<OpResult> Fetch(object args) =>
+        new HttpFetchOp(_fetcher, ChildEnvironment.Build(), new WorkspaceRoot(_ws.Path), TimeProvider.System).RunAsync(Args(args), default);
     private Task<OpResult> Download(object args, long max = DownloadOp.MaxBytes) =>
         new DownloadOp(_fetcher, new WorkspaceRoot(_ws.Path), max).RunAsync(Args(args), default);
 
@@ -84,14 +85,28 @@ public class FetchOpsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Results_are_capped_at_64_KB_on_a_character_boundary()
+    public async Task A_long_page_returns_a_16_KB_preview_and_is_saved_whole_to_the_workspace()
     {
-        var r = Parse(await Fetch(new { url = _server.Url("/big") }));
+        var r = Parse(await Fetch(new { url = _server.Url("/big"), format = "text" }));
 
         var content = r.GetProperty("content").GetString()!;
         Assert.True(r.GetProperty("truncated").GetBoolean());
         Assert.True(Encoding.UTF8.GetByteCount(content) <= HttpFetchOp.MaxResultBytes);
-        Assert.All(content, c => Assert.Equal('é', c));
+        Assert.All(content, c => Assert.Equal('é', c)); // cut on a character boundary
+        Assert.Equal(200_000, r.GetProperty("bytes").GetInt32());
+        var saved = r.GetProperty("savedPath").GetString()!;
+        Assert.Matches(@"^\.sandbox/fetch/fetch-\d{8}-\d{6}-[0-9a-f]{6}\.txt$", saved);
+        Assert.Equal(new string('é', 100_000), await File.ReadAllTextAsync(_ws.File(saved)));
+    }
+
+    [Fact]
+    public async Task A_short_page_is_returned_whole_and_nothing_is_saved()
+    {
+        var r = Parse(await Fetch(new { url = _server.Url("/json") }));
+
+        Assert.False(r.GetProperty("truncated").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, r.GetProperty("savedPath").ValueKind);
+        Assert.False(Directory.Exists(_ws.File(".sandbox")));
     }
 
     [Fact]

@@ -9,8 +9,8 @@ public class ProcessRunnerTests
 {
     private static readonly IReadOnlyDictionary<string, string> Env = ChildEnvironment.Build();
 
-    private static Task<ProcessResult> Run(string file, string[] args, TimeSpan? timeout = null, int max = 1 << 20, Stream? overflow = null, byte[]? stdin = null) =>
-        ProcessRunner.RunAsync(new ProcessSpec(file, args, Path.GetTempPath(), timeout ?? TimeSpan.FromSeconds(30), max, Env, stdin, overflow), default);
+    private static Task<ProcessResult> Run(string file, string[] args, TimeSpan? timeout = null, int max = 1 << 20, Stream? transcript = null, byte[]? stdin = null) =>
+        ProcessRunner.RunAsync(new ProcessSpec(file, args, Path.GetTempPath(), timeout ?? TimeSpan.FromSeconds(30), max, Env, stdin, transcript), default);
 
     [Fact]
     public async Task Arguments_are_passed_as_argv_never_through_a_shell()
@@ -54,14 +54,14 @@ public class ProcessRunnerTests
     }
 
     [Fact]
-    public async Task Output_beyond_the_cap_goes_to_the_overflow_stream()
+    public async Task Output_is_capped_and_the_transcript_gets_all_of_it()
     {
-        using var overflow = new MemoryStream();
-        var result = await Run("bash", ["-c", "head -c 3000 /dev/zero | tr '\\0' 'a'"], max: 1000, overflow: overflow);
+        using var transcript = new MemoryStream();
+        var result = await Run("bash", ["-c", "head -c 3000 /dev/zero | tr '\\0' 'a'"], max: 1000, transcript: transcript);
 
         Assert.True(result.Truncated);
         Assert.Equal(1000, result.Stdout.Length + result.Stderr.Length);
-        Assert.Equal(2000, overflow.Length);
+        Assert.Equal(3000, transcript.Length);
     }
 
     [Fact]

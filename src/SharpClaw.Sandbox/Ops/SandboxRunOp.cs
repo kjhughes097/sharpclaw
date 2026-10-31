@@ -10,13 +10,14 @@ namespace SharpClaw.Sandbox.Ops;
 /// <summary>
 /// <c>sandbox_run</c> (spec section 7.5): <c>bash -c &lt;command&gt;</c> in a workspace folder. A
 /// shell adds nothing to the risk of running arbitrary code, and it is what models expect
-/// (<c>npm ci &amp;&amp; npm test</c>). At most 1 MB of stdout and stderr together comes back; the
-/// rest goes to <c>logPath</c> in the workspace. The whole process group dies at the timeout and
-/// at the end, so nothing lingers between runs.
+/// (<c>npm ci &amp;&amp; npm test</c>). The first 16 KB of stdout and stderr together comes back
+/// inline; when there is more, the complete output (both streams, in order, up to 100 MB) is saved
+/// to <c>logPath</c> in the workspace for the model to page through (<see cref="Spill"/>). The whole
+/// process group dies at the timeout and at the end, so nothing lingers between runs.
 /// </summary>
 public sealed class SandboxRunOp(WorkspaceRoot workspace, IReadOnlyDictionary<string, string> childEnv, TimeProvider time) : IRunnerOp
 {
-    public const int MaxOutputBytes = 1024 * 1024;
+    public const int MaxOutputBytes = Spill.InlineBytes;
     public const long MaxLogBytes = 100L * 1024 * 1024;
     public const int MaxSeconds = 1800;
 
@@ -34,22 +35,25 @@ public sealed class SandboxRunOp(WorkspaceRoot workspace, IReadOnlyDictionary<st
         if (OpArgs.Int(args, "timeoutSeconds", 600, 1, MaxSeconds) is not { } seconds)
             return OpResult.Error("invalid_arguments", $"timeoutSeconds must be 1-{MaxSeconds}.");
 
-        // Output past the cap is kept (up to a limit) on the runner's own tmpfs until the run ends.
-        var overflowPath = Path.Combine(Path.GetTempPath(), $"run-{Guid.NewGuid():N}.log");
-        await using var overflow = new FileStream(overflowPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
+        // The whole output is kept (up to a limit) on the runner's own tmpfs until the run ends, and
+        // copied to the workspace only if it didn't fit inline.
+        var transcriptPath = Path.Combine(Path.GetTempPath(), $"run-{Guid.NewGuid():N}.log");
+        await using var transcript = new FileStream(transcriptPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920, FileOptions.DeleteOnClose);
         var sw = Stopwatch.StartNew();
         var result = await ProcessRunner.RunAsync(new ProcessSpec(
             "bash", ["-c", command], cwd.FullPath, TimeSpan.FromSeconds(seconds), MaxOutputBytes, childEnv,
-            Overflow: new CappedStream(overflow, MaxLogBytes)), ct);
+            Transcript: new CappedStream(transcript, MaxLogBytes)), ct);
 
         string? logPath = null;
-        if (result.Truncated && overflow.Length > 0)
+        long? logBytes = null;
+        if (result.Truncated && transcript.Length > 0)
         {
-            logPath = $".sandbox/logs/run-{time.GetUtcNow():yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}.log";
-            overflow.Seek(0, SeekOrigin.Begin);
+            logPath = Spill.NewPath("logs", "run", "log", time);
+            transcript.Seek(0, SeekOrigin.Begin);
             try
             {
-                await NoFollow.WriteAtomicAsync(workspace.Path, logPath, (file, token) => overflow.CopyToAsync(file, token), ct);
+                await NoFollow.WriteAtomicAsync(workspace.Path, logPath, (file, token) => transcript.CopyToAsync(file, token), ct);
+                logBytes = transcript.Length;
             }
             catch (WorkspacePathException)
             {
@@ -65,6 +69,7 @@ public sealed class SandboxRunOp(WorkspaceRoot workspace, IReadOnlyDictionary<st
             stderr = Clean(result.Stderr),
             truncated = result.Truncated,
             logPath,
+            logBytes,
             cwd = cwd.Relative,
             durationMs = sw.ElapsedMilliseconds,
         });

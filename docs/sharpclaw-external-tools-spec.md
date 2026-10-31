@@ -53,7 +53,7 @@ Kept as numbered entries because the rest of this spec refers to them as Q1–Q7
 | Q3 | `http_fetch` host policy: allow-list only, or open with approval for unknown hosts? | Open, matching sandbox egress. Hosts on an operator allow-list are `low`, others `medium`. |
 | Q4 | GitHub write scope. | Comment on an issue or PR, create an issue, add or remove labels, and **create a PR from a fork** (`github_create_pr`, section 7.7). No push to upstream, no same-repo branches, no merges, no repository settings. |
 | Q5 | Do package caches persist between runs (NuGet, npm, pip)? | Yes, in a per-agent named volume mounted at `/cache`. It is never shared between agents. |
-| Q6 | Sandbox limits. | 2 CPUs, 2 GB memory, 256 processes, 10 minutes per run (operator-configurable, capped at 30), 1 MB of combined stdout and stderr returned (the rest goes to a file in the workspace). |
+| Q6 | Sandbox limits. | 2 CPUs, 2 GB memory, 256 processes, 10 minutes per run (operator-configurable, capped at 30), 16 KB of combined stdout and stderr returned inline; when there is more, the complete output (up to 100 MB) goes to a file in the workspace for the model to page through (see section 7.0). |
 | Q7 | Egress proxy limits. | 32 concurrent connections per sandbox, 60 s idle timeout, 30 s to complete the request head, 1 GB per connection, 64 KB maximum request head. |
 
 ## 1. Goal
@@ -227,12 +227,23 @@ commands), except for the approval detail in Q1. Examples: `fetch example.com (m
 `search (5 results)`, `clone github.com/owner/repo → repos/repo`, `run (412 chars) in repos/repo`,
 `comment on owner/repo#12 (840 B)`, `PR to owner/repo from sharpclaw-bot (7 files, +120 −35)`.
 
+### 7.0 Large output goes to the workspace
+
+Tool output can be far larger than is useful in the model's context, and a few large results in
+one turn can exceed the window. So `http_fetch` and `sandbox_run` return at most **16 KB** inline
+(about 4k tokens). When there is more, the sandbox saves the whole output to a new file under
+`.sandbox/` in the agent's workspace (`.sandbox/fetch/` for pages, `.sandbox/logs/` for runs) and
+returns its path and size; the model reads further with `workspace_read` and `offset`, only as far
+as it needs. Saved files are never overwritten (unique names) and are untrusted like the output
+they hold (`workspace_read` taints the turn).
+
 ### 7.1 `http_fetch` and `download_to_workspace`
 
 - `http` and `https` only; no credentials in the URL; at most 5 redirects, each re-checked by the
   egress proxy.
-- `http_fetch` returns at most 64 KB to the model after conversion (`markdown` and `text` go through
-  `pandoc` in the sandbox). Larger pages are truncated with `truncated: true`.
+- `http_fetch` converts the page (`markdown` and `text` go through `pandoc` in the sandbox) and
+  returns the first 16 KB. A longer page comes back with `truncated: true`, its full size in
+  `bytes` and the whole converted page saved to `savedPath` (section 7.0).
 - `download_to_workspace` streams to a temporary file and renames it. Cap 50 MB. It applies the
   agent's workspace path rules (no absolute paths, no `..`, no symlink components) in the runner
   too, so the sandbox never writes outside `/workspace`.
@@ -277,8 +288,9 @@ Fixed argv only: `pandoc -f html -t gfm` or `pdftotext -layout`, on a workspace 
   on top of running arbitrary code, and it is what models expect (`npm ci && npm test`).
 - Always needs a gateway-checked approval (Q2) unless the operator removes it from
   `AlwaysApprove`.
-- The result is `{ exitCode, timedOut, stdout, stderr, truncated, logPath }`, where output beyond
-  the cap (Q6) is written to `logPath` in the workspace.
+- The result is `{ exitCode, timedOut, stdout, stderr, truncated, logPath, logBytes }`. `stdout`
+  and `stderr` share the 16 KB inline cap (Q6); when output exceeds it, the complete output (both
+  streams in arrival order) is written to `logPath` in the workspace (section 7.0).
 - Taints the rest of the turn.
 
 ### 7.6 `github_read` and `github_write`
