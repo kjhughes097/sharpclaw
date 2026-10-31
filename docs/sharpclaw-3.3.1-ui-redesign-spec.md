@@ -385,7 +385,9 @@ failed and Resend, markdown safety) and restyled:
   time), then the text in a raised block with an accent left border. Plain text.
 - **Assistant turn:** a label `ADE · 10:40:00` (agent name), then the markdown reply in the
   assistant colour.
-- **Tool activity:** compact monospace rows under the reply, connected by a thin vertical guide.
+- **Tool activity:** compact monospace rows between the user's message and the reply, in the order
+  things happened, connected by a thin vertical guide. The reply (or the streaming bubble) comes
+  last, so on a turn with many tool calls it appears at the bottom, where the view is pinned.
   Each row:
   - a status glyph (`┌` done, `⟳` running)
   - kind `tool`
