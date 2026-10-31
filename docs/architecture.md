@@ -3,8 +3,8 @@
 This page describes the system **as it is now**. It is the first thing to read. The phase specs
 ([3.1](sharpclaw-3.1-implementation-spec.md) → [3.2](sharpclaw-3.2-implementation-spec.md) →
 [pre-3.3 foundations](sharpclaw-pre-3.3-foundations-spec.md) → [3.3](sharpclaw-3.3-implementation-spec.md) →
-[3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md)
-the [external tools spec](sharpclaw-external-tools-spec.md) and the accepted, not yet built
+[3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md),
+the [external tools spec](sharpclaw-external-tools-spec.md) and the
 [skills spec](sharpclaw-skills-spec.md))
 record *why* and *when* each behaviour was decided; they remain the source of truth for detailed
 behaviour, with later specs winning. Keep this page in step with the code when structure changes.
@@ -25,7 +25,7 @@ flowchart LR
   end
 
   subgraph internal["internal Docker network (no egress)"]
-    agents["SharpClaw.Agent containers<br/>soul.md + agent.json (ro) · /workspace (rw)<br/>ToolDispatcher"]
+    agents["SharpClaw.Agent containers<br/>soul.md + agent.json (ro) · /skills (ro) · /workspace (rw)<br/>ToolDispatcher"]
   end
 
   browser -- "session cookie + X-CSRF-Token<br/>SSE /api/events" --> client
@@ -43,7 +43,7 @@ flowchart LR
 |---|---|
 | `src/SharpClaw.Contracts` | Wire shapes shared by everything: DTOs, SSE payloads, `ErrorCodes`, status/role constants, `SharpClawJson`. |
 | `src/SharpClaw.Gateway` | The **only trust boundary**. Holds provider keys, budgets, auth, the message queue, approvals, events, audit and the UI files. |
-| `src/SharpClaw.Agent` | Untrusted worker. Long-polls its inbox, builds the prompt from the gateway's context endpoint, calls the model **through the gateway**, runs workspace tools via `ToolDispatcher`. |
+| `src/SharpClaw.Agent` | Untrusted worker. Long-polls its inbox, builds the prompt from the gateway's context endpoint, calls the model **through the gateway**, runs workspace tools via `ToolDispatcher`. With `skill_read` enabled it loads the operator's skill library (see below). |
 | `src/SharpClaw.Sandbox` | The per-agent sandbox runner (`sandbox-<agent>`, image `sharpclaw-sandbox`): runs broker tools that parse untrusted input or run code, against that agent's workspace only. Accepts calls from the gateway only (service secret); its only route out is the gateway's egress proxy. Shares the agent's `WorkspaceRoot`/`NoFollow` path rules by source. |
 | `src/SharpClaw.Cli` | `sharpclaw` admin/chat CLI over the client API. |
 | `ui/` | React web UI, built into the gateway image and served same-origin. See [ui.md](ui.md). |
@@ -144,7 +144,7 @@ start of the current UTC day; a call over the cap returns `429` with `Retry-Afte
 as `rejected`. Budgets reset at UTC midnight.
 
 **Context window.** The window is the agent's `contextWindowTokens` (default
-`Context:DefaultWindowTokens`) minus the agent's reserve for its soul and tool schemas and
+`Context:DefaultWindowTokens`) minus the agent's reserve for its system message (soul plus skill index) and tool schemas and
 `Context:ReplyReserveTokens`. Whole turns that don't fit are dropped, oldest first, and replaced by a
 note; tokens are estimated as characters / 4. A turn that alone doesn't fit, a chat request over the
 window, or a provider context-length error fails the turn with `context_too_large`.
@@ -170,7 +170,18 @@ The committed contract is [contracts/openapi/sharpclaw-client.v1.json](../contra
 Agent listener: `GET /agent/inbox`, `GET /agent/threads/{id}/messages`,
 `GET /agent/threads/{id}/context`, `POST /agent/threads/{id}/messages`, `POST /agent/messages/{id}/fail`,
 `POST /agent/approvals`, `GET /agent/approvals/{id}`, `POST /agent/tool-calls`, `POST /agent/tools/{tool}`,
-`POST /v1/chat/completions`.
+`PUT /agent/skills`, `POST /v1/chat/completions`.
+
+**Skills** ([skills spec](sharpclaw-skills-spec.md)). The operator's skill library is a host folder
+bind-mounted read-only at `/skills` in every agent (never under `/workspace`). An agent with
+`skill_read` in its `agent.json` scans it once at startup (`SkillLibrary`: a hand-written
+frontmatter reader for `name`/`description` only, invalid skills skipped with a warning, at most 100
+skills and a 16 KB index), appends the index (one line per skill) to its system message, and loads
+skill files on demand with `skill_read` (low risk, not untrusted, workspace path rules rooted at the
+skill). Skills never grant tools or change policy. At startup it reports the loaded names and
+descriptions with `PUT /agent/skills`, which the gateway validates with the same `SkillRules`
+(Contracts), stores in `agent_skills` (replace-all, one transaction) and returns as
+`AgentDto.skills`/`skillsReportedAt`. No event: the list only changes when an agent restarts.
 
 **Tool broker** (`POST /agent/tools/{tool}`, [external tools spec](sharpclaw-external-tools-spec.md)
 section 4): runs a broker tool for the agent, inside a turn it holds. The tool must be enabled for
@@ -231,7 +242,8 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), [contract
 
 | Table | Purpose |
 |---|---|
-| `agents`, `agent_tokens` | Agent config (model, daily budget, context window, enabled, last seen); hashed tokens. |
+| `agents`, `agent_tokens` | Agent config (model, daily budget, context window, enabled, last seen, `skills_reported_at`); hashed tokens. |
+| `agent_skills` | The skills each agent last reported (`agent_id`, `name`, `description`); replaced as a whole by `PUT /agent/skills`, deleted with the agent. |
 | `threads` | Owner agent, title, archived, `last_message_at`/`last_preview`, last context figures, optional `model` override (must be in `Models:Allowed` to take effect). |
 | `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`) and `sent_by_user` (user name or `admin_key`). |
 | `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose `chat`/`risk_assessment`/`web_search`, outcome). |
@@ -268,7 +280,11 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
   resolution, and connects only to the address it checked (`EgressProxyTests`, `EgressAddressPolicyTests`).
 - Only `ToolDispatcher` may call `IAgentTool.ExecuteUncheckedAsync` (`ToolArchitectureTests`).
 - Workspace tools never follow a symbolic link, even one created after the path was checked
-  (`WorkspaceToolsTests.NoFollow`).
+  (`WorkspaceToolsTests.NoFollow`); `skill_read` applies the same rules inside a skill
+  (`SkillReadToolTests`).
+- Skills come only from the read-only `/skills` mount, can't grant tools or change policy (fields
+  other than `name` and `description` are ignored), and an invalid one never stops the agent
+  (`SkillLibraryTests`, `SkillFrontmatterTests`; `verify-isolation.sh` checks the mount).
 - No agent tool executes code or shell commands inside the agent. Code runs only as `sandbox_run`
   in the agent's own sandbox, behind a gateway-enforced approval whose detail shows the human the
   command (`SandboxRunTests`); lists, events, logs and the classifier see only its length and folder.
