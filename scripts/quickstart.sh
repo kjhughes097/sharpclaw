@@ -228,6 +228,7 @@ for A in "${NEW[@]}"; do
     volumes:
       - ./agents/$A/config:/config:ro
       - ./agents/$A/workspace:/workspace
+      - ./skills:/skills:ro
 YAML
   fi
 done

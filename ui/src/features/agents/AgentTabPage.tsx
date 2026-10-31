@@ -28,6 +28,7 @@ import { ConfigNote, LastSeen } from './AgentParts';
 import { useAgent, useUpdateAgent } from './agentQueries';
 import { LlmCallsSection } from './AgentLlmCalls';
 import { SettingsForm } from './AgentSettingsForm';
+import { SkillsSection } from './AgentSkills';
 import { TokensSection } from './AgentTokens';
 
 const RECENT_SESSIONS = 10;
@@ -110,6 +111,7 @@ function AgentTab({ agent }: { agent: AgentDto }) {
         key={`${agent.model}|${agent.dailyBudgetUsd}|${agent.contextWindowTokens ?? ''}`}
         agent={agent}
       />
+      <SkillsSection agent={agent} />
       <TokensSection name={agent.name} />
       <LlmCallsSection name={agent.name} />
     </>

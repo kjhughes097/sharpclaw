@@ -92,7 +92,8 @@ services:
       start_period: 15s
 
   # One service per agent. To add one, copy a block, rename it, add its token to .env and create
-  # ./agents/<name>/config/{soul.md,agent.json} and ./agents/<name>/workspace/.
+  # ./agents/<name>/config/{soul.md,agent.json} and ./agents/<name>/workspace/. Every agent mounts
+  # the shared skill library ./skills read-only; it is used only when agent.json enables skill_read.
   agent-assistant:
     <<: *agent
     environment:
@@ -102,6 +103,7 @@ services:
     volumes:
       - ./agents/assistant/config:/config:ro
       - ./agents/assistant/workspace:/workspace
+      - ./skills:/skills:ro
 
   agent-coder:
     <<: *agent
@@ -112,10 +114,12 @@ services:
     volumes:
       - ./agents/coder/config:/config:ro
       - ./agents/coder/workspace:/workspace
+      - ./skills:/skills:ro
 
   sandbox-coder:
-    # The coder's sandbox: its own workspace (rw) and cache, its own network, egress only through
-    # the gateway's proxy with its own credential.
+    # The coder's sandbox: its own workspace (rw) and cache, the skill library (ro, so skill scripts
+    # can run through sandbox_run), its own network, egress only through the gateway's proxy with
+    # its own credential.
     <<: *sandbox
     environment:
       SANDBOX_SECRET: ${SANDBOX_CODER_SECRET:-}
@@ -126,3 +130,4 @@ services:
     volumes:
       - ./agents/coder/workspace:/workspace
       - sandbox-coder-cache:/cache
+      - ./skills:/skills:ro

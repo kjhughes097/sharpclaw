@@ -9,6 +9,8 @@ public sealed record UpdateAgentRequest(string? Model, double? DailyBudgetUsd, b
 /// <summary>
 /// <c>ContextWindowTokens</c> is the agent's override; null means the gateway default.
 /// <c>LastSeenAt</c>: the agent's last authenticated request (null if never), accurate to a minute.
+/// <c>Skills</c>: the skills the agent last reported loading, in ordinal name order (empty when
+/// none); <c>SkillsReportedAt</c> is when it reported them, null if it never has (skills spec 9.3).
 /// </summary>
 public sealed record AgentDto(
     Guid Id,
@@ -19,8 +21,16 @@ public sealed record AgentDto(
     DateTime CreatedAt,
     double TodaySpendUsd,
     double RemainingUsd,
+    IReadOnlyList<AgentSkillDto> Skills,
     int? ContextWindowTokens = null,
-    DateTime? LastSeenAt = null);
+    DateTime? LastSeenAt = null,
+    DateTime? SkillsReportedAt = null);
+
+/// <summary>A skill an agent has loaded: its operator-chosen name and one-line description.</summary>
+public sealed record AgentSkillDto(string Name, string Description);
+
+/// <summary><c>PUT /agent/skills</c>: the agent's whole skill set, replacing what it reported before.</summary>
+public sealed record ReportSkillsRequest(IReadOnlyList<AgentSkillDto>? Skills);
 
 public sealed record AgentListResponse(IReadOnlyList<AgentDto> Agents);
 

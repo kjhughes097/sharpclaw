@@ -165,7 +165,7 @@ public static class ThreadsEndpoints
 
         var response = new ThreadDetailResponse(
             ToDto(thread, context.Value.WindowFor(thread.Agent.ContextWindowTokens)),
-            AgentQueries.ToDto(thread.Agent, spend),
+            AgentQueries.ToDto(thread.Agent, spend, await AgentQueries.SkillsAsync(db, thread.AgentId, ct)),
             claimed is null ? null : new InFlightTurnDto(claimed.Id, claimed.ClaimedAt),
             active.Count(m => m.Status == MessageStatus.Pending),
             pending);

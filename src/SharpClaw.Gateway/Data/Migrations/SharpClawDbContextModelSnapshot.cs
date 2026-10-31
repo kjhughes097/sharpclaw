@@ -54,12 +54,36 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("name");
 
+                    b.Property<DateTime?>("SkillsReportedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("skills_reported_at");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Name")
                         .IsUnique();
 
                     b.ToTable("agents", (string)null);
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.AgentSkill", b =>
+                {
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("agent_id");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("description");
+
+                    b.HasKey("AgentId", "Name");
+
+                    b.ToTable("agent_skills", (string)null);
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.AgentToken", b =>
@@ -782,6 +806,15 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("users", (string)null);
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.AgentSkill", b =>
+                {
+                    b.HasOne("SharpClaw.Gateway.Data.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.AgentToken", b =>

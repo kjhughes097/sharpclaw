@@ -20,9 +20,16 @@ public class ToolArchitectureTests
 
         // A call site is ".ExecuteUncheckedAsync(" (declarations and doc comments don't have the dot).
         var callSite = new Regex(@"\.ExecuteUncheckedAsync\s*\(");
-        var offenders = Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
+        var sources = Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") &&
                         !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            .ToList();
+
+        // Every tool family is covered, including skill_read (skills spec section 2).
+        Assert.Contains(sources, f => Path.GetFileName(f) == "WorkspaceTools.cs");
+        Assert.Contains(sources, f => Path.GetFileName(f) == "SkillTools.cs");
+
+        var offenders = sources
             .Where(f => Path.GetFileName(f) != "ToolDispatcher.cs")
             .Where(f => callSite.IsMatch(File.ReadAllText(f)))
             .Select(Path.GetFileName)
