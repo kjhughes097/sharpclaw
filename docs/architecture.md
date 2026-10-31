@@ -147,7 +147,11 @@ as `rejected`. Budgets reset at UTC midnight.
 `Context:DefaultWindowTokens`) minus the agent's reserve for its system message (soul plus skill index) and tool schemas and
 `Context:ReplyReserveTokens`. Whole turns that don't fit are dropped, oldest first, and replaced by a
 note; tokens are estimated as characters / 4. A turn that alone doesn't fit, a chat request over the
-window, or a provider context-length error fails the turn with `context_too_large`.
+window, or a provider context-length error fails the turn with `context_too_large`. Within a turn
+the agent's `TurnBudget` keeps its own tool traffic inside the window: before each call after the
+first it estimates the request exactly as the gateway does and replaces the turn's oldest tool
+results with a stub (naming the saved copy in the workspace, if any) until it fits; if it still
+doesn't, or the gateway rejects a later call anyway, the turn fails with `turn_too_large`.
 
 ## 4. Client API (client listener)
 

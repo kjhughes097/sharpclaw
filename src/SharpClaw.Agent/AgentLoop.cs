@@ -117,7 +117,7 @@ public sealed class AgentLoop
             var messages = new List<ChatMessage> { new(Roles.System, system) };
             messages.AddRange(context.Messages);
 
-            var (reply, failCode, exchanges) = await RunTurnAsync(messages, new TurnContext(msg.Id, msg.ThreadId), ct);
+            var (reply, failCode, exchanges) = await RunTurnAsync(messages, new TurnContext(msg.Id, msg.ThreadId), context.WindowTokens, ct);
             if (reply is not null)
             {
                 await _client.PostReplyAsync(msg.ThreadId, reply, msg.Id, exchanges, ct);
@@ -150,14 +150,26 @@ public sealed class AgentLoop
     /// for storage) or a fail code. A failed turn stores no exchanges.
     /// </summary>
     private async Task<(string? Reply, string? FailCode, IReadOnlyList<ToolExchangeDto> Exchanges)> RunTurnAsync(
-        List<ChatMessage> messages, TurnContext turn, CancellationToken ct)
+        List<ChatMessage> messages, TurnContext turn, int windowTokens, CancellationToken ct)
     {
         var tools = _tools?.Registry.Tools ?? (IReadOnlyCollection<IAgentTool>)Array.Empty<IAgentTool>();
         var maxRounds = _tools?.MaxToolIterations ?? 0;
         var exchanges = new List<ToolExchangeDto>();
+        var turnStart = messages.Count; // this turn's tool calls and results are appended after here
+        var schemaChars = ToolSchemas.JsonLength(tools);
 
         for (var round = 0; ; round++)
         {
+            if (round > 0)
+            {
+                var (compacted, fits) = TurnBudget.Fit(messages, turnStart, schemaChars, windowTokens);
+                if (compacted > 0)
+                    _logger.LogInformation("turn compacted to fit the context window: results={Compacted} window_tokens={WindowTokens}",
+                        compacted, windowTokens);
+                if (!fits)
+                    return (null, FailReasons.TurnTooLarge, exchanges);
+            }
+
             var chat = await _client.StreamChatAsync(messages, tools, turn.CorrelationId, turn.ThreadId, ct);
             // After the first round the overflow is the turn's own tool traffic, not the user's message.
             if (!chat.Success)

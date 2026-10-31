@@ -58,7 +58,8 @@ public sealed class GatewayHttpClient : IGatewayClient
             return ContextResult.Fail(ErrorCodes.ContextTooLarge);
         resp.EnsureSuccessStatusCode();
         var body = await resp.Content.ReadFromJsonAsync<ContextResponse>(SharpClawJson.Options, ct);
-        return new ContextResult((body?.Messages ?? Array.Empty<ContextMessage>()).Select(m => m.ToChatMessage()).ToList());
+        return new ContextResult((body?.Messages ?? Array.Empty<ContextMessage>()).Select(m => m.ToChatMessage()).ToList(),
+            WindowTokens: body?.WindowTokens ?? ContextDefaults.DefaultWindowTokens);
     }
 
     public Task<ChatOutcome> StreamChatAsync(

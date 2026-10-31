@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using SharpClaw.Agent.Tools;
@@ -14,6 +15,7 @@ public class AgentToolLoopTests
     private sealed class ScriptedGateway : IGatewayClient
     {
         public Queue<ChatOutcome> Outcomes { get; } = new();
+        public int WindowTokens { get; set; } = ContextDefaults.DefaultWindowTokens;
         public List<(List<ChatMessage> Messages, List<string> Tools)> Requests { get; } = new();
         public List<string> Replies { get; } = new();
         public List<string> Failures { get; } = new();
@@ -21,7 +23,7 @@ public class AgentToolLoopTests
 
         public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => Task.FromResult(InboxResult.Of(Message));
         public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct) =>
-            Task.FromResult(new ContextResult(new[] { new ChatMessage(Roles.User, "do the task") }));
+            Task.FromResult(new ContextResult(new[] { new ChatMessage(Roles.User, "do the task") }, WindowTokens: WindowTokens));
 
         public Task<ChatOutcome> StreamChatAsync(IReadOnlyList<ChatMessage> messages, IReadOnlyCollection<IAgentTool> tools,
             Guid correlationId, Guid threadId, CancellationToken ct)
@@ -67,12 +69,13 @@ public class AgentToolLoopTests
     private static ChatOutcome ToolCall(string id, string name, string args = "{}") =>
         ChatOutcome.Ok("", new[] { new ChatToolCall(id, name, args) });
 
-    private static (AgentLoop Loop, ScriptedGateway Gateway, FakeTool Tool) Create(int maxIterations = 10, bool withTools = true)
+    private static (AgentLoop Loop, ScriptedGateway Gateway, FakeTool Tool) Create(
+        int maxIterations = 10, bool withTools = true, Func<JsonElement, ToolResult>? execute = null)
     {
         var gateway = new ScriptedGateway();
         var tool = new FakeTool("t", new ToolAssessment.Scored(RiskLevel.Low, "safe"))
         {
-            Execute = _ => ToolResult.Success(new { value = 42 }),
+            Execute = execute ?? (_ => ToolResult.Success(new { value = 42 })),
         };
         var config = new AgentToolConfig(RiskLevel.Low, false, maxIterations, new[] { "t" });
         var registry = new ToolRegistry(new IAgentTool[] { tool }, config.Tools);
@@ -206,6 +209,42 @@ public class AgentToolLoopTests
 
         Assert.Equal(new[] { "loop_limit_exceeded" }, gw.Failures);
         Assert.Empty(gw.Replies);
+    }
+
+    [Fact]
+    public async Task Large_results_from_earlier_rounds_are_stubbed_to_fit_the_window()
+    {
+        var calls = 0;
+        var (loop, gw, _) = Create(execute: _ => ToolResult.Success(new
+        {
+            content = new string('x', 40_000), savedPath = $".sandbox/fetch/page-{++calls}.md",
+        }));
+        gw.WindowTokens = 16_000; // each result is ~10k tokens: two never fit together
+        gw.Outcomes.Enqueue(ToolCall("call_1", "t"));
+        gw.Outcomes.Enqueue(ToolCall("call_2", "t"));
+        gw.Outcomes.Enqueue(ChatOutcome.Ok("All done."));
+
+        await loop.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(new[] { "All done." }, gw.Replies);
+        var last = gw.Requests[^1].Messages;
+        Assert.Contains(".sandbox/fetch/page-1.md", last[3].Content);   // first result: a stub
+        Assert.Contains(new string('x', 40_000), last[5].Content);       // latest result: whole
+        // The stored history keeps the real (truncated) result, not the stub.
+        Assert.DoesNotContain("compacted", gw.ReplyExchanges[0][0].Results[0].Content);
+    }
+
+    [Fact]
+    public async Task A_turn_that_cannot_fit_even_compacted_fails_as_turn_too_large_without_calling_the_model()
+    {
+        var (loop, gw, _) = Create(execute: _ => ToolResult.Success(new { content = new string('x', 40_000) }));
+        gw.WindowTokens = TurnBudget.ReplyReserveTokens + 50; // even the stubbed turn needs more than 50 tokens
+        gw.Outcomes.Enqueue(ToolCall("call_1", "t"));
+
+        await loop.ProcessOnceAsync(CancellationToken.None);
+
+        Assert.Equal(new[] { FailReasons.TurnTooLarge }, gw.Failures);
+        Assert.Single(gw.Requests);
     }
 
     [Fact]

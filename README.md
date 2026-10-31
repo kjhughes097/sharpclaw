@@ -294,6 +294,10 @@ How a call is decided (all in the agent's `ToolDispatcher`):
    truncated, see `Tools:*`), shown by `GET …/messages?includeTools=true`, and replayed to the
    model on later turns, except results of tools that return untrusted content (`workspace_read`, `workspace_search`),
    which are replaced by a stub so injected text can't persist in the thread.
+6. **A turn stays inside the context window.** Before each model call after the first, the agent
+   estimates the request as the gateway does; if it won't fit, it replaces the turn's oldest tool
+   results with a short stub (pointing at the saved copy in the workspace, when there is one). A
+   turn that still doesn't fit fails with `turn_too_large` rather than `context_too_large`.
 
 No tool executes code or shell commands inside the agent. The agent container (no network,
 read-only root filesystem, only its own `/workspace`) contains anything a workspace tool does.
