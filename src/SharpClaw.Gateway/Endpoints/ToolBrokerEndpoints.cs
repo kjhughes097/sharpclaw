@@ -30,7 +30,7 @@ public static class ToolBrokerEndpoints
     {
         var agent = AuthContext.Agent(http);
         var o = options.Value;
-        var tools = o.ForAgent(agent.Name)?.Tools.Where(BrokerTools.All.Contains).Distinct().ToList() ?? [];
+        var tools = o.ForAgent(agent.Name)?.EnabledTools ?? [];
         return Results.Json(new AgentToolPolicyResponse(
             tools, o.AlwaysApproveSet.Where(tools.Contains).Order().ToList(), o.FetchAllowHosts, o.CloneHosts), SharpClawJson.Options);
     }
@@ -43,7 +43,7 @@ public static class ToolBrokerEndpoints
 
         // The operator's gate: a tool not enabled for this agent in gateway config doesn't exist for it.
         var config = options.Value.ForAgent(agent.Name);
-        if (config is null || !BrokerTools.All.Contains(tool) || !config.Tools.Contains(tool))
+        if (config is null || !config.Allows(tool))
             return ApiResults.NotFound("Tool not found.");
 
         if (body is null || string.IsNullOrWhiteSpace(body.ToolCallId) || body.ToolCallId.Length > MaxToolCallIdChars)

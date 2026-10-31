@@ -86,6 +86,20 @@ public sealed class BrokerAgentOptions
     /// <summary>Broker tools this agent may call (the operator's gate; see <see cref="BrokerTools"/>).</summary>
     public string[] Tools { get; set; } = [];
 
+    /// <summary>
+    /// True: the agent may call every broker tool and <see cref="Tools"/> is ignored. False (the
+    /// default): only the tools listed in <see cref="Tools"/>.
+    /// </summary>
+    public bool AllTools { get; set; }
+
+    /// <summary>The broker tools this agent may call, in <see cref="BrokerTools.All"/> order.</summary>
+    public IReadOnlyList<string> EnabledTools =>
+        BrokerTools.All.Where(t => AllTools || Tools.Contains(t, StringComparer.Ordinal)).ToList();
+
+    /// <summary>Whether the operator lets this agent call <paramref name="tool"/>.</summary>
+    public bool Allows(string tool) =>
+        BrokerTools.All.Contains(tool) && (AllTools || Tools.Contains(tool, StringComparer.Ordinal));
+
     /// <summary>The agent's own sandbox runner, e.g. <c>http://sandbox-coder:8090</c>. Empty: no sandbox tools.</summary>
     public string? SandboxUrl { get; set; }
 

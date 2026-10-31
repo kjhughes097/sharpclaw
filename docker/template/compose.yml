@@ -62,7 +62,8 @@ services:
       # Models a session may switch to, e.g.:
       # Models__Allowed__0: openai/gpt-4o-mini
       # External tools for agent-coder (see README). Empty secrets mean no sandbox; nothing is
-      # enabled until you list tools, e.g.:
+      # enabled until you list tools, or set AllTools to enable every broker tool, e.g.:
+      # ToolBroker__Agents__coder__AllTools: "true"
       # ToolBroker__Agents__coder__Tools__0: http_fetch
       # ToolBroker__Agents__coder__Tools__1: download_to_workspace
       ToolBroker__Agents__coder__SandboxUrl: http://sandbox-coder:8090

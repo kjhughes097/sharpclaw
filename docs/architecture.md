@@ -185,7 +185,8 @@ descriptions with `PUT /agent/skills`, which the gateway validates with the same
 
 **Tool broker** (`POST /agent/tools/{tool}`, [external tools spec](sharpclaw-external-tools-spec.md)
 section 4): runs a broker tool for the agent, inside a turn it holds. The tool must be enabled for
-the agent in gateway config (`ToolBroker:Agents:<name>:Tools`, otherwise `404`). Tools in
+the agent in gateway config (`ToolBroker:Agents:<name>:Tools`, or every broker tool when
+`ToolBroker:Agents:<name>:AllTools` is `true`; otherwise `404`). Tools in
 `ToolBroker:AlwaysApprove` (default `sandbox_run`, `github_write`, `github_create_pr`) need an
 `approvalId` that is this agent's, for this turn and tool, approved within
 `ToolBroker:ApprovalUseSeconds`, unused, and whose `args_hash` matches the SHA-256 of the canonical
@@ -314,7 +315,7 @@ that never contains that secret, killing the child's whole process group on time
 Docker Compose runs from an install directory outside the repo (default `~/sharpclaw`), created by
 `scripts/install.sh` from [docker/template/](../docker/template/) and running images built by
 `scripts/build-images.sh`; `scripts/quickstart.sh` asks for the location, provider and agent names, does both, adds a compose
-service per agent, then creates the agents, their tokens and the first user through the client API. `scripts/dev-stack.sh` runs a throwaway fake-provider
+service and a sandbox (with `AllTools`) per agent, then creates the agents, their tokens and the first user through the client API. `scripts/dev-stack.sh` runs a throwaway fake-provider
 stack on port 8090 for development. The gateway publishes only the client port
 (`${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}`) and keeps SQLite in the install's `data/`.
 Agents run read-only on an internal network with no egress; check this with `scripts/verify-isolation.sh`.
