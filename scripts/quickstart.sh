@@ -125,8 +125,9 @@ sandbox_add() {
     cat >>"$COMPOSE" <<YAML
 
   sandbox-$A:
-    # $A's sandbox: its own workspace (rw) and cache, its own network, egress only through the
-    # gateway's proxy with its own credential.
+    # $A's sandbox: its own workspace (rw) and cache, the skill library (ro, so skill scripts can
+    # run through sandbox_run), its own network, egress only through the gateway's proxy with its
+    # own credential.
     <<: *sandbox
     environment:
       SANDBOX_SECRET: \${$SECRET:-}
@@ -137,6 +138,7 @@ sandbox_add() {
     volumes:
       - ./agents/$A/workspace:/workspace
       - sandbox-$A-cache:/cache
+      - ./skills:/skills:ro
 YAML
   fi
 }
