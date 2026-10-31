@@ -7,7 +7,7 @@ using SharpClaw.Contracts;
 
 namespace SharpClaw.Agent.Tests;
 
-public class AgentLoopTests
+public partial class AgentLoopTests
 {
     private static AgentConfig Config() => new()
     {
