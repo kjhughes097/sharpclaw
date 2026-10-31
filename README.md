@@ -46,7 +46,9 @@ It asks a few questions (press Enter for the default):
 
 After a summary and a confirmation it builds the images, creates the install, starts the gateway,
 creates each agent ($1/day budget) with its token saved in `.env`, creates your user and starts
-every agent in its own container. Once the images are built that takes under a minute (the first
+every agent in its own container, each with its own **sandbox** (`sandbox-<name>`) and every
+[external tool](#external-tools) enabled (`ToolBroker__Agents__<name>__AllTools: "true"` in
+`compose.yml`, and listed in its `agent.json`; risky calls still ask for your approval). Once the images are built that takes under a minute (the first
 image build takes a few minutes).
 
 Open **http://127.0.0.1:8080**, sign in with the printed user name and password, pick **Prompts**,
@@ -57,7 +59,9 @@ install: edit it and `docker compose restart agent-<name>`.
 
 Re-run `scripts/quickstart.sh` and point it at the same install. It keeps your existing agents,
 tokens and user, lets you switch to OpenRouter (agents still on the fake model are moved to the
-model you pick), and asks for any more agents to add. Budgets and models can also be changed per
+model you pick), and asks for any more agents to add. Any agent without a sandbox gets one (and
+`AllTools` at the gateway); an existing agent's `agent.json` is left alone, so add the broker tools
+there yourself to use them. Budgets and models can also be changed per
 agent on its tab in the web UI (**Settings**).
 
 ### Day to day
@@ -327,11 +331,12 @@ the smart-mode classifier only ever see a content-free summary such as `run (412
 **Enabling a sandbox.** The template has one for `coder`. `scripts/install.sh` writes two different
 secrets into `.env` (`SANDBOX_CODER_SECRET` for gateway → sandbox, `SANDBOX_CODER_PROXY_SECRET` for
 sandbox → egress proxy). Set `COMPOSE_PROFILES=sandboxes` in `.env`, list the tools for the agent in
-`compose.yml` (e.g. `ToolBroker__Agents__coder__Tools__0: http_fetch`), add them to
+`compose.yml` (e.g. `ToolBroker__Agents__coder__Tools__0: http_fetch`, or
+`ToolBroker__Agents__coder__AllTools: "true"` for all of them), add them to
 `agents/coder/config/agent.json`, and `docker compose up -d`. For another agent, copy the
 `sandbox-coder` service and its `sbx-coder` network and cache volume, add the network to the
 gateway, and add its `ToolBroker__Agents__<name>__Sandbox*` and `Egress__Sandboxes__<name>__Secret`
-lines.
+lines. `scripts/quickstart.sh` does all of this for every agent it sets up.
 
 **GitHub.** Create a fine-grained token for your own account limited to **selected repositories**
 (contents read, issues write, pull requests write) and put it in `.env` as `GITHUB_TOKEN`. That is
@@ -498,6 +503,7 @@ ASP.NET `__` syntax).
 | `Context:CharsPerToken` | `4` | Estimation heuristic |
 | `Context:MessageOverheadTokens` | `4` | Added per message |
 | `ToolBroker:Agents:<name>:Tools` | empty | Broker tools the agent may call (the operator's gate) |
+| `ToolBroker:Agents:<name>:AllTools` | `false` | `true`: the agent may call every broker tool and `Tools` is ignored (the quick start sets this) |
 | `ToolBroker:Agents:<name>:SandboxUrl` / `SandboxSecret` | empty | The agent's sandbox runner and its service secret (`SANDBOX_<NAME>_SECRET`); empty secret: no sandbox (`503 tool_unavailable`) |
 | `ToolBroker:AlwaysApprove` | `sandbox_run`, `github_write`, `github_create_pr` | Tools the gateway never runs without a matching approval; `ToolBroker__AlwaysApprove__0=` (empty) clears it |
 | `ToolBroker:ApprovalUseSeconds` | `600` | An approval must be used this soon after it was decided |
