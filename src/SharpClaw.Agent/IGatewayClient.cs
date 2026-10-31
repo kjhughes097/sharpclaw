@@ -73,6 +73,12 @@ public interface IGatewayClient
     Task<AgentToolPolicyResponse> GetToolPolicyAsync(CancellationToken ct);
 
     /// <summary>
+    /// Reports the skills loaded at startup (<c>PUT /agent/skills</c>), replacing the previous set.
+    /// Throws <see cref="HttpRequestException"/> (with the status code) when the gateway refuses it.
+    /// </summary>
+    Task ReportSkillsAsync(IReadOnlyList<AgentSkillDto> skills, CancellationToken ct);
+
+    /// <summary>
     /// Smart mode: asks the LLM to classify a call's risk (purpose <c>risk_assessment</c>, never
     /// shown to the user). Returns the reply text, or null if the call failed.
     /// </summary>
