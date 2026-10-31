@@ -40,12 +40,17 @@ It asks a few questions (press Enter for the default):
 | Question | Default | Notes |
 |---|---|---|
 | Install location | `~/sharpclaw` | Where your config, agents and database live (outside the repo) |
+| Overwrite `compose.yml`? | `n` | Only when the install already has one. `y` replaces it with the template's (the old one is saved as `compose.yml.bak-<timestamp>`); your agents are put back into it |
+| Overwrite agent `<name>`? | `n` | Asked for each existing agent. `y` resets its `soul.md` and `agent.json` (the old `config/` is saved as `config.bak-<timestamp>`) and its model and daily limit; its token and workspace are kept |
 | Model provider | `1` Fake | **Fake:** canned replies such as `Fake reply to: hello`, no account or cost, enough to explore the UI, approvals and audit. **OpenRouter:** real models; it asks for your [API key](https://openrouter.ai/keys) (checked on the spot) and a model for new agents (`openai/gpt-4o-mini`), whose context window it looks up so agents use all of it (otherwise `Context:DefaultWindowTokens`, 32k) |
-| Agents | `assistant` | Name your first agent, then keep adding names; Enter on an empty line when you're done |
+| Interface | `localhost` | Where the web UI and client API are published: `localhost`, `all` (`0.0.0.0`) or one of the host's IPv4 addresses (`CLIENT_BIND`). Plain HTTP: never port-forward it |
+| Ports | `8080`, `8081`, `8082` | The client port on the host (`CLIENT_PORT`), and the internal agent (`AGENT_PORT`) and egress proxy (`EGRESS_PORT`) listeners, which are never published |
+| Agents | `assistant` | Name your first agent, then keep adding names; Enter on an empty line when you're done. If `agents/<name>/config` already exists it asks whether to overwrite it |
+| Daily spend limit | `$10` | Asked for each agent being created or overwritten |
 | Web UI user name | your login name | A password is generated and shown once at the end |
 
 After a summary and a confirmation it builds the images, creates the install, starts the gateway,
-creates each agent ($1/day budget) with its token saved in `.env`, creates your user and starts
+creates each agent (with the daily limit you gave it) with its token saved in `.env`, creates your user and starts
 every agent in its own container, each with its own **sandbox** (`sandbox-<name>`) and every
 [external tool](#external-tools) enabled (`ToolBroker__Agents__<name>__AllTools: "true"` in
 `compose.yml`, and listed in its `agent.json`; risky calls still ask for your approval). Once the images are built that takes under a minute (the first
@@ -58,10 +63,11 @@ install: edit it and `docker compose restart agent-<name>`.
 ### Use real models, add agents
 
 Re-run `scripts/quickstart.sh` and point it at the same install. It keeps your existing agents,
-tokens and user, lets you switch to OpenRouter (agents still on the fake model are moved to the
-model you pick), and asks for any more agents to add. Any agent without a sandbox gets one (and
-`AllTools` at the gateway); an existing agent's `agent.json` is left alone, so add the broker tools
-there yourself to use them. Budgets and models can also be changed per
+tokens and user unless you choose to overwrite them, lets you switch to OpenRouter (agents still on
+the fake model are moved to the model you pick), change the interface and ports, and asks for any
+more agents to add. Any agent without a sandbox gets one (and
+`AllTools` at the gateway); an existing agent's `agent.json` is left alone unless you overwrite the
+agent, so add the broker tools there yourself to use them. Budgets and models can also be changed per
 agent on its tab in the web UI (**Settings**).
 
 ### Day to day
@@ -98,7 +104,7 @@ flowchart LR
     end
     subgraph internal["internal network: no internet"]
       assistant["agent-assistant<br/>soul + tool policy (read-only)<br/>workspace (read-write)"]
-      coder["agent-coder<br/>…"]
+      more["agent-&lt;name&gt;<br/>…"]
     end
   end
 
@@ -111,7 +117,7 @@ flowchart LR
   agentapi --> core
   core --> db
   assistant -- "agent token" --> agentapi
-  coder -- "agent token" --> agentapi
+  more -- "agent token" --> agentapi
   core -- "provider key" --> llm
   core -. "OTLP metrics and logs" .-> otel
 ```
@@ -332,13 +338,13 @@ what will happen: the command for `sandbox_run`, the text for `github_write`, an
 branch and every changed file (with line counts) for `github_create_pr`. Lists, events, logs and
 the smart-mode classifier only ever see a content-free summary such as `run (412 chars) in repo/`.
 
-**Enabling a sandbox.** The template has one for `coder`. `scripts/install.sh` writes two different
-secrets into `.env` (`SANDBOX_CODER_SECRET` for gateway → sandbox, `SANDBOX_CODER_PROXY_SECRET` for
+**Enabling a sandbox.** The template's sample agent, `assistant`, has one. `scripts/install.sh` writes two different
+secrets into `.env` (`SANDBOX_ASSISTANT_SECRET` for gateway → sandbox, `SANDBOX_ASSISTANT_PROXY_SECRET` for
 sandbox → egress proxy). Set `COMPOSE_PROFILES=sandboxes` in `.env`, list the tools for the agent in
-`compose.yml` (e.g. `ToolBroker__Agents__coder__Tools__0: http_fetch`, or
-`ToolBroker__Agents__coder__AllTools: "true"` for all of them), add them to
-`agents/coder/config/agent.json`, and `docker compose up -d`. For another agent, copy the
-`sandbox-coder` service and its `sbx-coder` network and cache volume, add the network to the
+`compose.yml` (e.g. `ToolBroker__Agents__assistant__Tools__0: http_fetch`, or
+`ToolBroker__Agents__assistant__AllTools: "true"` for all of them), add them to
+`agents/assistant/config/agent.json`, and `docker compose up -d`. For another agent, copy the
+`sandbox-assistant` service and its `sbx-assistant` network and cache volume, add the network to the
 gateway, and add its `ToolBroker__Agents__<name>__Sandbox*` and `Egress__Sandboxes__<name>__Secret`
 lines. `scripts/quickstart.sh` does all of this for every agent it sets up.
 
@@ -412,8 +418,9 @@ description: Keep a dated daily notes file in the workspace. Use when the user a
 
 The repo is for building; you run SharpClaw from a separate install directory (default
 `~/sharpclaw`) that holds your `compose.yml`, `.env`, agent souls and policies, workspaces and the
-SQLite database. The repo ships a sample in [docker/template/](docker/template/) (two agents,
-`assistant` and `coder`); the install's own `README.md` is a short operating guide.
+SQLite database. The repo ships a sample in [docker/template/](docker/template/) (one agent,
+`assistant`, which is also the starting point for every agent the quick start creates); the
+install's own `README.md` is a short operating guide.
 
 | Path in the install | What it is |
 |---|---|
@@ -429,24 +436,25 @@ SQLite database. The repo ships a sample in [docker/template/](docker/template/)
 
 1. Build the images (`sharpclaw-gateway`, `sharpclaw-agent` and `sharpclaw-sandbox`, tagged `:<git-sha>` and `:latest`):
    `scripts/build-images.sh`
-2. Create the install: `scripts/install.sh [dir]`. It copies the template without overwriting
-   anything, writes `.env` (mode 600, a generated `ADMIN_KEY`, your uid/gid) and creates `data/`
-   and the workspaces.
+2. Create the install: `scripts/install.sh [dir]`. It copies the template (one sample agent,
+   `assistant`) without overwriting anything, writes `.env` (mode 600, a generated `ADMIN_KEY` and
+   sandbox secrets, your uid/gid) and creates `data/` and the workspaces.
 3. In the install, set `OPENROUTER_API_KEY` (or `PROVIDER_TYPE=Fake`) in `.env`, then
    `docker compose up -d gateway`.
-4. Create the agents, copy each token into `.env` as `AGENT_ASSISTANT_TOKEN` / `AGENT_CODER_TOKEN`,
-   and start everything:
+4. Create the agent, copy its token into `.env` as `AGENT_ASSISTANT_TOKEN`, and start everything:
    ```bash
-   sharpclaw agents create assistant --model <id> --daily-budget 1
-   sharpclaw agents create coder --model <id> --daily-budget 1
+   sharpclaw agents create assistant --model <id> --daily-budget 10
    docker compose up -d
    ```
 5. Create your web UI user: `sharpclaw users create <name>`.
 
-**Adding an agent.** Copy an `agent-*` service in `compose.yml` and rename it, its token variable
-and its mount paths (keep the `./skills:/skills:ro` line); create `agents/<name>/config/soul.md`, `agent.json` and an empty
-`workspace/`; then `sharpclaw agents create <name> …`, put the token in `.env` and
-`docker compose up -d`. Or just re-run `scripts/quickstart.sh`, which does all of that for you.
+**Adding an agent.** Copy the `agent-assistant` service (and, for external tools, its sandbox) in
+`compose.yml` and rename it, its token variable and its mount paths (keep the
+`./skills:/skills:ro` line); create `agents/<name>/config/soul.md`, `agent.json` (start from the
+assistant's) and an empty `workspace/`; then `sharpclaw agents create <name> …`, put the token in
+`.env` and `docker compose up -d`. Or just re-run `scripts/quickstart.sh`, which does all of that
+for you: every agent it creates starts from the assistant's `agent.json` (plus every broker tool)
+and `soul.md` (with the agent's name as the heading), ready for you to edit.
 
 **Upgrading.** `git pull && scripts/build-images.sh` in the repo, then `docker compose up -d` in
 the install. To pin or roll back, set `SHARPCLAW_TAG` in `.env` to an image tag
@@ -461,7 +469,9 @@ plain HTTP, so **never port-forward it** from your router.
 on the same host needs its own `COMPOSE_PROJECT_NAME` and `CLIENT_PORT`.
 
 Containers are started and stopped by you. The gateway never touches the Docker socket, and the
-agent port 8081 and egress proxy port 8082 are never published.
+agent port (`AGENT_PORT`, default 8081) and egress proxy port (`EGRESS_PORT`, default 8082) are
+never published. Change those two only if they clash with something; the template passes them to
+the gateway (`Listeners__AgentPort`, `Egress__Port`), the agents and the sandboxes.
 
 ## Configuration
 
@@ -532,7 +542,7 @@ Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 `LOG_LEVEL` (`Information`).
 
 **Sandbox runner** (environment, set by compose): `SANDBOX_SECRET` (required, at least 16
-characters), `HTTP_PROXY`/`HTTPS_PROXY` (`http://sbx-<name>:<proxy secret>@gateway:8082`),
+characters), `HTTP_PROXY`/`HTTPS_PROXY` (`http://sbx-<name>:<proxy secret>@gateway:${EGRESS_PORT:-8082}`),
 `SANDBOX_WORKSPACE` (`/workspace`), `SANDBOX_CACHE` (`/cache`), `SANDBOX_PORT` (`8090`). Child
 processes get only an allow-listed environment, never `SANDBOX_SECRET`.
 

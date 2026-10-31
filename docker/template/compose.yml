@@ -6,12 +6,12 @@ networks:
   external: {}
   # One network per sandbox, holding only the gateway and that sandbox: no route out (its only exit
   # is the gateway's egress proxy), and no way to reach another sandbox or any agent.
-  sbx-coder:
+  sbx-assistant:
     internal: true
 
 volumes:
   # Per-agent package caches (NuGet, npm, pip); never shared between agents.
-  sandbox-coder-cache: {}
+  sandbox-assistant-cache: {}
 
 x-agent: &agent
   image: sharpclaw-agent:${SHARPCLAW_TAG:-latest}
@@ -59,16 +59,20 @@ services:
       OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: cumulative
       OTEL_SERVICE_NAME: sharpclaw-gateway
       OTEL_RESOURCE_ATTRIBUTES: deployment.environment=home
+      # Internal listener ports (never published): agents use the agent port, sandboxes the egress
+      # proxy. The client listener stays on 8080 inside the container; CLIENT_PORT publishes it.
+      Listeners__AgentPort: ${AGENT_PORT:-8081}
+      Egress__Port: ${EGRESS_PORT:-8082}
       # Models a session may switch to, e.g.:
       # Models__Allowed__0: openai/gpt-4o-mini
-      # External tools for agent-coder (see README). Empty secrets mean no sandbox; nothing is
+      # External tools for agent-assistant (see README). Empty secrets mean no sandbox; nothing is
       # enabled until you list tools, or set AllTools to enable every broker tool, e.g.:
-      # ToolBroker__Agents__coder__AllTools: "true"
-      # ToolBroker__Agents__coder__Tools__0: http_fetch
-      # ToolBroker__Agents__coder__Tools__1: download_to_workspace
-      ToolBroker__Agents__coder__SandboxUrl: http://sandbox-coder:8090
-      ToolBroker__Agents__coder__SandboxSecret: ${SANDBOX_CODER_SECRET:-}
-      Egress__Sandboxes__coder__Secret: ${SANDBOX_CODER_PROXY_SECRET:-}
+      # ToolBroker__Agents__assistant__AllTools: "true"
+      # ToolBroker__Agents__assistant__Tools__0: http_fetch
+      # ToolBroker__Agents__assistant__Tools__1: download_to_workspace
+      ToolBroker__Agents__assistant__SandboxUrl: http://sandbox-assistant:8090
+      ToolBroker__Agents__assistant__SandboxSecret: ${SANDBOX_ASSISTANT_SECRET:-}
+      Egress__Sandboxes__assistant__Secret: ${SANDBOX_ASSISTANT_PROXY_SECRET:-}
       # The cheap model that runs web_search (default openai/gpt-4o-mini), e.g.:
       # WebSearch__Model: openai/gpt-4o-mini
       # GitHub tools (github_read/github_write/github_create_pr). Empty tokens = off. Optional
@@ -79,10 +83,10 @@ services:
       # Hosts whose http_fetch calls are low risk, e.g.:
       # ToolBroker__FetchAllowHosts__0: learn.microsoft.com
     ports:
-      # Client API and web UI only; 8081 is never published. Never port-forward this port.
+      # Client API and web UI only; the agent port is never published. Never port-forward this port.
       - "${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}:8080"
-    # The egress proxy (8082) is reachable only on these networks and is never published.
-    networks: [internal, external, sbx-coder]
+    # The egress proxy is reachable only on these networks and is never published.
+    networks: [internal, external, sbx-assistant]
     volumes:
       - ./data:/data
     healthcheck:
@@ -92,13 +96,14 @@ services:
       retries: 5
       start_period: 15s
 
-  # One service per agent. To add one, copy a block, rename it, add its token to .env and create
-  # ./agents/<name>/config/{soul.md,agent.json} and ./agents/<name>/workspace/. Every agent mounts
+  # One service per agent. To add one, copy this block (and its sandbox's), rename it, add its
+  # token to .env and create ./agents/<name>/config/{soul.md,agent.json} and
+  # ./agents/<name>/workspace/ (or let scripts/quickstart.sh do all of it). Every agent mounts
   # the shared skill library ./skills read-only; it is used only when agent.json enables skill_read.
   agent-assistant:
     <<: *agent
     environment:
-      GATEWAY_URL: http://gateway:8081
+      GATEWAY_URL: http://gateway:${AGENT_PORT:-8081}
       AGENT_TOKEN: ${AGENT_ASSISTANT_TOKEN}
       AGENT_CONFIG_PATH: /config/agent.json
     volumes:
@@ -106,29 +111,18 @@ services:
       - ./agents/assistant/workspace:/workspace
       - ./skills:/skills:ro
 
-  agent-coder:
-    <<: *agent
-    environment:
-      GATEWAY_URL: http://gateway:8081
-      AGENT_TOKEN: ${AGENT_CODER_TOKEN}
-      AGENT_CONFIG_PATH: /config/agent.json
-    volumes:
-      - ./agents/coder/config:/config:ro
-      - ./agents/coder/workspace:/workspace
-      - ./skills:/skills:ro
-
-  sandbox-coder:
-    # The coder's sandbox: its own workspace (rw) and cache, the skill library (ro, so skill scripts
-    # can run through sandbox_run), its own network, egress only through the gateway's proxy with
-    # its own credential.
+  sandbox-assistant:
+    # The assistant's sandbox: its own workspace (rw) and cache, the skill library (ro, so skill
+    # scripts can run through sandbox_run), its own network, egress only through the gateway's
+    # proxy with its own credential.
     <<: *sandbox
     environment:
-      SANDBOX_SECRET: ${SANDBOX_CODER_SECRET:-}
-      HTTP_PROXY: http://sbx-coder:${SANDBOX_CODER_PROXY_SECRET:-}@gateway:8082
-      HTTPS_PROXY: http://sbx-coder:${SANDBOX_CODER_PROXY_SECRET:-}@gateway:8082
+      SANDBOX_SECRET: ${SANDBOX_ASSISTANT_SECRET:-}
+      HTTP_PROXY: http://sbx-assistant:${SANDBOX_ASSISTANT_PROXY_SECRET:-}@gateway:${EGRESS_PORT:-8082}
+      HTTPS_PROXY: http://sbx-assistant:${SANDBOX_ASSISTANT_PROXY_SECRET:-}@gateway:${EGRESS_PORT:-8082}
       NO_PROXY: ""
-    networks: [sbx-coder]
+    networks: [sbx-assistant]
     volumes:
-      - ./agents/coder/workspace:/workspace
-      - sandbox-coder-cache:/cache
+      - ./agents/assistant/workspace:/workspace
+      - sandbox-assistant-cache:/cache
       - ./skills:/skills:ro

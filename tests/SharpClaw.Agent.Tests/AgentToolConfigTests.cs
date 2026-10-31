@@ -71,12 +71,10 @@ public class AgentToolConfigTests : IDisposable
         Assert.Contains("skill_read", config.Tools);
     }
 
-    [Theory]
-    [InlineData("assistant")]
-    [InlineData("coder")]
-    public void Shipped_agent_configs_load(string agent)
+    [Fact]
+    public void Shipped_agent_config_loads()
     {
-        var path = Path.Combine(RepoRoot(), "docker", "template", "agents", agent, "config", "agent.json");
+        var path = Path.Combine(RepoRoot(), "docker", "template", "agents", "assistant", "config", "agent.json");
         var config = AgentToolConfig.Load(path, Known);
         Assert.NotNull(config);
         Assert.NotEmpty(config.Tools);
