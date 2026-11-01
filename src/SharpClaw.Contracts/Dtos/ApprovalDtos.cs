@@ -22,12 +22,39 @@ public sealed record CreateApprovalRequest(
     string? ArgsHash = null,
     JsonElement? Arguments = null);
 
-public sealed record ApprovalDto(Guid Id, string Status, string? DecidedBy, DateTime ExpiresAt);
+/// <summary><c>GrantId</c>: the standing grant that approved it, when <c>DecidedBy</c> is <c>grant</c>.</summary>
+public sealed record ApprovalDto(Guid Id, string Status, string? DecidedBy, DateTime ExpiresAt, Guid? GrantId = null);
 
 public sealed record ApprovalResponse(ApprovalDto Approval);
 
-/// <summary><c>Decision</c> is <c>approved</c> or <c>denied</c>.</summary>
-public sealed record DecideApprovalRequest(string Decision);
+/// <summary>
+/// <c>Decision</c> is <c>approved</c> or <c>denied</c>. <c>Remember</c> (approved only) also creates
+/// a standing grant for the tool (3.6 spec section 7).
+/// </summary>
+public sealed record DecideApprovalRequest(string Decision, ApprovalRememberRequest? Remember = null);
+
+/// <summary><c>Scope</c> is <c>thread</c> or <c>agent</c>; <c>TtlHours</c> is null (until revoked), 1, 8 or 24.</summary>
+public sealed record ApprovalRememberRequest(string Scope, int? TtlHours = null);
+
+public static class ApprovalGrantScopes
+{
+    public const string Thread = "thread";
+    public const string Agent = "agent";
+
+    public static readonly IReadOnlyList<int> TtlHours = new[] { 1, 8, 24 };
+}
+
+/// <summary>A standing grant: calls of <c>ToolName</c> are approved without asking (3.6 spec).</summary>
+public sealed record ApprovalGrantDto(
+    Guid Id, string ToolName, string Scope, Guid? ThreadId, DateTime? ExpiresAt, string? CreatedByUser, DateTime CreatedAt);
+
+public sealed record ApprovalGrantListResponse(IReadOnlyList<ApprovalGrantDto> Grants);
+
+/// <summary>Exactly one of <c>Ids</c> (1–100) or <c>ThreadId</c>.</summary>
+public sealed record BatchDecideApprovalsRequest(string Decision, IReadOnlyList<Guid>? Ids = null, Guid? ThreadId = null);
+
+/// <summary><c>Skipped</c>: ids that were unknown or no longer pending.</summary>
+public sealed record BatchDecideApprovalsResponse(IReadOnlyList<ApprovalDto> Decided, int Skipped);
 
 
 /// <summary>
@@ -50,7 +77,8 @@ public sealed record ApprovalDetailDto(
     string? DecidedBy,
     DateTime? DecidedAt,
     string? DecidedByUser = null,
-    string? Detail = null);
+    string? Detail = null,
+    Guid? GrantId = null);
 
 public sealed record ApprovalListResponse(IReadOnlyList<ApprovalDetailDto> Approvals);
 

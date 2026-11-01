@@ -33,7 +33,7 @@ public static class AgentQueries
     {
         var remaining = Math.Max(0, a.DailyBudgetUsd - todaySpend);
         return new AgentDto(a.Id, a.Name, a.Model, a.DailyBudgetUsd, a.Enabled, a.CreatedAt, todaySpend, remaining,
-            skills, a.ContextWindowTokens, a.LastSeenAt, a.SkillsReportedAt);
+            skills, a.ContextWindowTokens, a.LastSeenAt, a.SkillsReportedAt, a.Autonomous);
     }
 
     /// <summary>One agent's reported skills, in ordinal name order.</summary>

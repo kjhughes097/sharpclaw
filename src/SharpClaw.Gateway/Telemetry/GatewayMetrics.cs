@@ -142,12 +142,13 @@ public sealed class GatewayMetrics : IDisposable
             _egressBytes.Add(bytes, Tag("agent", agent));
     }
 
-    public void RecordApproval(string agent, string status) =>
-        _approvals.Add(1, Tag("agent", agent), Tag("status", status));
+    /// <summary><paramref name="decidedBy"/> (type label): user, system, grant or autonomy (3.6 spec section 6).</summary>
+    public void RecordApproval(string agent, string status, string decidedBy) =>
+        _approvals.Add(1, Tag("agent", agent), Tag("status", status), Tag("type", decidedBy));
 
     /// <summary>From creation to decision or expiry.</summary>
-    public void RecordApprovalDecisionTime(string agent, string status, double seconds) =>
-        _approvalDecisionTime.Record(seconds, Tag("agent", agent), Tag("status", status));
+    public void RecordApprovalDecisionTime(string agent, string status, string decidedBy, double seconds) =>
+        _approvalDecisionTime.Record(seconds, Tag("agent", agent), Tag("status", status), Tag("type", decidedBy));
 
     /// <summary>Older turns were left out of the model's context.</summary>
     public void RecordContextTruncation(string agent) => _contextTruncations.Add(1, Tag("agent", agent));

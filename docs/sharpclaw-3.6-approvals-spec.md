@@ -47,7 +47,7 @@ this thread, this agent, or this agent for a while.
   create or change them (no `/agent/*` endpoint touches them).
 - Gateway hardline refusals in `ApprovalDetails.PrepareAsync` (e.g. a PR that touches a blocked
   path) are checked **before** any grant or autonomy, so they are never auto-approved.
-- Grants for tools in `BrokerTools.NonGrantable` MUST be refused with `422 validation_failed`.
+- Grants for tools in `BrokerTools.NonGrantable` MUST be refused with `400 validation_failed`.
 
 ## 3. Taint (task 1)
 
@@ -107,7 +107,7 @@ Auto-decided rows set `decided_at = created_at`. The write publishes `approval.d
 ## 7. Client API (task 3)
 
 - `POST /api/approvals/{id}` body: `{ "decision": "approved" | "denied", "remember"?: { "scope": "thread" | "agent", "ttlHours"?: 1 | 8 | 24 } }`.
-  `remember` is only valid with `approved`. It is refused with `422` for a non-grantable tool, or when
+  `remember` is only valid with `approved`. It is refused with `400 validation_failed` for a non-grantable tool, or when
   `ttlHours` isn't one of the allowed values. The grant is created only when the decision wins (not on `409`). The
   response is unchanged.
 - `GET /api/agents/{idOrName}/grants` → `{ grants: ApprovalGrantDto[] }`: the active grants, newest first.

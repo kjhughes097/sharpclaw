@@ -68,8 +68,8 @@ public sealed class ApprovalDecisions(
         foreach (var approval in decided)
         {
             var agentName = names.GetValueOrDefault(approval.AgentId, "");
-            metrics.RecordApproval(agentName, approval.Status);
-            metrics.RecordApprovalDecisionTime(agentName, approval.Status,
+            metrics.RecordApproval(agentName, approval.Status, approval.DecidedBy ?? "");
+            metrics.RecordApprovalDecisionTime(agentName, approval.Status, approval.DecidedBy ?? "",
                 (approval.DecidedAt!.Value - approval.CreatedAt).TotalSeconds);
             // Wake the agent's poll, then forget the key: a decided approval is never signalled again.
             signal.Signal(approval.Id);

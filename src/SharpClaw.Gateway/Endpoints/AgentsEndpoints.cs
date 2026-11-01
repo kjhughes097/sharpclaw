@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.EntityFrameworkCore;
 using SharpClaw.Contracts;
+using SharpClaw.Gateway.Auth;
 using SharpClaw.Gateway.Data;
 using SharpClaw.Gateway.Infrastructure;
 using SharpClaw.Gateway.Services;
@@ -91,7 +92,8 @@ public static class AgentsEndpoints
     }
 
     private static async Task<IResult> PatchAgent(
-        string idOrName, UpdateAgentRequest? body, SharpClawDbContext db, TimeProvider time, CancellationToken ct)
+        string idOrName, UpdateAgentRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
+        ILoggerFactory loggerFactory, CancellationToken ct)
     {
         var agent = await AgentQueries.ResolveAsync(db, idOrName, ct);
         if (agent is null)
@@ -118,6 +120,14 @@ public static class AgentsEndpoints
             if (AgentQueries.ValidateContextWindow(body.ContextWindowTokens) is { } windowError)
                 return ApiResults.ValidationFailed(windowError);
             agent.ContextWindowTokens = body.ContextWindowTokens;
+        }
+        if (body.Autonomous is { } autonomous && autonomous != agent.Autonomous)
+        {
+            agent.Autonomous = autonomous;
+            // Who switched it, for the record: this setting approves every call the agent makes.
+            loggerFactory.CreateLogger("SharpClaw.Gateway.Approvals").LogInformation(
+                "agent autonomy changed: agent={Agent} autonomous={Autonomous} by={Actor}",
+                agent.Name, autonomous, ClientAuthFilter.ActorName(http));
         }
 
         await db.SaveChangesAsync(ct);
