@@ -30,9 +30,25 @@ public partial class AgentAskTests
     }
 
     [Fact]
-    public async Task Policy_has_no_recipients_without_the_tool_or_any_pairs()
+    public async Task By_default_every_other_agent_is_a_recipient()
+    {
+        var config = BrokerTestHelpers.Config("ade", BrokerTools.AskAgent);
+        config["AgentMessaging:Descriptions:cody"] = "Coding agent.";
+        await using var fx = await GatewayFixture.CreateAsync(extraConfig: config);
+        var (_, adeToken) = await fx.CreateAgentAsync("ade");
+        await fx.CreateAgentAsync("cody");
+        await fx.CreateAgentAsync("bea");
+
+        Assert.Equal(
+            [new AskAgentTargetDto("bea", null), new AskAgentTargetDto("cody", "Coding agent.")],
+            (await PolicyAsync(fx, adeToken)).AskAgents!);
+    }
+
+    [Fact]
+    public async Task Policy_has_no_recipients_without_the_tool_or_when_pairs_are_required()
     {
         var config = BrokerTestHelpers.Config("ade", BrokerTools.WebSearch);
+        config["AgentMessaging:AllowAll"] = "false";
         config["AgentMessaging:Allowed:ade:0"] = "cody";
         config[$"ToolBroker:Agents:cody:Tools:0"] = BrokerTools.AskAgent;
         await using var fx = await GatewayFixture.CreateAsync(extraConfig: config);
@@ -40,7 +56,7 @@ public partial class AgentAskTests
         var (_, codyToken) = await fx.CreateAgentAsync("cody");
 
         Assert.Empty((await PolicyAsync(fx, adeToken)).AskAgents!);  // ask_agent not enabled for ade
-        Assert.Empty((await PolicyAsync(fx, codyToken)).AskAgents!); // cody may ask nobody
+        Assert.Empty((await PolicyAsync(fx, codyToken)).AskAgents!); // cody has no pairs and AllowAll is off
     }
 
     [Fact]
@@ -48,15 +64,24 @@ public partial class AgentAskTests
     {
         var o = new AgentMessagingOptions
         {
-            Allowed = new() { ["Ade"] = ["cody", " ", "CODY", "bea"] },
+            Allowed = new() { ["Ade"] = ["cody", " ", "CODY", "bea", "nobody"] },
             Descriptions = new() { ["Cody"] = "codes", ["bea"] = " " },
         };
+        string[] agents = ["ade", "Bea", "cody", "dan"];
 
-        Assert.Equal(["cody", "bea"], o.RecipientsOf("ade"));
+        Assert.Equal(["cody", "Bea"], o.RecipientsOf("ade", agents));
         Assert.True(o.MayAsk("ADE", "Bea"));
-        Assert.False(o.MayAsk("bea", "ade"));
+        Assert.False(o.MayAsk("ade", "dan"));     // ade has its own list
+        Assert.True(o.MayAsk("bea", "ade"));      // everyone else: AllowAll
+        Assert.Equal(["ade", "cody", "dan"], o.RecipientsOf("bea", agents));
+        Assert.False(o.MayAsk("bea", "BEA"));     // never itself
         Assert.Equal("codes", o.DescriptionOf("cody"));
         Assert.Null(o.DescriptionOf("bea"));
+
+        o.AllowAll = false;
+        Assert.False(o.MayAsk("bea", "ade"));
+        Assert.Empty(o.RecipientsOf("bea", agents));
+        Assert.True(o.MayAsk("ade", "cody"));
     }
 
     [Fact]

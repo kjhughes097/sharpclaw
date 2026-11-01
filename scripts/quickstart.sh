@@ -122,7 +122,7 @@ sandbox_var() { echo "SANDBOX_$(echo "$1" | tr 'a-z-' 'A-Z_')_${2:-}SECRET"; }
 # Every broker tool (BrokerTools.All in SharpClaw.Contracts). Quick-start agents get all of them in
 # agent.json; the gateway allows them through ToolBroker__Agents__<name>__AllTools.
 BROKER_TOOLS=(http_fetch download_to_workspace web_search extract_text git_clone sandbox_run
-  github_read github_write github_create_pr)
+  github_read github_write github_create_pr ask_agent)
 
 # Removes an agent's sandbox: its service, network, cache volume, gateway settings and secrets.
 sandbox_remove() {

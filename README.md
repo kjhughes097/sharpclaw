@@ -419,22 +419,21 @@ description: Keep a dated daily notes file in the workspace. Use when the user a
 An agent can ask another agent for help and get the answer back in the same turn, with the
 `ask_agent(agent, message)` tool. The gateway queues the question in the other agent's inbox, waits
 for its reply and returns that as the tool result. Agents never talk directly: everything goes
-through the gateway, and nothing is allowed until you allow it. See the
-[3.5 spec](docs/sharpclaw-3.5-implementation-spec.md).
+through the gateway. See the [3.5 spec](docs/sharpclaw-3.5-implementation-spec.md).
 
-Three things must be set for agent `ade` to ask agent `cody`:
-
-1. `ask_agent` in the `tools` list of `ade`'s `agent.json`;
-2. `ask_agent` enabled for `ade` in the gateway (`ToolBroker:Agents:ade:Tools` or `AllTools`);
-3. the pair allowed in the gateway, with an optional line telling `ade` what `cody` is for:
+By default any agent may ask any other. An agent asks only if `ask_agent` is enabled for it in two
+places: the `tools` list of its `agent.json`, and the gateway (`ToolBroker:Agents:<name>:Tools` or
+`AllTools`). The quick start does both for every agent. Optionally, tell agents what each other is
+for, or restrict who may ask whom:
 
 ```bash
-AgentMessaging__Allowed__ade__0=cody
 AgentMessaging__Descriptions__cody=Coding agent: reads, changes and tests code in its sandbox.
+AgentMessaging__Allowed__ade__0=cody     # ade may ask only cody
+AgentMessaging__AllowAll=false           # only agents with an Allowed list may ask anyone
 ```
 
-Restart the gateway and then `ade` (it reads its recipients at startup). Without an allowed
-recipient the tool isn't offered.
+Restart the gateway and then the agents (each reads its recipients at startup, so an agent you add
+later is offered to the others after they restart). With no possible recipient the tool isn't offered.
 
 - **What you see.** The question appears in a thread `cody` owns, titled "From ade: …", with one
   thread per conversation of `ade`'s (follow-up questions from the same conversation reuse it, so
@@ -447,9 +446,11 @@ recipient the tool isn't offered.
 - **Approvals.** If `cody` needs an approval while answering, you're asked as usual (in its
   linked thread and the Approvals tab). If the original message was sent `unattended`, it's denied
   at once.
-- **Limits.** At most `AgentMessaging:MaxHops` agents in a chain (default 3). An agent can't be
-  asked by a chain it's already part of, and two agents can't ask each other at the same time.
-  An ask waits up to `AgentMessaging:AskTimeoutSeconds` (default 600); a question nobody has
+- **No endless asking.** At most `AgentMessaging:MaxHops` agents deep (default 3), and at most
+  `AgentMessaging:MaxAsksPerChain` asks in total from one message of yours (default 10, counting
+  every level); after that the agent is told to answer with what it has. An agent can't be asked by
+  a chain it's already part of, or by an agent it's waiting on (directly or through others), since
+  neither could ever answer. An ask waits up to `AgentMessaging:AskTimeoutSeconds` (default 600); a question nobody has
   picked up by then, or when the asking turn ends, is marked failed (`ask_timeout`,
   `ask_cancelled`). Each agent pays for its own model calls from its own daily budget.
 
@@ -572,9 +573,11 @@ ASP.NET `__` syntax).
 | `GitHub:Token` / `ForkToken` / `ForkOwner` | empty | `GITHUB_TOKEN`, `GITHUB_FORK_TOKEN`, `GITHUB_FORK_OWNER`; empty token: GitHub tools unavailable |
 | `GitHub:Repos` | empty | `owner/repo` allow-list; optional for reads and writes, required for PRs |
 | `GitHub:BlockedPaths` | `.github/workflows/**` | Paths a PR may never add, change or delete |
-| `AgentMessaging:Allowed:<name>` | empty | Agents `<name>` may ask with `ask_agent` (e.g. `AgentMessaging__Allowed__ade__0=cody`); nothing is allowed by default |
+| `AgentMessaging:AllowAll` | `true` | Any agent may ask any other with `ask_agent`; `false`: only agents with an `Allowed` list |
+| `AgentMessaging:Allowed:<name>` | empty | The only agents `<name>` may ask (e.g. `AgentMessaging__Allowed__ade__0=cody`) |
 | `AgentMessaging:Descriptions:<name>` | empty | One line (≤ 300 characters) telling other agents what `<name>` is for |
 | `AgentMessaging:MaxHops` | `3` | Longest chain of agents asking agents (1–10) |
+| `AgentMessaging:MaxAsksPerChain` | `10` | Most asks, at every depth together, from one human message (1–1000) |
 | `AgentMessaging:AskTimeoutSeconds` | `600` | How long an ask waits for the reply (10–3600) |
 | `AgentMessaging:MaxReplyChars` | `32000` | Longer replies are cut and marked `truncated` |
 

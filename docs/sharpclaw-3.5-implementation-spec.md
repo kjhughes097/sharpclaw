@@ -25,7 +25,7 @@ and the tool broker ([external tools spec](sharpclaw-external-tools-spec.md) §4
 | Q1 | How does one agent talk to another? | **Synchronously, through a tool.** The asking agent calls `ask_agent(agent, message)`. The gateway queues the message in the recipient's inbox, holds the call open until the recipient's turn finishes (or a timeout), and returns the recipient's reply as the tool result. There is no fire-and-forget send and no reply that starts a new turn later. |
 | Q2 | Where do the messages live? | **In the existing `messages` and `threads` tables**, as the 3.1 spec anticipated. An agent's question is a `user` row in a thread the **recipient** owns, with the sending agent recorded. There is no separate mailbox table: the inbox claim, requeue, failure and replay all work as they do today. |
 | Q3 | Which thread on the recipient's side? | **One linked thread per (originating thread, sender, recipient)**, reused for follow-up asks from the same conversation, so the recipient keeps its context. |
-| Q4 | Who may talk to whom? | **Gateway config only**: `AgentMessaging:Allowed:<sender>` lists the agents it may ask. Nothing is allowed by default. Not editable through the API or UI. |
+| Q4 | Who may talk to whom? | **Any agent may ask any other by default** (`AgentMessaging:AllowAll`, revised after the first build, which allowed nothing by default). Gateway config only: `AgentMessaging:Allowed:<sender>` restricts a sender to the agents it lists, and `AllowAll=false` allows only listed pairs. An agent still needs `ask_agent` enabled to ask at all. Not editable through the API or UI. What stops asks going on forever is in section 5.3. |
 | Q5 | Is another agent's reply trusted? | **No.** The `ask_agent` result is untrusted: it taints the asking agent's turn, like `web_search`. In the other direction, taint is **propagated**: the recipient's turn starts tainted if and only if the asking turn was tainted when it asked (section 6.3). Always tainting the recipient was rejected: with the default `allowedRiskLevel` of `low`, every tool call the recipient made would need approval. |
 | Q6 | If the recipient needs an approval | **Inherit attendance.** The recipient's message copies `unattended` from the message that started the chain: attended chains ask the human in the UI as usual; unattended ones are denied at once. |
 | Q7 | `IMessageBus` interface (from the plan) | **Not added.** There is one implementation and no second one planned; `InboxRepository` and the new `AgentAsks` service are the seam. Recorded in [tech-debt](tech-debt.md). |
@@ -39,7 +39,7 @@ How the plan's outline maps onto this design:
 | Acks, idempotency keys | The recipient's claim/complete/fail is the ack; (asking turn, tool call id) is the idempotency key (section 5.2) |
 | Allowed sender → recipient pairs | `AgentMessaging:Allowed` (section 4) |
 | Correlation ids for request/reply | Each ask records the asking turn's correlation id and tool call id (section 3) |
-| Hop limits and budgets | `AgentMessaging:MaxHops`, cycle refusal, and each agent's own daily budget (sections 5.3, 7) |
+| Hop limits and budgets | `AgentMessaging:MaxHops`, `AgentMessaging:MaxAsksPerChain`, deadlock refusal, and each agent's own daily budget (sections 5.3, 7) |
 | TTL and dead-letter status | `AgentMessaging:AskTimeoutSeconds`; asks nobody is waiting for any more end as `failed` with `ask_timeout` or `ask_cancelled` (section 5.5) |
 | `IMessageBus` | Not added (Q7) |
 
@@ -57,15 +57,16 @@ stays the only path between agents.
 
 - **Agents never talk directly.** Agents stay on the internal network, reachable only by the
   gateway. A message to another agent goes only through `POST /agent/tools/ask_agent`.
-- **The gateway enforces the policy.** Recipients come only from `AgentMessaging:Allowed` in
-  gateway config, never from the agent, its workspace or a skill. A recipient the sender may not
+- **The gateway enforces the policy.** Recipients come only from `AgentMessaging` in gateway
+  config, never from the agent, its workspace or a skill. A recipient the sender may not
   ask, or that doesn't exist, is reported as **not found**, with the same error for both.
 - `ask_agent` goes through `ToolDispatcher` like every other tool (hardline → risk → taint →
   approval → execute → report). Only `ToolDispatcher` calls `ExecuteUncheckedAsync` (the
   architecture test MUST still pass).
 - The reply is **untrusted** (`ReturnsUntrustedContent = true`).
-- **No cycles:** an agent can never be asked by a chain it is already part of (section 5.3), and a
-  chain is never longer than `MaxHops`.
+- **No endless asking:** an agent can never be asked by a chain it is already part of or by an
+  agent it is waiting on, a chain is never longer than `MaxHops`, and one human message leads to at
+  most `MaxAsksPerChain` asks in total (section 5.3).
 - Each agent pays for its **own** model calls from its own daily budget. Asking costs the asker
   nothing at the gateway; answering is a normal turn for the recipient.
 - No message content, reply or preview in logs, metric labels or events. `message.created`,
@@ -110,9 +111,11 @@ like the others:
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|
-| `AgentMessaging:Allowed:<sender>` | empty | — | Array of agent names `<sender>` may ask. Names are matched ignoring case, like `ToolBroker:Agents`. An agent may not list itself (startup error). |
+| `AgentMessaging:AllowAll` | `true` | — | Every agent may ask every other agent (never itself), except senders with their own `Allowed` list. `false`: only the listed pairs. |
+| `AgentMessaging:Allowed:<sender>` | empty | — | Array of the only agent names `<sender>` may ask. Names are matched ignoring case, like `ToolBroker:Agents`. An agent may not list itself (startup error). |
 | `AgentMessaging:Descriptions:<name>` | none | ≤ 300 chars | One line telling other agents what `<name>` is for. Shown to the model in the `ask_agent` tool description. Optional. |
 | `AgentMessaging:MaxHops` | 3 | 1–10 | The longest chain: human → A is hop 0, A → B hop 1, B → C hop 2, and so on. |
+| `AgentMessaging:MaxAsksPerChain` | 10 | 1–1000 | The most asks that may follow from one human message, at every depth together. |
 | `AgentMessaging:AskTimeoutSeconds` | 600 | 10–3600 | How long an ask waits for the recipient's reply. The default is longer than the default approval timeout (300 s), so a recipient's approval can be answered before its asker gives up. |
 | `AgentMessaging:MaxReplyChars` | 32,000 | 1,000–200,000 | The longest reply returned to the asker; a longer reply is cut and marked `truncated`. |
 
@@ -120,14 +123,15 @@ The message itself is limited by the existing `Messages:MaxContentChars`.
 
 `ask_agent` is a broker tool, so it also has to be enabled in two existing places: in the
 `tools` list of the agent's `agent.json`, and for the agent in `ToolBroker:Agents:<name>:Tools` (or
-`AllTools`). It is **not** in `ToolBroker:AlwaysApprove` by default. With no `Allowed` recipients
-the tool does nothing useful, so the agent doesn't offer it (section 6.1).
+`AllTools`). It is **not** in `ToolBroker:AlwaysApprove` by default. The quick start enables it
+for every agent (it adds every broker tool to `agent.json` and sets `AllTools`). With no possible
+recipient the tool does nothing useful, so the agent doesn't offer it (section 6.1).
 
-Example (`.env`):
+Example (`.env`): describe agents to each other, and restrict `ade` to asking `cody` only:
 
 ```bash
-AgentMessaging__Allowed__ade__0=cody
 AgentMessaging__Descriptions__cody=Coding agent: reads, changes and tests code in its sandbox.
+AgentMessaging__Allowed__ade__0=cody
 ```
 
 ## 5. Gateway
@@ -147,11 +151,12 @@ The handler delegates to a new scoped service, `AgentAsks`, which owns the state
 
 1. **Validate.** `message` is non-empty and within `Messages:MaxContentChars`; otherwise a
    validation error.
-2. **Policy.** The recipient must be in `AgentMessaging:Allowed:<sender>`, exist and be enabled.
+2. **Policy.** The sender must be allowed to ask the recipient (section 4), which must exist and be enabled.
    Not allowed or unknown → `404 not_found` ("Agent not found."). Allowed but disabled → tool
    result `{ ok: false, error: "agent_unavailable" }`.
-3. **Chain checks** (section 5.3): hop limit, then cycles. On failure → tool result
-   `{ ok: false, error: "hop_limit" | "agent_cycle" }`. Nothing is queued.
+3. **Chain checks** (section 5.3): hop limit, chain budget, then deadlocks, inside the same write
+   transaction as the queueing. On failure → tool result
+   `{ ok: false, error: "hop_limit" | "chain_limit" | "agent_cycle" }`. Nothing is queued.
 4. **Queue** (one write transaction, section 5.2): find or create the linked thread, insert the
    recipient's `pending` user message, and stage `message.created` on that thread. After commit,
    signal the recipient's inbox.
@@ -182,19 +187,28 @@ Inside one `IEventPublisher.WriteAsync` transaction:
 
 Extract the shared insert code from `MessageTurns.PostAsync` rather than duplicating it.
 
-### 5.3 Hop limit and cycles
+### 5.3 Stopping endless asking: hops, chain budget, deadlocks
 
-The sender's current turn is its claimed message M (the request's correlation id).
+Asks are synchronous, so a chain is a call stack: it can only grow while every agent in it is
+waiting. Three checks bound it, run inside the write transaction that queues the ask (so two asks
+can't both pass and then deadlock). The sender's current turn is its claimed message M (the
+request's correlation id).
 
-- **Hop limit:** refuse if `M.hop + 1 > MaxHops`.
+- **Hop limit (depth):** refuse if `M.hop + 1 > MaxHops`.
+- **Chain budget (breadth):** every ask records `chain_root_id`, the human message the chain started
+  from (M's root, or M itself at hop 0). Refuse if that root already has `MaxAsksPerChain` asks.
+  Without it, each agent could ask once per tool round at every level (10 rounds × 3 levels ≈ 1,000
+  turns from one message).
 - **Chain cycle:** walk M's chain upward through `origin_message_id` (at most `MaxHops` rows),
   collecting the agent that owns each message. Refuse if the recipient is the sender or any agent in
   the chain. This is what stops A → B → A from deadlocking, since A is still waiting for B.
-- **Crossed asks:** refuse if the recipient currently has a `pending` or `claimed` ask **sent to
-  the sender** (a message to the sender with `sender_agent_id` = recipient). That catches the case
-  where two separate chains ask each other at the same time (A waits for B while B waits for A),
-  which the chain walk can't see. Longer cross-chain cycles (A → B, B → C, C → A in three separate
-  chains) are not detected and end at the timeout. Recorded in [tech-debt](tech-debt.md).
+- **Deadlock across chains:** refuse if the recipient is waiting, directly or through other agents,
+  on the sender. Starting from the recipient, follow "agent X's claimed turn has an unanswered
+  (`pending` or `claimed`) ask to agent Y" edges; if they reach the sender, the ask could never be
+  answered, because each agent runs one turn at a time. This catches A ⇄ B and longer circles such
+  as A → B, B → C, C → A built from separate chains.
+
+The timeout (section 5.5) stays as the final backstop.
 
 ### 5.4 Waiting, heartbeat and cancellation
 
@@ -328,8 +342,11 @@ backlog.
   linked thread is reused; `hop`, `unattended`, `origin_tainted` and `sender_agent_id` are set;
   `message.created` on the recipient's thread; the same (turn, tool call id) twice queues one
   message.
-- **Chain:** `MaxHops` boundary; A → B → A refused; A → A refused; crossed asks refused; a refusal
-  queues nothing.
+- **Chain:** `MaxHops` boundary; `MaxAsksPerChain` across levels, and a new human message gets a
+  fresh budget; A → B → A refused; A → A refused; two agents asking each other and a three-agent
+  circle across separate chains refused; a refusal queues nothing.
+- **Policy:** by default any agent may ask any other; an `Allowed` list restricts its sender;
+  `AllowAll=false` allows only listed pairs.
 - **Waiting:** reply returned (and truncated at `MaxReplyChars`); recipient failure returned with its
   reason; timeout while pending → recipient message `failed`/`ask_timeout` with an `error` event;
   timeout while claimed → recipient finishes, reply stays in the linked thread; the sender's claim
@@ -358,8 +375,8 @@ backlog.
 - [architecture.md](architecture.md): the ask flow (a sequence diagram), the new columns, the
   invariants (no direct agent traffic, gateway policy, no cycles).
 - [ui.md](ui.md): the UI additions.
-- [tech-debt.md](tech-debt.md): Q7 (no `IMessageBus`), longer cross-chain cycles end at the timeout,
-  a claimed ask runs to completion after a timeout, the policy is config-only.
+- [tech-debt.md](tech-debt.md): Q7 (no `IMessageBus`), a claimed ask runs to completion after a
+  timeout, the policy is config-only, recipients are read at agent startup.
 - [sharpclaw-v3-plan.md](sharpclaw-v3-plan.md): mark 3.5 built when task 6 lands.
 - Template and quickstart: a commented example in the template's `.env.example`. The quickstart
   doesn't set up pairs (it can't know the operator's intent).

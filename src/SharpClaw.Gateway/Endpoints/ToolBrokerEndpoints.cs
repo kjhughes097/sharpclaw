@@ -40,21 +40,16 @@ public static class ToolBrokerEndpoints
     }
 
     /// <summary>
-    /// The agents <c>ask_agent</c> may ask (3.5 spec section 5.7): the sender's allowed recipients
-    /// that exist, in config order. Disabled ones are included; the ask itself reports them.
+    /// The agents <c>ask_agent</c> may ask (3.5 spec section 5.7): every other agent by default, or the
+    /// sender's own list in config order. Disabled ones are included; the ask itself reports them.
     /// </summary>
     private static async Task<IReadOnlyList<AskAgentTargetDto>> AskTargetsAsync(
         string sender, IReadOnlyList<string> tools, AgentMessagingOptions messaging, SharpClawDbContext db, CancellationToken ct)
     {
         if (!tools.Contains(BrokerTools.AskAgent))
             return [];
-        var allowed = messaging.RecipientsOf(sender);
-        if (allowed.Count == 0)
-            return [];
         var names = await db.Agents.AsNoTracking().Select(a => a.Name).ToListAsync(ct);
-        return allowed
-            .Select(n => names.FirstOrDefault(existing => string.Equals(existing, n, StringComparison.OrdinalIgnoreCase)))
-            .OfType<string>()
+        return messaging.RecipientsOf(sender, names)
             .Select(n => new AskAgentTargetDto(n, messaging.DescriptionOf(n)))
             .ToList();
     }

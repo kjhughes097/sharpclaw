@@ -105,6 +105,7 @@ public class SharpClawDbContext : DbContext
             e.HasIndex(x => new { x.OriginMessageId, x.OriginToolCallId })
                 .IsUnique()
                 .HasFilter("origin_message_id IS NOT NULL");
+            e.HasIndex(x => x.ChainRootId).HasFilter("chain_root_id IS NOT NULL");
         });
 
         b.Entity<LlmCall>(e =>

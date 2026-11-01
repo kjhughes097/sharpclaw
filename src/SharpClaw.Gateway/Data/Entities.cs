@@ -122,6 +122,9 @@ public class Message
 
     /// <summary>The asking turn was tainted when it asked; the recipient's turn starts tainted.</summary>
     public bool OriginTainted { get; set; }
+
+    /// <summary>On asks: the human message the whole chain started from (counts asks per chain).</summary>
+    public Guid? ChainRootId { get; set; }
 }
 
 public class LlmCall

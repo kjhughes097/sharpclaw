@@ -53,6 +53,7 @@ public class ConfigurationValidationTests
     [InlineData("GitHub:ForkOwner", "bad/name", "GitHub:ForkOwner must be a GitHub user name")]
     [InlineData("AgentMessaging:Allowed:ade:0", "ADE", "AgentMessaging:Allowed:ade must not list the agent itself")]
     [InlineData("AgentMessaging:MaxHops", "0", "MaxHops")]
+    [InlineData("AgentMessaging:MaxAsksPerChain", "0", "MaxAsksPerChain")]
     [InlineData("AgentMessaging:AskTimeoutSeconds", "5", "AskTimeoutSeconds")]
     [InlineData("AgentMessaging:MaxReplyChars", "10", "MaxReplyChars")]
     public void Invalid_values_refuse_to_start(string key, string value, string expected)
