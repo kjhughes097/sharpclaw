@@ -155,6 +155,7 @@ public sealed class AgentAsks(
                     OriginAgentId = call.Agent.Id,
                 };
                 db.Threads.Add(thread);
+                batch.Add(thread.Id, SseEventNames.ThreadCreated, new ThreadCreatedEvent(thread.Id, recipient.Id));
             }
 
             var ask = await MessageTurns.AddUserMessageAsync(db, batch, thread, message, now, ct, m =>

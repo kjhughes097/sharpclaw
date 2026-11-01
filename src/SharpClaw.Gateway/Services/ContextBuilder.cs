@@ -68,10 +68,7 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
             var rows = await db.Messages.AsNoTracking()
                 .Where(m => m.ThreadId == threadId && m.Seq >= fromSeq).OrderBy(m => m.Seq).ToListAsync(ct);
 
-            var senderIds = rows.Where(r => r.SenderAgentId is not null).Select(r => r.SenderAgentId!.Value).Distinct().ToList();
-            var senders = senderIds.Count == 0
-                ? null
-                : await db.Agents.AsNoTracking().Where(a => senderIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
+            var senders = await MessageQueries.SenderNamesAsync(db, rows, ct);
             var result = await BuildAsync(threadId, rows, current.Id, windowTokens, reserveTokens, ct, olderTurns, senders);
             // Done unless every loaded turn fitted and there are older ones that might fit too.
             if (!hasOlder || result.TooLarge || result.DroppedTurns > olderTurns)

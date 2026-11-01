@@ -631,6 +631,7 @@ export interface components {
       /** @default message */
       kind: string;
       role: string;
+      sentByAgent?: null | string;
       sentByUser?: null | string;
       /**
        * Format: int32
@@ -729,6 +730,9 @@ export interface components {
       /** Format: date-time */
       lastMessageAt?: null | string;
       model?: null | string;
+      originAgentName?: null | string;
+      /** Format: uuid */
+      originThreadId?: null | string;
       title: null | string;
     };
     ThreadListResponse: {
@@ -751,6 +755,9 @@ export interface components {
       /** Format: date-time */
       lastMessageAt: string;
       model?: null | string;
+      originAgentName?: null | string;
+      /** Format: uuid */
+      originThreadId?: null | string;
       /** Format: int32 */
       pendingApprovals: number;
       preview: null | string;
@@ -828,6 +835,16 @@ export interface components {
       toolCallId: string;
       toolName: string;
     };
+    TraceAskDto: {
+      agentName: string;
+      failReason: null | string;
+      /** Format: uuid */
+      messageId: string;
+      status: string;
+      /** Format: uuid */
+      threadId: string;
+      toolCallId: string;
+    };
     TraceLlmCallDto: {
       /** Format: int32 */
       completionTokens: number;
@@ -887,6 +904,7 @@ export interface components {
     };
     TraceTurnDto: {
       approvals: components['schemas']['TraceApprovalDto'][];
+      asks?: null | components['schemas']['TraceAskDto'][];
       /** Format: date-time */
       claimedAt: null | string;
       /** Format: date-time */

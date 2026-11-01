@@ -47,6 +47,19 @@ public static class TraceEndpoints
                 a.Status, a.CreatedAt, a.DecidedAt, a.DecidedBy, a.DecidedByUser) })
             .ToListAsync(ct);
 
+        // Asks the turns made (3.5 spec): the questions in other agents' linked threads.
+        var asks = await db.Messages.AsNoTracking()
+            .Where(m => m.OriginMessageId != null && ids.Contains(m.OriginMessageId.Value))
+            .OrderBy(m => m.CreatedAt).ThenBy(m => m.Id)
+            .Select(m => new
+            {
+                Origin = m.OriginMessageId!.Value,
+                Dto = new TraceAskDto(m.OriginToolCallId ?? "",
+                    db.Agents.Where(a => a.Id == m.AgentId).Select(a => a.Name).FirstOrDefault() ?? "",
+                    m.ThreadId, m.Id, m.Status, m.FailReason),
+            })
+            .ToListAsync(ct);
+
         var turns = users.Select(u =>
         {
             var turnLlm = llm.Where(c => c.CorrelationId == u.Id).Select(c => c.Dto).ToList();
@@ -55,7 +68,8 @@ public static class TraceEndpoints
                 turnLlm.Sum(c => c.CostUsd), turnLlm.Sum(c => c.PromptTokens), turnLlm.Sum(c => c.CompletionTokens),
                 turnLlm.Count, turnTools.Count);
             return new TraceTurnDto(u.Id, u.Id, u.Status, u.FailReason, u.CreatedAt, u.ClaimedAt, u.CompletedAt,
-                turnLlm, turnTools, approvals.Where(a => a.CorrelationId == u.Id).Select(a => a.Dto).ToList(), totals);
+                turnLlm, turnTools, approvals.Where(a => a.CorrelationId == u.Id).Select(a => a.Dto).ToList(), totals,
+                asks.Where(a => a.Origin == u.Id).Select(a => a.Dto).ToList());
         }).ToList();
 
         return Results.Json(new TraceResponse(turns), SharpClawJson.Options);

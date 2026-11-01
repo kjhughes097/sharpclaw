@@ -74,9 +74,16 @@ public static class ThreadsEndpoints
         return Results.Json(new CreatedThreadResponse(dto), SharpClawJson.Options, statusCode: 201);
     }
 
-    private static ThreadDto ToDto(ConversationThread t, int windowTokens) => new(t.Id, t.AgentId, t.Title, t.CreatedAt,
+    private static ThreadDto ToDto(ConversationThread t, int windowTokens, string? originAgentName = null) => new(
+        t.Id, t.AgentId, t.Title, t.CreatedAt,
         new ThreadContextDto(t.ContextDroppedTurns, t.ContextEstimatedTokens, windowTokens), t.Archived, t.LastMessageAt,
-        t.Model);
+        t.Model, t.OriginThreadId, originAgentName);
+
+    /// <summary>The asking agent's name on a linked thread (3.5 spec); null on normal threads.</summary>
+    private static async Task<string?> OriginAgentNameAsync(SharpClawDbContext db, ConversationThread t, CancellationToken ct) =>
+        t.OriginAgentId is { } id
+            ? await db.Agents.AsNoTracking().Where(a => a.Id == id).Select(a => a.Name).FirstOrDefaultAsync(ct)
+            : null;
 
     private static string? TitleError(string title)
     {
@@ -111,7 +118,12 @@ public static class ThreadsEndpoints
         }
 
         var page = await q.OrderByDescending(t => t.LastMessageAt).ThenByDescending(t => t.Id).Take(take + 1)
-            .Select(t => new { Thread = t, AgentName = t.Agent!.Name })
+            .Select(t => new
+            {
+                Thread = t,
+                AgentName = t.Agent!.Name,
+                OriginAgentName = db.Agents.Where(a => a.Id == t.OriginAgentId).Select(a => a.Name).FirstOrDefault(),
+            })
             .ToListAsync(ct);
         var hasMore = page.Count > take;
         if (hasMore)
@@ -134,7 +146,7 @@ public static class ThreadsEndpoints
             approvals.GetValueOrDefault(p.Thread.Id),
             userStates.Any(s => s.ThreadId == p.Thread.Id && s.Status == MessageStatus.Claimed),
             userStates.Where(s => s.ThreadId == p.Thread.Id && s.Status == MessageStatus.Pending).Sum(s => s.Count),
-            p.Thread.Model))
+            p.Thread.Model, p.Thread.OriginThreadId, p.OriginAgentName))
             .ToList();
         var next = hasMore && page.Count > 0
             ? new PageCursor(page[^1].Thread.LastMessageAt, page[^1].Thread.Id).Encode()
@@ -164,7 +176,7 @@ public static class ThreadsEndpoints
             .ToListAsync(ct);
 
         var response = new ThreadDetailResponse(
-            ToDto(thread, context.Value.WindowFor(thread.Agent.ContextWindowTokens)),
+            ToDto(thread, context.Value.WindowFor(thread.Agent.ContextWindowTokens), await OriginAgentNameAsync(db, thread, ct)),
             AgentQueries.ToDto(thread.Agent, spend, await AgentQueries.SkillsAsync(db, thread.AgentId, ct)),
             claimed is null ? null : new InFlightTurnDto(claimed.Id, claimed.ClaimedAt),
             active.Count(m => m.Status == MessageStatus.Pending),
@@ -198,7 +210,8 @@ public static class ThreadsEndpoints
             batch.Add(thread.Id, SseEventNames.ThreadUpdated, new ThreadUpdatedEvent(thread.Id, thread.Title, thread.Archived, thread.Model));
             return Task.FromResult(true);
         }, ct);
-        return Results.Json(new ThreadResponse(ToDto(thread, context.Value.WindowFor(thread.Agent.ContextWindowTokens))),
+        return Results.Json(new ThreadResponse(ToDto(thread, context.Value.WindowFor(thread.Agent.ContextWindowTokens),
+                await OriginAgentNameAsync(db, thread, ct))),
             SharpClawJson.Options);
     }
 
