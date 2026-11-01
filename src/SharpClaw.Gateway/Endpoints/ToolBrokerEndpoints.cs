@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Auth;
@@ -26,13 +27,36 @@ public static class ToolBrokerEndpoints
     }
 
     /// <summary>The operator's broker settings for the calling agent, read once at agent startup.</summary>
-    private static IResult Policy(HttpContext http, IOptions<ToolBrokerOptions> options)
+    private static async Task<IResult> Policy(
+        HttpContext http, IOptions<ToolBrokerOptions> options, IOptions<AgentMessagingOptions> messaging,
+        SharpClawDbContext db, CancellationToken ct)
     {
         var agent = AuthContext.Agent(http);
         var o = options.Value;
         var tools = o.ForAgent(agent.Name)?.EnabledTools ?? [];
         return Results.Json(new AgentToolPolicyResponse(
-            tools, o.AlwaysApproveSet.Where(tools.Contains).Order().ToList(), o.FetchAllowHosts, o.CloneHosts), SharpClawJson.Options);
+            tools, o.AlwaysApproveSet.Where(tools.Contains).Order().ToList(), o.FetchAllowHosts, o.CloneHosts,
+            await AskTargetsAsync(agent.Name, tools, messaging.Value, db, ct)), SharpClawJson.Options);
+    }
+
+    /// <summary>
+    /// The agents <c>ask_agent</c> may ask (3.5 spec section 5.7): the sender's allowed recipients
+    /// that exist, in config order. Disabled ones are included; the ask itself reports them.
+    /// </summary>
+    private static async Task<IReadOnlyList<AskAgentTargetDto>> AskTargetsAsync(
+        string sender, IReadOnlyList<string> tools, AgentMessagingOptions messaging, SharpClawDbContext db, CancellationToken ct)
+    {
+        if (!tools.Contains(BrokerTools.AskAgent))
+            return [];
+        var allowed = messaging.RecipientsOf(sender);
+        if (allowed.Count == 0)
+            return [];
+        var names = await db.Agents.AsNoTracking().Select(a => a.Name).ToListAsync(ct);
+        return allowed
+            .Select(n => names.FirstOrDefault(existing => string.Equals(existing, n, StringComparison.OrdinalIgnoreCase)))
+            .OfType<string>()
+            .Select(n => new AskAgentTargetDto(n, messaging.DescriptionOf(n)))
+            .ToList();
     }
 
     private static async Task<IResult> Invoke(
@@ -56,7 +80,8 @@ public static class ToolBrokerEndpoints
             return ApiResults.NotFound("Correlation message not found.");
 
         var result = await broker.InvokeAsync(new BrokerInvocation(
-            agent, config, tool, body.Arguments, body.CorrelationId, body.ThreadId, body.ToolCallId, body.ApprovalId), ct);
+            agent, config, tool, body.Arguments, body.CorrelationId, body.ThreadId, body.ToolCallId, body.ApprovalId,
+            body.Tainted), ct);
 
         // The result goes back exactly as produced (re-serializing could escape it to several times its size).
         return result.HttpStatus == 200

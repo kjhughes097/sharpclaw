@@ -16,7 +16,20 @@ public sealed record TraceTurnDto(
     IReadOnlyList<TraceLlmCallDto> LlmCalls,
     IReadOnlyList<TraceToolCallDto> ToolCalls,
     IReadOnlyList<TraceApprovalDto> Approvals,
-    TraceTotalsDto Totals);
+    TraceTotalsDto Totals,
+    IReadOnlyList<TraceAskDto>? Asks = null);
+
+/// <summary>
+/// An <c>ask_agent</c> call the turn made (3.5 spec): the recipient, the linked thread and the
+/// question's message there, and its status (<c>pending</c>, <c>claimed</c>, <c>done</c>, <c>failed</c>).
+/// </summary>
+public sealed record TraceAskDto(
+    string ToolCallId,
+    string AgentName,
+    Guid ThreadId,
+    Guid MessageId,
+    string Status,
+    string? FailReason);
 
 public sealed record TraceLlmCallDto(
     Guid Id,

@@ -4,7 +4,8 @@ namespace SharpClaw.Contracts;
 
 /// <summary>
 /// One conversational message. <c>From</c>/<c>To</c>: user name → agent for prompts, agent → user
-/// name for replies (<c>user</c> when the sender wasn't recorded). <c>Preview</c> is plain text, at
+/// name for replies (<c>user</c> when the sender wasn't recorded); for agent-to-agent messages (3.5
+/// spec) the asking agent → the recipient, and the recipient → the asking agent for its reply. <c>Preview</c> is plain text, at
 /// most 120 characters with whitespace collapsed.
 /// </summary>
 public sealed record ActivityItemDto(

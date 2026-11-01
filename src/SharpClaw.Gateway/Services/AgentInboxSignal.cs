@@ -19,6 +19,18 @@ public abstract class KeyedSignal
         }
     }
 
+    /// <summary>
+    /// Wakes a waiter only if the key is being waited on (or was), without creating an entry: for
+    /// signals raised far more often than anyone waits (every finished turn).
+    /// </summary>
+    public void SignalIfWaiting(Guid key)
+    {
+        if (_signals.TryGetValue(key, out var sem) && sem.CurrentCount == 0)
+        {
+            try { sem.Release(); } catch (SemaphoreFullException) { /* ignore */ }
+        }
+    }
+
     private int _waiters;
 
     public async Task<bool> WaitAsync(Guid key, TimeSpan timeout, CancellationToken ct)
@@ -59,3 +71,6 @@ public sealed class AgentInboxSignal : KeyedSignal, IAgentInboxSignal;
 
 /// <summary>Per-approval signal raised when the human decides.</summary>
 public sealed class ApprovalSignal : KeyedSignal;
+
+/// <summary>Per-message signal raised when an agent's ask (3.5 spec) is answered or fails.</summary>
+public sealed class AskFinishedSignal : KeyedSignal;

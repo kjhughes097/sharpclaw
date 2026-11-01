@@ -9,6 +9,7 @@ public sealed record PostMessageRequest(string Content, bool Unattended = false)
 /// A thread row. <c>Kind</c> is <c>message</c> (user messages and final replies), <c>tool_request</c>
 /// (role assistant, <c>ToolCalls</c> set) or <c>tool_result</c> (role tool, <c>ToolCallId</c> set).
 /// Rows are ordered by <c>Seq</c>. <c>FailReason</c> is the reason code on a failed user message.
+/// <c>SentByAgent</c>: on a user message another agent sent (<c>ask_agent</c>), that agent's name.
 /// </summary>
 public sealed record MessageDto(
     Guid Id,
@@ -25,7 +26,8 @@ public sealed record MessageDto(
     bool Untrusted = false,
     bool Truncated = false,
     string? FailReason = null,
-    string? SentByUser = null);
+    string? SentByUser = null,
+    string? SentByAgent = null);
 
 /// <summary><c>HasMoreBefore</c>: older rows exist before the first one returned.</summary>
 public sealed record MessageListResponse(IReadOnlyList<MessageDto> Messages, bool HasMoreBefore = false);
@@ -37,7 +39,12 @@ public sealed record QueuedMessageResponse(QueuedMessageDto Message);
 
 // ----- Agent inbox / reply / fail -----
 
-public sealed record InboxMessageDto(Guid Id, Guid ThreadId, string Content, DateTime CreatedAt);
+/// <summary>
+/// <c>FromAgent</c>: the asking agent's name when another agent sent it (3.5 spec), else null.
+/// <c>Tainted</c>: the asking turn had read untrusted content, so this turn starts tainted.
+/// </summary>
+public sealed record InboxMessageDto(
+    Guid Id, Guid ThreadId, string Content, DateTime CreatedAt, string? FromAgent = null, bool Tainted = false);
 
 public sealed record InboxMessageResponse(InboxMessageDto Message);
 

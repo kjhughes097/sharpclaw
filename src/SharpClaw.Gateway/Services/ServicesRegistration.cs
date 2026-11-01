@@ -17,6 +17,7 @@ public static class ServicesRegistration
         builder.Services.AddHostedService(sp => sp.GetRequiredService<EventRetentionService>());
         builder.Services.AddSingleton<IAgentInboxSignal, AgentInboxSignal>();
         builder.Services.AddSingleton<ApprovalSignal>();
+        builder.Services.AddSingleton<AskFinishedSignal>();
         builder.Services.AddSingleton<ApprovalDecisions>();
         builder.Services.AddScoped<MessageTurns>();
         // TryAdd: tests (and later phases) may register their own notifier or summariser first.
@@ -41,6 +42,8 @@ public static class ServicesRegistration
         builder.Services.AddSingleton<IBrokerToolHandler, GitHubWriteToolHandler>();
         builder.Services.AddScoped<PullRequestBuilder>();
         builder.Services.AddScoped<IBrokerToolHandler, GitHubCreatePrToolHandler>();
+        builder.Services.AddScoped<AgentAsks>();
+        builder.Services.AddScoped<IBrokerToolHandler, AskAgentToolHandler>();
         // The runner is on the sandbox's own network: never through a proxy, never following redirects.
         builder.Services.AddHttpClient(SandboxClient.HttpClientName, c => c.Timeout = Timeout.InfiniteTimeSpan)
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseProxy = false, AllowAutoRedirect = false });

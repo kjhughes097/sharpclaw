@@ -100,11 +100,16 @@ export function TurnView({
     <li className="space-y-2" id={user ? `msg-${user.id}` : undefined} data-turn={turn.correlationId}>
       {user && (
         <div>
-          <SpeakerLabel name={user.sentByUser ?? 'you'} at={user.createdAt} />
+          <SpeakerLabel
+            name={user.sentByAgent ? `from ${user.sentByAgent} (agent)` : (user.sentByUser ?? 'you')}
+            at={user.createdAt}
+          />
           <div
             className={`mt-0.5 border-l-2 border-accent bg-surface-2 px-3 py-1.5 ${highlighted ? 'ring-2 ring-focus' : ''}`}
           >
-            <span className="sr-only">You said: </span>
+            <span className="sr-only">
+              {user.sentByAgent ? `Agent ${user.sentByAgent} said: ` : 'You said: '}
+            </span>
             <PlainText text={user.content} />
           </div>
           {(status === 'pending' || status === 'claimed') && (

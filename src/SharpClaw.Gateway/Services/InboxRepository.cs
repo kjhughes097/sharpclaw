@@ -57,21 +57,31 @@ public static class InboxRepository
                 WHERE agent_id = $agent AND role = $user AND status = $pending
                 ORDER BY created_at, id LIMIT 1)
               AND status = $pending
-            RETURNING id, thread_id, content, created_at;";
+            RETURNING id, thread_id, content, created_at, sender_agent_id, origin_tainted;";
         cmd.Parameters.AddWithValue("$now", nowUtc);
         cmd.Parameters.AddWithValue("$agent", agentId);
         AddStateParameters(cmd);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        if (await reader.ReadAsync(ct))
+        InboxMessageDto? claimed = null;
+        Guid? senderId = null;
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
         {
-            var id = reader.GetGuid(0);
-            var threadId = reader.GetGuid(1);
-            var content = reader.GetString(2);
-            var createdAt = DateTime.SpecifyKind(reader.GetDateTime(3), DateTimeKind.Utc);
-            return new InboxMessageDto(id, threadId, content, createdAt);
+            if (await reader.ReadAsync(ct))
+            {
+                var id = reader.GetGuid(0);
+                var threadId = reader.GetGuid(1);
+                var content = reader.GetString(2);
+                var createdAt = DateTime.SpecifyKind(reader.GetDateTime(3), DateTimeKind.Utc);
+                senderId = reader.IsDBNull(4) ? null : reader.GetGuid(4);
+                claimed = new InboxMessageDto(id, threadId, content, createdAt, Tainted: reader.GetBoolean(5));
+            }
         }
-        return null;
+        if (claimed is null || senderId is null)
+            return claimed;
+
+        // An ask from another agent (3.5 spec section 5.8): the recipient learns who asked.
+        var sender = await db.Agents.AsNoTracking().Where(a => a.Id == senderId).Select(a => a.Name).FirstOrDefaultAsync(ct);
+        return claimed with { FromAgent = sender };
     }
 
     /// <summary>The role and status values used by the raw SQL above, from the shared constants.</summary>

@@ -117,7 +117,9 @@ public sealed class AgentLoop
             var messages = new List<ChatMessage> { new(Roles.System, system) };
             messages.AddRange(context.Messages);
 
-            var (reply, failCode, exchanges) = await RunTurnAsync(messages, new TurnContext(msg.Id, msg.ThreadId), context.WindowTokens, ct);
+            // A question from an agent whose own turn had read untrusted content starts tainted (3.5 spec section 6.3).
+            var turn = new TurnContext(msg.Id, msg.ThreadId) { Tainted = msg.Tainted };
+            var (reply, failCode, exchanges) = await RunTurnAsync(messages, turn, context.WindowTokens, ct);
             if (reply is not null)
             {
                 await _client.PostReplyAsync(msg.ThreadId, reply, msg.Id, exchanges, ct);

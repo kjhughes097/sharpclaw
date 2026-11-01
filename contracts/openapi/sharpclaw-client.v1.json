@@ -788,6 +788,12 @@
           "role": {
             "type": "string"
           },
+          "sentByAgent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "sentByUser": {
             "type": [
               "null",
@@ -1134,6 +1140,19 @@
               "string"
             ]
           },
+          "originAgentName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "originThreadId": {
+            "format": "uuid",
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "title": {
             "type": [
               "null",
@@ -1208,6 +1227,19 @@
             "type": "string"
           },
           "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "originAgentName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "originThreadId": {
+            "format": "uuid",
             "type": [
               "null",
               "string"
@@ -1512,6 +1544,42 @@
         ],
         "type": "object"
       },
+      "TraceAskDto": {
+        "properties": {
+          "agentName": {
+            "type": "string"
+          },
+          "failReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "messageId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "threadId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "toolCallId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "toolCallId",
+          "agentName",
+          "threadId",
+          "messageId",
+          "status",
+          "failReason"
+        ],
+        "type": "object"
+      },
       "TraceLlmCallDto": {
         "properties": {
           "completionTokens": {
@@ -1715,6 +1783,15 @@
               "$ref": "#/components/schemas/TraceApprovalDto"
             },
             "type": "array"
+          },
+          "asks": {
+            "items": {
+              "$ref": "#/components/schemas/TraceAskDto"
+            },
+            "type": [
+              "null",
+              "array"
+            ]
           },
           "claimedAt": {
             "format": "date-time",

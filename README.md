@@ -414,6 +414,45 @@ description: Keep a dated daily notes file in the workspace. Use when the user a
 > carry instructions you wouldn't give your agent (prompt injection), so read every file in it
 > first.
 
+### Agent to agent
+
+An agent can ask another agent for help and get the answer back in the same turn, with the
+`ask_agent(agent, message)` tool. The gateway queues the question in the other agent's inbox, waits
+for its reply and returns that as the tool result. Agents never talk directly: everything goes
+through the gateway, and nothing is allowed until you allow it. See the
+[3.5 spec](docs/sharpclaw-3.5-implementation-spec.md).
+
+Three things must be set for agent `ade` to ask agent `cody`:
+
+1. `ask_agent` in the `tools` list of `ade`'s `agent.json`;
+2. `ask_agent` enabled for `ade` in the gateway (`ToolBroker:Agents:ade:Tools` or `AllTools`);
+3. the pair allowed in the gateway, with an optional line telling `ade` what `cody` is for:
+
+```bash
+AgentMessaging__Allowed__ade__0=cody
+AgentMessaging__Descriptions__cody=Coding agent: reads, changes and tests code in its sandbox.
+```
+
+Restart the gateway and then `ade` (it reads its recipients at startup). Without an allowed
+recipient the tool isn't offered.
+
+- **What you see.** The question appears in a thread `cody` owns, titled "From ade: …", with one
+  thread per conversation of `ade`'s (follow-up questions from the same conversation reuse it, so
+  `cody` keeps the context). The thread links back to `ade`'s, the `ask_agent` tool row links to it,
+  the trace lists the asks each turn made, and Activity shows `ade → cody` rows.
+- **Trust.** `cody`'s reply is untrusted for `ade`, like a web page: it raises the risk of `ade`'s
+  later tool calls in that turn, so with `allowedRiskLevel: low` a second ask needs your approval.
+  Set `medium` if you want agents to chain several asks unprompted. If `ade` had already read
+  untrusted content when it asked, `cody`'s turn starts tainted too.
+- **Approvals.** If `cody` needs an approval while answering, you're asked as usual (in its
+  linked thread and the Approvals tab). If the original message was sent `unattended`, it's denied
+  at once.
+- **Limits.** At most `AgentMessaging:MaxHops` agents in a chain (default 3). An agent can't be
+  asked by a chain it's already part of, and two agents can't ask each other at the same time.
+  An ask waits up to `AgentMessaging:AskTimeoutSeconds` (default 600); a question nobody has
+  picked up by then, or when the asking turn ends, is marked failed (`ask_timeout`,
+  `ask_cancelled`). Each agent pays for its own model calls from its own daily budget.
+
 ## Your install
 
 The repo is for building; you run SharpClaw from a separate install directory (default
@@ -533,6 +572,11 @@ ASP.NET `__` syntax).
 | `GitHub:Token` / `ForkToken` / `ForkOwner` | empty | `GITHUB_TOKEN`, `GITHUB_FORK_TOKEN`, `GITHUB_FORK_OWNER`; empty token: GitHub tools unavailable |
 | `GitHub:Repos` | empty | `owner/repo` allow-list; optional for reads and writes, required for PRs |
 | `GitHub:BlockedPaths` | `.github/workflows/**` | Paths a PR may never add, change or delete |
+| `AgentMessaging:Allowed:<name>` | empty | Agents `<name>` may ask with `ask_agent` (e.g. `AgentMessaging__Allowed__ade__0=cody`); nothing is allowed by default |
+| `AgentMessaging:Descriptions:<name>` | empty | One line (≤ 300 characters) telling other agents what `<name>` is for |
+| `AgentMessaging:MaxHops` | `3` | Longest chain of agents asking agents (1–10) |
+| `AgentMessaging:AskTimeoutSeconds` | `600` | How long an ask waits for the reply (10–3600) |
+| `AgentMessaging:MaxReplyChars` | `32000` | Longer replies are cut and marked `truncated` |
 
 Telemetry uses the standard `OTEL_*` variables (see **Telemetry** below).
 

@@ -64,6 +64,12 @@ public class ConversationThread
 
     /// <summary>Model override for this thread (one of <c>Models:Allowed</c>); null uses the agent's model.</summary>
     public string? Model { get; set; }
+
+    /// <summary>On a linked thread (3.5 spec): the asking agent's thread.</summary>
+    public Guid? OriginThreadId { get; set; }
+
+    /// <summary>On a linked thread: the asking agent.</summary>
+    public Guid? OriginAgentId { get; set; }
 }
 
 public class Message
@@ -99,6 +105,23 @@ public class Message
     public bool? ToolOk { get; set; }
     public bool Untrusted { get; set; }
     public bool Truncated { get; set; }
+
+    // ----- Agent-to-agent asks (3.5 spec section 3); null/default on everything else. -----
+
+    /// <summary>On user messages sent by an agent (<c>ask_agent</c>): the asking agent.</summary>
+    public Guid? SenderAgentId { get; set; }
+
+    /// <summary>The asking turn: the sender's claimed user message (its correlation id).</summary>
+    public Guid? OriginMessageId { get; set; }
+
+    /// <summary>The <c>ask_agent</c> tool call id in the asking turn.</summary>
+    public string? OriginToolCallId { get; set; }
+
+    /// <summary>0 for human-sent messages; the origin message's hop + 1 for asks.</summary>
+    public int Hop { get; set; }
+
+    /// <summary>The asking turn was tainted when it asked; the recipient's turn starts tainted.</summary>
+    public bool OriginTainted { get; set; }
 }
 
 public class LlmCall

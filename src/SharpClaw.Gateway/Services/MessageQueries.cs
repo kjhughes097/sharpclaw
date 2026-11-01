@@ -15,7 +15,8 @@ public static class MessageQueries
         if (!includeTools)
             query = query.Where(m => m.Kind == MessageKinds.Message);
         var rows = await query.OrderBy(m => m.Seq).ToListAsync(ct);
-        return rows.Select(ToDto).ToList();
+        var senders = await SenderNamesAsync(db, rows, ct);
+        return rows.Select(m => ToDto(m, senders)).ToList();
     }
 
     /// <summary>
@@ -55,13 +56,26 @@ public static class MessageQueries
         var hasMoreBefore = rows.Count > 0
             ? await scope.AnyAsync(m => m.Seq < rows[0].Seq, ct)
             : afterSeq is { } a && await scope.AnyAsync(m => m.Seq <= a, ct);
-        return (rows.Select(ToDto).ToList(), hasMoreBefore);
+        var senders = await SenderNamesAsync(db, rows, ct);
+        return (rows.Select(m => ToDto(m, senders)).ToList(), hasMoreBefore);
     }
 
-    public static MessageDto ToDto(Message m) => new(
+    /// <param name="senderNames">Names of the agents that sent messages in the page (asks), by id.</param>
+    public static MessageDto ToDto(Message m, IReadOnlyDictionary<Guid, string>? senderNames = null) => new(
         m.Id, m.Role, m.Content, m.Status, m.CorrelationId, m.CreatedAt, m.Kind, m.Seq,
         m.ToolCalls is null ? null : JsonSerializer.Deserialize<List<ChatToolCall>>(m.ToolCalls, SharpClawJson.Options),
-        m.ToolCallId, m.ToolOk, m.Untrusted, m.Truncated, m.FailReason, m.SentByUser);
+        m.ToolCallId, m.ToolOk, m.Untrusted, m.Truncated, m.FailReason, m.SentByUser,
+        m.SenderAgentId is { } sender ? senderNames?.GetValueOrDefault(sender) : null);
+
+    /// <summary>Names of the agents that sent any of <paramref name="rows"/>; null when none did.</summary>
+    public static async Task<IReadOnlyDictionary<Guid, string>?> SenderNamesAsync(
+        SharpClawDbContext db, IEnumerable<Message> rows, CancellationToken ct)
+    {
+        var ids = rows.Where(r => r.SenderAgentId is not null).Select(r => r.SenderAgentId!.Value).Distinct().ToList();
+        if (ids.Count == 0)
+            return null;
+        return await db.Agents.AsNoTracking().Where(a => ids.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
+    }
 
     /// <summary>
     /// The next <c>seq</c> for the thread. Call inside a write transaction (SQLite <c>BEGIN

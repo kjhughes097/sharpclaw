@@ -53,6 +53,8 @@ const MESSAGES: Record<
   provider_error: () => 'The model provider returned an error. Try again.',
   provider_timeout: () => 'The model provider timed out. Try again.',
   agent_error: () => 'The agent hit an internal error.',
+  ask_timeout: () => 'The asking agent stopped waiting before this message was picked up.',
+  ask_cancelled: () => "The asking agent's turn ended before this message was picked up.",
   no_approver: () => 'An approval was needed but nobody was available.',
   approval_expired: () => 'An approval request expired before it was answered.',
   denied_by_user: () => 'You denied a tool request.',

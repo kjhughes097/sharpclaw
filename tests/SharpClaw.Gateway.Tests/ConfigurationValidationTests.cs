@@ -51,6 +51,10 @@ public class ConfigurationValidationTests
     [InlineData("Egress:DenyHosts:0", " ", "Egress:DenyHosts must not contain empty entries")]
     [InlineData("GitHub:Repos:0", "not-a-repo", "GitHub:Repos entry 'not-a-repo' must be owner/repo")]
     [InlineData("GitHub:ForkOwner", "bad/name", "GitHub:ForkOwner must be a GitHub user name")]
+    [InlineData("AgentMessaging:Allowed:ade:0", "ADE", "AgentMessaging:Allowed:ade must not list the agent itself")]
+    [InlineData("AgentMessaging:MaxHops", "0", "MaxHops")]
+    [InlineData("AgentMessaging:AskTimeoutSeconds", "5", "AskTimeoutSeconds")]
+    [InlineData("AgentMessaging:MaxReplyChars", "10", "MaxReplyChars")]
     public void Invalid_values_refuse_to_start(string key, string value, string expected)
     {
         var ex = Assert.Throws<OptionsValidationException>(() => Build(new() { [key] = value }));

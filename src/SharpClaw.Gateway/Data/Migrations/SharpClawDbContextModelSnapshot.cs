@@ -337,6 +337,14 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("model");
 
+                    b.Property<Guid?>("OriginAgentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("origin_agent_id");
+
+                    b.Property<Guid?>("OriginThreadId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("origin_thread_id");
+
                     b.Property<string>("Title")
                         .HasColumnType("TEXT")
                         .HasColumnName("title");
@@ -346,6 +354,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.HasIndex("AgentId");
 
                     b.HasIndex("Archived", "LastMessageAt");
+
+                    b.HasIndex("AgentId", "OriginAgentId", "OriginThreadId")
+                        .IsUnique()
+                        .HasFilter("origin_thread_id IS NOT NULL");
 
                     b.ToTable("threads", (string)null);
                 });
@@ -495,6 +507,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("fail_reason");
 
+                    b.Property<int>("Hop")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("hop");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -502,10 +518,27 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasDefaultValue("message")
                         .HasColumnName("kind");
 
+                    b.Property<Guid?>("OriginMessageId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("origin_message_id");
+
+                    b.Property<bool>("OriginTainted")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("origin_tainted");
+
+                    b.Property<string>("OriginToolCallId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("origin_tool_call_id");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("role");
+
+                    b.Property<Guid?>("SenderAgentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("sender_agent_id");
 
                     b.Property<string>("SentByUser")
                         .HasMaxLength(100)
@@ -556,6 +589,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasFilter("role = 'assistant' AND kind = 'message'");
 
                     b.HasIndex("Kind", "CreatedAt");
+
+                    b.HasIndex("OriginMessageId", "OriginToolCallId")
+                        .IsUnique()
+                        .HasFilter("origin_message_id IS NOT NULL");
 
                     b.HasIndex("ThreadId", "Seq")
                         .IsUnique();

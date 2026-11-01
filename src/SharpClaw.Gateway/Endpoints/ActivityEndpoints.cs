@@ -48,6 +48,7 @@ public static class ActivityEndpoints
             .Select(m => new
             {
                 m.Id, m.ThreadId, m.AgentId, m.Role, m.Status, m.CreatedAt, m.Content, m.SentByUser, m.CorrelationId,
+                SenderAgentName = db.Agents.Where(a => a.Id == m.SenderAgentId).Select(a => a.Name).FirstOrDefault(),
                 ThreadTitle = db.Threads.Where(t => t.Id == m.ThreadId).Select(t => t.Title).FirstOrDefault(),
                 AgentName = db.Agents.Where(a => a.Id == m.AgentId).Select(a => a.Name).FirstOrDefault(),
             })
@@ -59,16 +60,21 @@ public static class ActivityEndpoints
         // A reply goes back to whoever sent its prompt: the user message whose id is the correlation id.
         var promptIds = page.Where(m => m.Role == Roles.Assistant && m.CorrelationId is not null)
             .Select(m => m.CorrelationId!.Value).Distinct().ToList();
+        // An agent's question (3.5 spec) was sent by that agent, so the reply goes back to it.
         var senders = await db.Messages.AsNoTracking()
             .Where(m => promptIds.Contains(m.Id))
-            .Select(m => new { m.Id, m.SentByUser })
-            .ToDictionaryAsync(m => m.Id, m => m.SentByUser, ct);
+            .Select(m => new
+            {
+                m.Id,
+                Sender = db.Agents.Where(a => a.Id == m.SenderAgentId).Select(a => a.Name).FirstOrDefault() ?? m.SentByUser,
+            })
+            .ToDictionaryAsync(m => m.Id, m => m.Sender, ct);
 
         var items = page.Select(m =>
         {
             var agentName = m.AgentName ?? "";
             var (from, to) = m.Role == Roles.User
-                ? (m.SentByUser ?? UnknownUser, agentName)
+                ? (m.SenderAgentName ?? m.SentByUser ?? UnknownUser, agentName)
                 : (agentName, (m.CorrelationId is { } cid ? senders.GetValueOrDefault(cid) : null) ?? UnknownUser);
             return new ActivityItemDto(m.Id, m.ThreadId, m.ThreadTitle, m.AgentId, agentName, m.Role, from, to,
                 m.Status, m.CreatedAt, ThreadActivity.Collapse(m.Content, ThreadActivity.MaxPreviewChars));

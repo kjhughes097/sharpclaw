@@ -19,9 +19,13 @@ public static class BrokerTools
     public const string GitHubWrite = "github_write";
     public const string GitHubCreatePr = "github_create_pr";
 
+    /// <summary>Ask another agent and wait for its reply (3.5 spec); runs in the gateway.</summary>
+    public const string AskAgent = "ask_agent";
+
     public static readonly IReadOnlyList<string> All = new[]
     {
         HttpFetch, DownloadToWorkspace, WebSearch, ExtractText, GitClone, SandboxRun, GitHubRead, GitHubWrite, GitHubCreatePr,
+        AskAgent,
     };
 
     /// <summary>Tools the gateway always requires an approval for unless the operator says otherwise (Q2).</summary>
@@ -31,25 +35,32 @@ public static class BrokerTools
 /// <summary>
 /// An agent asks the gateway to run a broker tool (<c>POST /agent/tools/{tool}</c>). The call
 /// belongs to a claimed turn. <c>ApprovalId</c> is required for always-approve tools; the gateway
-/// recomputes the arguments hash itself and never takes it from this request.
+/// recomputes the arguments hash itself and never takes it from this request. <c>Tainted</c>: the
+/// turn had read untrusted content before this call (set by the agent's dispatcher, never the
+/// model); only <c>ask_agent</c> uses it, to start the recipient's turn tainted.
 /// </summary>
 public sealed record InvokeToolRequest(
     Guid CorrelationId,
     Guid ThreadId,
     string ToolCallId,
     JsonElement Arguments,
-    Guid? ApprovalId = null);
+    Guid? ApprovalId = null,
+    bool Tainted = false);
 
 /// <summary>
 /// The operator's broker settings for the calling agent (<c>GET /agent/tools</c>): which broker
 /// tools it may call, which always need an approval, the <c>http_fetch</c> hosts scored low, and
-/// the hosts <c>git_clone</c> may clone from.
+/// the hosts <c>git_clone</c> may clone from, and the agents <c>ask_agent</c> may ask.
 /// </summary>
 public sealed record AgentToolPolicyResponse(
     IReadOnlyList<string> Tools,
     IReadOnlyList<string> AlwaysApprove,
     IReadOnlyList<string> FetchAllowHosts,
-    IReadOnlyList<string>? CloneAllowHosts = null);
+    IReadOnlyList<string>? CloneAllowHosts = null,
+    IReadOnlyList<AskAgentTargetDto>? AskAgents = null);
+
+/// <summary>An agent the caller may ask, with the operator's one-line description of it (may be null).</summary>
+public sealed record AskAgentTargetDto(string Name, string? Description);
 
 /// <summary>
 /// The SHA-256 of a tool call's arguments in canonical JSON, binding an approval to exactly the

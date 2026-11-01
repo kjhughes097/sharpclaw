@@ -80,6 +80,10 @@ public class SharpClawDbContext : DbContext
             e.HasIndex(x => x.AgentId);
             e.HasIndex(x => new { x.Archived, x.LastMessageAt });
             e.Property(x => x.Model).HasMaxLength(ModelsOptions.MaxModelIdChars);
+            // One linked thread per (recipient, sender, originating thread).
+            e.HasIndex(x => new { x.AgentId, x.OriginAgentId, x.OriginThreadId })
+                .IsUnique()
+                .HasFilter("origin_thread_id IS NOT NULL");
         });
 
         b.Entity<Message>(e =>
@@ -96,6 +100,11 @@ public class SharpClawDbContext : DbContext
             e.HasIndex(x => x.CorrelationId)
                 .IsUnique()
                 .HasFilter("role = 'assistant' AND kind = 'message'");
+            // Agent asks: one message per (asking turn, tool call), and lookups by asking turn.
+            e.Property(x => x.OriginToolCallId).HasMaxLength(200);
+            e.HasIndex(x => new { x.OriginMessageId, x.OriginToolCallId })
+                .IsUnique()
+                .HasFilter("origin_message_id IS NOT NULL");
         });
 
         b.Entity<LlmCall>(e =>

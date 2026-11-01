@@ -13,6 +13,12 @@ public static class FailReasons
     /// <summary>The turn's own tool calls and results outgrew the window (not the user's message).</summary>
     public const string TurnTooLarge = "turn_too_large";
 
+    /// <summary>An agent's ask (3.5 spec) was not picked up before the asker stopped waiting.</summary>
+    public const string AskTimeout = "ask_timeout";
+
+    /// <summary>The asking agent's turn ended (or it disconnected) before the ask was picked up.</summary>
+    public const string AskCancelled = "ask_cancelled";
+
     /// <summary>Readable text for a fail code; unknown codes get a generic sentence that names the code.</summary>
     public static string Describe(string code) => code switch
     {
@@ -24,6 +30,8 @@ public static class FailReasons
         ErrorCodes.ProviderError => "The model provider returned an error. Try again.",
         ErrorCodes.ProviderTimeout => "The model provider timed out. Try again.",
         AgentError => "The agent hit an internal error.",
+        AskTimeout => "The asking agent stopped waiting before this message was picked up.",
+        AskCancelled => "The asking agent's turn ended before this message was picked up.",
         _ => $"The agent could not complete this message ({code}).",
     };
 }

@@ -190,7 +190,7 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 - Skills: operator-curated instructions (and scripts) on a shared read-only `/skills` volume,
   loaded on demand with `skill_read`: see the [skills spec](sharpclaw-skills-spec.md)
 
-## Phase 3.5 — Agent-to-agent messaging *(specified)*
+## Phase 3.5 — Agent-to-agent messaging (built)
 
 > **Source of truth:** `sharpclaw-3.5-implementation-spec.md`. This section is a summary only.
 

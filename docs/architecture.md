@@ -5,7 +5,7 @@ This page describes the system **as it is now**. It is the first thing to read. 
 [pre-3.3 foundations](sharpclaw-pre-3.3-foundations-spec.md) → [3.3](sharpclaw-3.3-implementation-spec.md) →
 [3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md),
 the [external tools spec](sharpclaw-external-tools-spec.md) and the
-[skills spec](sharpclaw-skills-spec.md); next to be built: [3.5](sharpclaw-3.5-implementation-spec.md),
+[skills spec](sharpclaw-skills-spec.md), and [3.5](sharpclaw-3.5-implementation-spec.md),
 agent-to-agent messaging)
 record *why* and *when* each behaviour was decided; they remain the source of truth for detailed
 behaviour, with later specs winning. Keep this page in step with the code when structure changes.
@@ -140,6 +140,35 @@ sequenceDiagram
    transaction and emits `message.completed`; or `POST /agent/messages/{id}/fail` emits `error`.
    Either way, pending approvals for the turn are expired.
 
+**Agent to agent** ([3.5 spec](sharpclaw-3.5-implementation-spec.md)). An agent asks another with
+the `ask_agent` broker tool (`AskAgentToolHandler` → `AgentAsks`), inside a turn it holds:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Agent A (asking)
+  participant G as Gateway
+  participant B as Agent B
+  A->>G: POST /agent/tools/ask_agent { agent: B, message } (+ tainted)
+  G->>G: AgentMessaging:Allowed, hop limit, cycles
+  G->>G: linked thread (B owns it) + pending user message, message.created
+  B->>G: GET /agent/inbox (fromAgent: A, tainted)
+  B->>G: context ([Message from agent A] prefix), model calls, tools…
+  B->>G: POST /agent/threads/{linked}/messages (reply)
+  G-->>A: { ok, agent, threadId, reply, truncated } (untrusted tool result)
+```
+
+The pair must be in `AgentMessaging:Allowed:<sender>` (not allowed and unknown both answer `404`)
+and the recipient enabled. The question is a `user` row in a thread the recipient owns, one per
+(originating thread, sender, recipient), with `sender_agent_id`, `origin_message_id`,
+`origin_tool_call_id` (unique together: a retried call waits on the same ask), `hop` and
+`origin_tainted`; it copies `unattended` from the asking message. The gateway refuses chains longer
+than `MaxHops`, a recipient already in the chain, and two agents asking each other from separate
+chains. While it waits it refreshes the asker's claim; on `AskTimeoutSeconds`, a dropped request or
+the asking turn ending, a still-`pending` question is failed (`ask_timeout`/`ask_cancelled`, `error`
+event), while one the recipient has claimed runs to completion. The asker's reply taints its turn;
+a question from a tainted turn starts the recipient's turn tainted.
+
 **Budgets.** Each agent has a daily USD cap. Spend is the sum of `llm_calls.cost_usd` since the
 start of the current UTC day; a call over the cap returns `429` with `Retry-After` and is recorded
 as `rejected`. Budgets reset at UTC midnight.
@@ -175,7 +204,8 @@ The committed contract is [contracts/openapi/sharpclaw-client.v1.json](../contra
 Agent listener: `GET /agent/inbox`, `GET /agent/threads/{id}/messages`,
 `GET /agent/threads/{id}/context`, `POST /agent/threads/{id}/messages`, `POST /agent/messages/{id}/fail`,
 `POST /agent/approvals`, `GET /agent/approvals/{id}`, `POST /agent/tool-calls`, `POST /agent/tools/{tool}`,
-`PUT /agent/skills`, `POST /v1/chat/completions`.
+`PUT /agent/skills`, `GET /agent/tools`, `POST /v1/chat/completions`. `ask_agent` is a broker tool
+(`POST /agent/tools/ask_agent`).
 
 **Skills** ([skills spec](sharpclaw-skills-spec.md)). The operator's skill library is a host folder
 bind-mounted read-only at `/skills` in every agent (never under `/workspace`). An agent with
@@ -250,8 +280,8 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), [contract
 |---|---|
 | `agents`, `agent_tokens` | Agent config (model, daily budget, context window, enabled, last seen, `skills_reported_at`); hashed tokens. |
 | `agent_skills` | The skills each agent last reported (`agent_id`, `name`, `description`); replaced as a whole by `PUT /agent/skills`, deleted with the agent. |
-| `threads` | Owner agent, title, archived, `last_message_at`/`last_preview`, last context figures, optional `model` override (must be in `Models:Allowed` to take effect). |
-| `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`) and `sent_by_user` (user name or `admin_key`). |
+| `threads` | Owner agent, title, archived, `last_message_at`/`last_preview`, last context figures, optional `model` override (must be in `Models:Allowed` to take effect); on linked threads, `origin_thread_id`/`origin_agent_id` (the asking agent's thread). |
+| `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`) and `sent_by_user` (user name or `admin_key`), or for agent asks `sender_agent_id`, `origin_message_id`/`origin_tool_call_id`, `hop` and `origin_tainted`. |
 | `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose `chat`/`risk_assessment`/`web_search`, outcome). |
 | `tool_calls` | Every tool call the model requested, plus the agent's report. |
 | `approvals` | Approval requests and decisions (`decided_by` = user/system; `decided_by_user` = which user, or `admin_key`); `args_hash` binds an approval to exact arguments, `used_at` marks it consumed by the broker. |
@@ -299,6 +329,9 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 - No prompt or reply content, soul, tool arguments or results, tokens, keys, passwords or cookies
   in logs, metric labels or events (`PrivacyTests` and others).
 - Metric labels are limited to agent, model, status, type and listener; never ids.
+- Agents never talk to each other directly: an ask goes only through `POST /agent/tools/ask_agent`,
+  only for pairs in gateway config, never in a cycle or past `MaxHops`, and its reply is untrusted
+  for the asker (`AgentAskTests`, `AskAgentToolTests`).
 - The client contract (OpenAPI + event fixtures) changes only deliberately (`SnapshotTests`, `npm run check:api`).
 - Product code takes time from an injected `TimeProvider`.
 
