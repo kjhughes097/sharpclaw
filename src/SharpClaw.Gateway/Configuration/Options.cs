@@ -119,6 +119,18 @@ public sealed class MessagesOptions
 {
     public const string Section = "Messages";
     [Range(1, 10_000_000)] public int MaxContentChars { get; set; } = 32000;
+
+    // Attachments (attachments spec section 1).
+    [Range(0, 50)] public int MaxAttachments { get; set; } = AttachmentRules.DefaultMaxAttachments;
+    [Range(1, 50 * 1024 * 1024)] public int MaxImageBytes { get; set; } = AttachmentRules.DefaultMaxImageBytes;
+    [Range(1, 10 * 1024 * 1024)] public int MaxTextBytes { get; set; } = AttachmentRules.DefaultMaxTextBytes;
+
+    /// <summary>
+    /// Request body limit for posting a message: every attachment at the larger per-file maximum,
+    /// base64-encoded (4/3), plus the text and JSON framing.
+    /// </summary>
+    public long MaxPostBodyBytes =>
+        (long)MaxAttachments * ((Math.Max(MaxImageBytes, MaxTextBytes) + 2) / 3 * 4 + 1024) + MaxContentChars * 6L + 64 * 1024;
 }
 
 public sealed class ApprovalsOptions
@@ -171,6 +183,9 @@ public sealed class ContextOptions
 
     [Range(1, 100)] public int CharsPerToken { get; set; } = ContextDefaults.CharsPerToken;
     [Range(0, 1000)] public int MessageOverheadTokens { get; set; } = ContextDefaults.MessageOverheadTokens;
+
+    /// <summary>Estimate for one attached image (attachments spec section 1).</summary>
+    [Range(0, 100_000)] public int ImageTokens { get; set; } = ContextDefaults.ImageTokens;
 
     public int WindowFor(int? agentWindow) => agentWindow ?? DefaultWindowTokens;
 }

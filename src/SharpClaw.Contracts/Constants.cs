@@ -34,6 +34,9 @@ public static class ContextDefaults
     /// <summary>Added to every message's estimate (role, separators).</summary>
     public const int MessageOverheadTokens = 4;
 
+    /// <summary>Estimate for one attached image (attachments spec section 1).</summary>
+    public const int ImageTokens = 1000;
+
     public const int DefaultWindowTokens = 32000;
     public const int MinWindowTokens = 1000;
     public const int MaxWindowTokens = 2_000_000;

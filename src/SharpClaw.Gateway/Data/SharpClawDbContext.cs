@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SharpClaw.Contracts;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SharpClaw.Gateway.Configuration;
 using SharpClaw.Gateway.Services.Broker;
@@ -14,6 +15,7 @@ public class SharpClawDbContext : DbContext
     public DbSet<AgentSkill> AgentSkills => Set<AgentSkill>();
     public DbSet<ConversationThread> Threads => Set<ConversationThread>();
     public DbSet<Message> Messages => Set<Message>();
+    public DbSet<MessageAttachment> MessageAttachments => Set<MessageAttachment>();
     public DbSet<LlmCall> LlmCalls => Set<LlmCall>();
     public DbSet<ToolCallRecord> ToolCalls => Set<ToolCallRecord>();
     public DbSet<Approval> Approvals => Set<Approval>();
@@ -107,6 +109,17 @@ public class SharpClawDbContext : DbContext
                 .IsUnique()
                 .HasFilter("origin_message_id IS NOT NULL");
             e.HasIndex(x => x.ChainRootId).HasFilter("chain_root_id IS NOT NULL");
+        });
+
+        b.Entity<MessageAttachment>(e =>
+        {
+            e.ToTable("message_attachments");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.MessageId);
+            e.Property(x => x.Kind).HasMaxLength(10);
+            e.Property(x => x.FileName).HasMaxLength(AttachmentRules.MaxFileNameChars);
+            e.Property(x => x.MediaType).HasMaxLength(100);
+            e.HasOne<Message>().WithMany().HasForeignKey(x => x.MessageId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<LlmCall>(e =>

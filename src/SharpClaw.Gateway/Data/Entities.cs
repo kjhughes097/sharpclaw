@@ -133,6 +133,27 @@ public class Message
     public Guid? ChainRootId { get; set; }
 }
 
+/// <summary>A file sent with a user message (attachments spec section 2).</summary>
+public class MessageAttachment
+{
+    public Guid Id { get; set; }
+    public Guid MessageId { get; set; }
+
+    /// <summary>Denormalised from the message so downloads and <c>image_ids</c> check ownership in one lookup.</summary>
+    public Guid ThreadId { get; set; }
+
+    /// <summary>Order within the message, from 0 (v7 ids made in the same millisecond aren't ordered).</summary>
+    public int Position { get; set; }
+
+    /// <summary><c>image</c> or <c>text</c> (see <c>AttachmentKinds</c>).</summary>
+    public string Kind { get; set; } = "";
+    public string FileName { get; set; } = "";
+    public string MediaType { get; set; } = "";
+    public long SizeBytes { get; set; }
+    public byte[] Data { get; set; } = [];
+    public DateTime CreatedAt { get; set; }
+}
+
 public class LlmCall
 {
     public Guid Id { get; set; }
