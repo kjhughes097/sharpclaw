@@ -19,6 +19,16 @@ export function useAgentTokens(name: string) {
   });
 }
 
+/** The agent's active standing approvals (3.6 spec section 7). */
+export function useAgentGrants(name: string) {
+  return useQuery({
+    queryKey: keys.grants(name),
+    queryFn: () =>
+      call(() => api.GET('/api/agents/{idOrName}/grants', { params: { path: { idOrName: name } } })),
+    select: (data) => data.grants,
+  });
+}
+
 export function useAgentLlmCalls(name: string) {
   return useQuery({
     queryKey: keys.auditList('llm', { agent: name, limit: '20' }),
@@ -33,6 +43,7 @@ export interface AgentChanges {
   dailyBudgetUsd?: number;
   enabled?: boolean;
   contextWindowTokens?: number;
+  autonomous?: boolean;
 }
 
 /** `PATCH /api/agents/{idOrName}`; fields left out are sent as null (unchanged). */
@@ -48,6 +59,7 @@ export function useUpdateAgent() {
             dailyBudgetUsd: changes.dailyBudgetUsd ?? null,
             enabled: changes.enabled ?? null,
             contextWindowTokens: changes.contextWindowTokens,
+            autonomous: changes.autonomous,
           },
         }),
       ),

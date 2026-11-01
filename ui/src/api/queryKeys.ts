@@ -5,6 +5,9 @@ export const keys = {
   agents: ['agents'] as const,
   agent: (name: string) => ['agents', name] as const,
   tokens: (name: string) => ['tokens', name] as const,
+  /** Prefix of every agent's standing-approval list. */
+  allGrants: ['grants'] as const,
+  grants: (name: string) => ['grants', name] as const,
   threads: ['threads'] as const,
   threadList: (filters: { agentId?: string | undefined; archived: boolean }) => ['threads', filters] as const,
   /** Prefix of every thread-detail query (invalidates them all). */

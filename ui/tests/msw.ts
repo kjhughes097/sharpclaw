@@ -59,6 +59,7 @@ export const fixtures = {
     lastSeenAt: '2026-10-25T11:59:30Z',
     skills: [],
     skillsReportedAt: null,
+    autonomous: false,
     ...over,
   }),
   thread: (over: Partial<S['ThreadSummaryDto']> = {}): S['ThreadSummaryDto'] => ({
@@ -131,6 +132,7 @@ export const defaultHandlers = [
   ),
   http.get('*/api/approvals', () => HttpResponse.json({ approvals: [] })),
   http.get('*/api/agents', () => HttpResponse.json({ agents: [fixtures.agent()] })),
+  http.get('*/api/agents/:name/grants', () => HttpResponse.json({ grants: [] })),
   http.get('*/api/threads', () => HttpResponse.json({ threads: [], nextCursor: null })),
   http.get('*/api/usage', ({ request }) =>
     HttpResponse.json(fixtures.usage((new URL(request.url).searchParams.get('range') ?? 'today') as Range)),

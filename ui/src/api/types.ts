@@ -14,6 +14,7 @@ export type MessageDto = S['MessageDto'];
 export type MessageListResponse = S['MessageListResponse'];
 export type ChatToolCall = S['ChatToolCall'];
 export type ApprovalDetailDto = S['ApprovalDetailDto'];
+export type ApprovalGrantDto = S['ApprovalGrantDto'];
 export type LlmCallDto = S['LlmCallDto'];
 export type ToolCallDto = S['ToolCallDto'];
 export type TraceResponse = S['TraceResponse'];
@@ -37,6 +38,12 @@ export type UsageRange = 'today' | '7d' | '30d';
 /** Risk levels in increasing order (3.2); the last needs a second confirmation. */
 export const RISK_LEVELS = ['low', 'medium', 'high', 'critical'] as const;
 export const HIGHEST_RISK = 'critical';
+
+/** Tools that act as the user: never covered by a standing approval, only autonomy mode (3.6 spec Q6). */
+export const NON_GRANTABLE_TOOLS: readonly string[] = ['github_write', 'github_create_pr'];
+
+/** The time boxes a standing approval may have (3.6 spec section 7). */
+export const GRANT_TTL_HOURS = [1, 8, 24] as const;
 
 /** Agent names, matching the server's validation. */
 export const AGENT_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,31}$/;
