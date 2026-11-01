@@ -91,10 +91,12 @@ when empty). `TokenEstimator` adds `ImageTokens` per image id.
 - The composer gets an attach button (a hidden `<input type="file" multiple>` whose `accept`
   lists the allowed extensions), drag and drop onto the composer, and image paste.
 - Pending attachments show as removable chips (image thumbnail via a `data:` URL, or a file icon
-  with the size). The UI checks the section 1 rules before sending and shows a toast for each
-  rejected file. The server is still the authority.
+  with the size). The UI checks the section 1 rules before sending and lists each rejected file
+  in an inline alert above the composer. The server is still the authority. With attachments,
+  the message text may be empty.
 - Sent messages show their attachments. Images are thumbnails loaded from the download endpoint
   (same origin, allowed by the CSP). Text files are download links.
+- **Resend** on a failed message downloads its attachments again and posts them with the text.
 
 ## 7. Docs (task 4)
 
