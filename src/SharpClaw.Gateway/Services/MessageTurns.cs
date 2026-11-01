@@ -20,7 +20,7 @@ public enum TurnOutcome { Ok, NotFound, NotClaimed, AlreadyDone }
 /// </summary>
 public sealed class MessageTurns(
     SharpClawDbContext db, TimeProvider time, IEventPublisher events, ActiveTurnBuffers buffers,
-    ApprovalDecisions decisions, IAgentInboxSignal inboxSignal, GatewayMetrics metrics,
+    ApprovalDecisions decisions, IAgentInboxSignal inboxSignal, AskFinishedSignal askFinished, GatewayMetrics metrics,
     IOptions<ToolsOptions> toolsOptions, ILogger<MessageTurns> logger)
 {
     /// <summary>
@@ -37,25 +37,11 @@ public sealed class MessageTurns(
             var thread = await db.Threads.FirstOrDefaultAsync(t => t.Id == threadId, ct);
             if (thread is null)
                 return null;
-            var isFirst = !await db.Messages.AnyAsync(m => m.ThreadId == threadId && m.Role == Roles.User, ct);
-            var msg = new Message
+            return await AddUserMessageAsync(db, batch, thread, content, now, ct, m =>
             {
-                Id = Guid.CreateVersion7(),
-                ThreadId = thread.Id,
-                AgentId = thread.AgentId,
-                Role = Roles.User,
-                Kind = MessageKinds.Message,
-                Content = content,
-                Status = MessageStatus.Pending,
-                Unattended = unattended,
-                SentByUser = sentByUser,
-                CreatedAt = now,
-                Seq = await MessageQueries.NextSeqAsync(db, thread.Id, ct),
-            };
-            db.Messages.Add(msg);
-            ThreadActivity.OnMessage(thread, content, now, isFirst);
-            batch.Add(threadId, SseEventNames.MessageCreated, new MessageCreatedEvent(msg.Id, threadId, msg.Id));
-            return msg;
+                m.Unattended = unattended;
+                m.SentByUser = sentByUser;
+            });
         }, ct);
         if (message is null)
             return null;
@@ -64,6 +50,35 @@ public sealed class MessageTurns(
         using (LogScopes.Turn(logger, threadId, message.Id, message.AgentId))
             logger.LogInformation("message queued");
         return message;
+    }
+
+    /// <summary>
+    /// Adds a <c>pending</c> user message to <paramref name="thread"/> with its <c>message.created</c>
+    /// event. Call inside <see cref="IEventPublisher.WriteAsync{T}"/>, so the seq, preview and
+    /// auto-title can't race another post. <paramref name="init"/> sets who sent it.
+    /// </summary>
+    internal static async Task<Message> AddUserMessageAsync(
+        SharpClawDbContext db, EventBatch batch, ConversationThread thread, string content, DateTime now,
+        CancellationToken ct, Action<Message> init)
+    {
+        var isFirst = !await db.Messages.AnyAsync(m => m.ThreadId == thread.Id && m.Role == Roles.User, ct);
+        var msg = new Message
+        {
+            Id = Guid.CreateVersion7(),
+            ThreadId = thread.Id,
+            AgentId = thread.AgentId,
+            Role = Roles.User,
+            Kind = MessageKinds.Message,
+            Content = content,
+            Status = MessageStatus.Pending,
+            CreatedAt = now,
+            Seq = await MessageQueries.NextSeqAsync(db, thread.Id, ct),
+        };
+        init(msg);
+        db.Messages.Add(msg);
+        ThreadActivity.OnMessage(thread, content, now, isFirst);
+        batch.Add(thread.Id, SseEventNames.MessageCreated, new MessageCreatedEvent(msg.Id, thread.Id, msg.Id));
+        return msg;
     }
 
     /// <summary>
@@ -128,6 +143,10 @@ public sealed class MessageTurns(
         }
 
         await decisions.AfterDecidedAsync(db, expired, ct);
+        if (userMsg.SenderAgentId is not null)
+            askFinished.SignalIfWaiting(userMsg.Id);
+        // Asks this turn made that nobody picked up are no longer wanted.
+        await FailPendingAsksAsync(correlationId, FailReasons.AskCancelled, ct);
         var seconds = (now - userMsg.CreatedAt).TotalSeconds;
         metrics.RecordMessageDuration(agent.Name, seconds);
         using (LogScopes.Turn(logger, threadId, correlationId))
@@ -170,6 +189,9 @@ public sealed class MessageTurns(
         using (LogScopes.Turn(logger, msg.ThreadId, msg.Id))
             logger.LogWarning("message failed: reason={Reason}", reason);
         await decisions.AfterDecidedAsync(db, expired, ct);
+        if (msg.SenderAgentId is not null)
+            askFinished.SignalIfWaiting(msg.Id);
+        await FailPendingAsksAsync(msg.Id, FailReasons.AskCancelled, ct);
         return true;
     }
 
@@ -181,5 +203,55 @@ public sealed class MessageTurns(
     {
         buffers.Remove(correlationId);
         await decisions.ExpireForCorrelationAsync(db, correlationId, ct);
+        await FailPendingAsksAsync(correlationId, FailReasons.AskCancelled, ct);
+    }
+
+    /// <summary>
+    /// Fails the asks made by turn <paramref name="originMessageId"/> (only <paramref name="askId"/>
+    /// when given) that are still <c>pending</c>, with an <c>error</c> event on each linked thread
+    /// (3.5 spec section 5.5). An ask the recipient has already claimed is left to finish. Returns
+    /// the ids it failed.
+    /// </summary>
+    public async Task<IReadOnlyList<Guid>> FailPendingAsksAsync(
+        Guid originMessageId, string reason, CancellationToken ct, Guid? askId = null)
+    {
+        // Cheap check first: most turns ask nobody, and this runs at the end of every turn.
+        var asks = await db.Messages.AsNoTracking()
+            .Where(m => m.OriginMessageId == originMessageId && m.Status == MessageStatus.Pending &&
+                        (askId == null || m.Id == askId))
+            .Select(m => new { m.Id, m.ThreadId })
+            .ToListAsync(ct);
+        if (asks.Count == 0)
+            return [];
+
+        var now = time.GetUtcNow().UtcDateTime;
+        var failed = await events.WriteAsync(db, async batch =>
+        {
+            var done = new List<Guid>();
+            foreach (var ask in asks)
+            {
+                // Conditional, so a claim that got there first wins.
+                var updated = await db.Messages
+                    .Where(m => m.Id == ask.Id && m.Status == MessageStatus.Pending)
+                    .ExecuteUpdateAsync(u => u
+                        .SetProperty(m => m.Status, MessageStatus.Failed)
+                        .SetProperty(m => m.FailReason, reason)
+                        .SetProperty(m => m.CompletedAt, now), ct);
+                if (updated == 0)
+                    continue;
+                batch.Add(ask.ThreadId, SseEventNames.Error,
+                    new ErrorEvent(ask.Id, reason, FailReasons.Describe(reason), ask.ThreadId));
+                done.Add(ask.Id);
+            }
+            return done;
+        }, ct);
+
+        foreach (var id in failed)
+        {
+            askFinished.SignalIfWaiting(id);
+            using (LogScopes.Turn(logger, asks.First(a => a.Id == id).ThreadId, id))
+                logger.LogInformation("agent ask dropped: reason={Reason}", reason);
+        }
+        return failed;
     }
 }

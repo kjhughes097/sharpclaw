@@ -68,7 +68,11 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
             var rows = await db.Messages.AsNoTracking()
                 .Where(m => m.ThreadId == threadId && m.Seq >= fromSeq).OrderBy(m => m.Seq).ToListAsync(ct);
 
-            var result = await BuildAsync(threadId, rows, current.Id, windowTokens, reserveTokens, ct, olderTurns);
+            var senderIds = rows.Where(r => r.SenderAgentId is not null).Select(r => r.SenderAgentId!.Value).Distinct().ToList();
+            var senders = senderIds.Count == 0
+                ? null
+                : await db.Agents.AsNoTracking().Where(a => senderIds.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
+            var result = await BuildAsync(threadId, rows, current.Id, windowTokens, reserveTokens, ct, olderTurns, senders);
             // Done unless every loaded turn fitted and there are older ones that might fit too.
             if (!hasOlder || result.TooLarge || result.DroppedTurns > olderTurns)
                 return result;
@@ -78,12 +82,13 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
     /// <param name="rows">The thread's rows, from the oldest turn to consider onwards.</param>
     /// <param name="currentCorrelationId">The user message being processed.</param>
     /// <param name="olderTurns">Turns before those in <paramref name="rows"/>; they count as dropped.</param>
+    /// <param name="senderNames">Names of agents that sent user messages in <paramref name="rows"/>.</param>
     public async Task<Result> BuildAsync(
         Guid threadId, IReadOnlyList<Message> rows, Guid currentCorrelationId, int windowTokens, int reserveTokens,
-        CancellationToken ct, int olderTurns = 0)
+        CancellationToken ct, int olderTurns = 0, IReadOnlyDictionary<Guid, string>? senderNames = null)
     {
         var estimator = new TokenEstimator(options);
-        var turns = GroupTurns(rows, currentCorrelationId, estimator);
+        var turns = GroupTurns(rows, currentCorrelationId, estimator, senderNames);
         var currentIndex = turns.FindIndex(t => t.CorrelationId == currentCorrelationId);
         if (currentIndex < 0)
             return new Result(Array.Empty<ContextMessage>(), 0, 0, false);
@@ -137,7 +142,8 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
     /// user message's <c>seq</c>. Grouping by correlation (not position) keeps a turn whole even if
     /// another message was queued while it ran. Turns after the current one are not included.
     /// </summary>
-    private static List<Turn> GroupTurns(IReadOnlyList<Message> rows, Guid currentCorrelationId, TokenEstimator estimator)
+    private static List<Turn> GroupTurns(
+        IReadOnlyList<Message> rows, Guid currentCorrelationId, TokenEstimator estimator, IReadOnlyDictionary<Guid, string>? senderNames)
     {
         var byCorrelation = rows
             .Where(r => !(r.Role == Roles.User && r.Kind == MessageKinds.Message) && r.CorrelationId is not null)
@@ -150,7 +156,7 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
             var turnRows = new List<Message> { user };
             if (byCorrelation.TryGetValue(user.Id, out var rest))
                 turnRows.AddRange(rest);
-            var messages = turnRows.Select(r => ModelReplay.ToContextMessage(r, currentCorrelationId)).ToList();
+            var messages = turnRows.Select(r => ModelReplay.ToContextMessage(r, currentCorrelationId, senderNames)).ToList();
             turns.Add(new Turn(user.Id, messages, estimator.Estimate(messages)));
             if (user.Id == currentCorrelationId)
                 break;

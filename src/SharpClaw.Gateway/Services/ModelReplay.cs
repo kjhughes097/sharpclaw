@@ -14,8 +14,13 @@ public static class ModelReplay
     public const string UntrustedStub =
         """{"ok":true,"omitted":"Untrusted content from an earlier turn is not replayed. Call the tool again if you need it."}""";
 
+    /// <summary>What the recipient's model sees before a question another agent sent it (3.5 spec section 5.6).</summary>
+    public static string FromAgentPrefix(string sender) => $"[Message from agent {sender}]\n\n";
+
     /// <param name="currentCorrelationId">The turn being processed; its untrusted results are kept.</param>
-    public static ContextMessage ToContextMessage(Message row, Guid currentCorrelationId)
+    /// <param name="senderNames">Names of the agents that sent user messages in these rows, by id.</param>
+    public static ContextMessage ToContextMessage(
+        Message row, Guid currentCorrelationId, IReadOnlyDictionary<Guid, string>? senderNames = null)
     {
         switch (row.Kind)
         {
@@ -27,6 +32,9 @@ public static class ModelReplay
                 var stub = row.Untrusted && row.CorrelationId != currentCorrelationId;
                 return new ContextMessage(Roles.Tool, stub ? UntrustedStub : row.Content, ToolCallId: row.ToolCallId);
             default:
+                if (row.Role == Roles.User && row.SenderAgentId is { } sender)
+                    return new ContextMessage(row.Role,
+                        FromAgentPrefix(senderNames?.GetValueOrDefault(sender) ?? "unknown") + row.Content);
                 return new ContextMessage(row.Role, row.Content);
         }
     }
