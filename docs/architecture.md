@@ -5,7 +5,8 @@ This page describes the system **as it is now**. It is the first thing to read. 
 [pre-3.3 foundations](sharpclaw-pre-3.3-foundations-spec.md) → [3.3](sharpclaw-3.3-implementation-spec.md) →
 [3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md),
 the [external tools spec](sharpclaw-external-tools-spec.md) and the
-[skills spec](sharpclaw-skills-spec.md))
+[skills spec](sharpclaw-skills-spec.md); next to be built: [3.5](sharpclaw-3.5-implementation-spec.md),
+agent-to-agent messaging)
 record *why* and *when* each behaviour was decided; they remain the source of truth for detailed
 behaviour, with later specs winning. Keep this page in step with the code when structure changes.
 
