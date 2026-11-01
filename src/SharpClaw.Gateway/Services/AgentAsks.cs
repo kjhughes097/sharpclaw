@@ -31,6 +31,7 @@ public sealed class AgentAsks(
     {
         public const string AgentUnavailable = "agent_unavailable";
         public const string HopLimit = "hop_limit";
+        public const string ChainLimit = "chain_limit";
         public const string AgentCycle = "agent_cycle";
         public const string AgentFailed = "agent_failed";
     }
@@ -65,20 +66,18 @@ public sealed class AgentAsks(
 
         var origin = await db.Messages.AsNoTracking().FirstAsync(m => m.Id == call.CorrelationId, ct);
 
-        // The same tool call again (a retry after a dropped connection) waits on the first ask.
-        var askId = await ExistingAskAsync(origin.Id, call.ToolCallId, ct);
-        if (askId is null)
+        var queued = await QueueAsync(call, origin, recipient, message, ct);
+        if (queued.Problem is { } problem)
+            return Refuse(recipient.Name, problem.Code, problem.Message);
+        var askId = queued.AskId!.Value;
+        if (queued.New)
         {
-            if (await ChainProblemAsync(origin, recipient.Id, call.Agent.Id, o.MaxHops, ct) is { } problem)
-                return Refuse(recipient.Name, problem.Code, problem.Message);
-
-            askId = await QueueAsync(call, origin, recipient, message, ct);
             inbox.Signal(recipient.Id);
             logger.LogInformation("agent ask queued: recipient={Recipient} hop={Hop}", recipient.Name, origin.Hop + 1);
         }
 
         var sw = Stopwatch.StartNew();
-        var result = await WaitAsync(call, origin.Id, askId.Value, recipient.Name, ct);
+        var result = await WaitAsync(call, origin.Id, askId, recipient.Name, ct);
         logger.LogInformation("agent ask finished: recipient={Recipient} outcome={Outcome} duration_ms={DurationMs}",
             recipient.Name, result.Outcome, sw.ElapsedMilliseconds);
         return result.Result;
@@ -97,19 +96,31 @@ public sealed class AgentAsks(
             .FirstOrDefaultAsync(ct);
 
     /// <summary>
-    /// Hop limit, then cycles (section 5.3): the recipient must not be anywhere in the chain that
-    /// led to this turn (it would be waiting for itself), and must not be waiting on an ask it sent
-    /// to the sender from another chain (each would wait for the other).
+    /// What stops agents asking each other forever (section 5.3), in order:
+    /// <list type="number">
+    /// <item>the hop limit (how deep a chain goes);</item>
+    /// <item>the chain budget: how many asks in total may follow from one human message, at every
+    /// depth (how wide it goes; each agent can ask once per tool round);</item>
+    /// <item>no deadlock: the recipient must not be in this chain (it would be waiting for itself),
+    /// nor be waiting, directly or through other agents, on the sender (each would wait for the other).</item>
+    /// </list>
+    /// Runs inside the write lock, so two asks can't both pass and then deadlock.
     /// </summary>
     private async Task<(string Code, string Message)?> ChainProblemAsync(
-        Message origin, Guid recipientId, Guid senderId, int maxHops, CancellationToken ct)
+        Message origin, Guid recipientId, Guid senderId, CancellationToken ct)
     {
-        if (origin.Hop + 1 > maxHops)
-            return (Refusals.HopLimit, $"This conversation already passes through {origin.Hop + 1} agents; the limit is {maxHops}.");
+        var o = options.Value;
+        if (origin.Hop + 1 > o.MaxHops)
+            return (Refusals.HopLimit, $"This conversation already passes through {origin.Hop + 1} agents; the limit is {o.MaxHops}.");
+
+        var root = origin.ChainRootId ?? origin.Id;
+        if (await db.Messages.CountAsync(m => m.ChainRootId == root, ct) >= o.MaxAsksPerChain)
+            return (Refusals.ChainLimit,
+                $"This conversation has already asked other agents {o.MaxAsksPerChain} times, the limit. Answer with what you have.");
 
         var chain = new HashSet<Guid> { senderId };
         var current = origin;
-        for (var i = 0; i < maxHops && current.OriginMessageId is { } up; i++)
+        for (var i = 0; i < o.MaxHops && current.OriginMessageId is { } up; i++)
         {
             current = await db.Messages.AsNoTracking().FirstOrDefaultAsync(m => m.Id == up, ct);
             if (current is null)
@@ -119,26 +130,54 @@ public sealed class AgentAsks(
         if (chain.Contains(recipientId))
             return (Refusals.AgentCycle, "That agent is already waiting on this conversation, so it can't answer.");
 
-        var crossed = await db.Messages.AsNoTracking().AnyAsync(m =>
-            m.AgentId == senderId && m.SenderAgentId == recipientId &&
-            (m.Status == MessageStatus.Pending || m.Status == MessageStatus.Claimed), ct);
-        if (crossed)
+        if (await WaitsOnAsync(recipientId, senderId, ct))
             return (Refusals.AgentCycle, "That agent is waiting for an answer from you, so it can't answer.");
         return null;
     }
 
     /// <summary>
-    /// Queues the question in the linked thread (one per originating thread, sender and recipient;
-    /// created on first use) in one transaction with its <c>message.created</c> event (section 5.2).
+    /// True when <paramref name="from"/> is waiting, directly or through other agents, on
+    /// <paramref name="target"/>: its turn in progress has an unanswered ask to an agent that is
+    /// <paramref name="target"/> or is itself waiting on it. An agent runs one turn at a time, so
+    /// <paramref name="target"/> asking <paramref name="from"/> now would never be answered.
     /// </summary>
-    private Task<Guid> QueueAsync(BrokerInvocation call, Message origin, Agent recipient, string message, CancellationToken ct)
+    private async Task<bool> WaitsOnAsync(Guid from, Guid target, CancellationToken ct)
+    {
+        var seen = new HashSet<Guid> { from };
+        var frontier = new List<Guid> { from };
+        while (frontier.Count > 0)
+        {
+            var waitingOn = await db.Messages.AsNoTracking()
+                .Where(ask => (ask.Status == MessageStatus.Pending || ask.Status == MessageStatus.Claimed) &&
+                              ask.SenderAgentId != null && frontier.Contains(ask.SenderAgentId.Value) &&
+                              db.Messages.Any(turn => turn.Id == ask.OriginMessageId && turn.Status == MessageStatus.Claimed))
+                .Select(ask => ask.AgentId)
+                .Distinct()
+                .ToListAsync(ct);
+            if (waitingOn.Contains(target))
+                return true;
+            frontier = waitingOn.Where(seen.Add).ToList();
+        }
+        return false;
+    }
+
+    private sealed record Queued(Guid? AskId, bool New, (string Code, string Message)? Problem);
+
+    /// <summary>
+    /// Queues the question in the linked thread (one per originating thread, sender and recipient;
+    /// created on first use) in one transaction with its <c>message.created</c> event (section 5.2),
+    /// after the chain checks. The same tool call again (a retry after a dropped connection) returns
+    /// the first ask instead.
+    /// </summary>
+    private Task<Queued> QueueAsync(BrokerInvocation call, Message origin, Agent recipient, string message, CancellationToken ct)
     {
         var now = time.GetUtcNow().UtcDateTime;
         return events.WriteAsync(db, async batch =>
         {
-            // Checked again inside the write lock: a concurrent retry may have queued it already.
             if (await ExistingAskAsync(origin.Id, call.ToolCallId, ct) is { } existing)
-                return existing;
+                return new Queued(existing, false, null);
+            if (await ChainProblemAsync(origin, recipient.Id, call.Agent.Id, ct) is { } problem)
+                return new Queued(null, false, problem);
 
             var thread = await db.Threads.FirstOrDefaultAsync(t =>
                 t.AgentId == recipient.Id && t.OriginAgentId == call.Agent.Id && t.OriginThreadId == call.ThreadId, ct);
@@ -165,10 +204,11 @@ public sealed class AgentAsks(
                 m.OriginToolCallId = call.ToolCallId;
                 m.Hop = origin.Hop + 1;
                 m.OriginTainted = call.Tainted;
+                m.ChainRootId = origin.ChainRootId ?? origin.Id;
                 // Q6: whoever started the chain decides whether a human can answer approvals.
                 m.Unattended = origin.Unattended;
             });
-            return ask.Id;
+            return new Queued(ask.Id, true, null);
         }, ct);
     }
 

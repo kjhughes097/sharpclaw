@@ -203,8 +203,8 @@ the gateway, under operator policy.
 - Asks reuse the `messages`/`threads` inbox: one linked thread per (originating thread, sender,
   recipient); the recipient's claim, reply and failure are the acks; (turn, tool call id) is the
   idempotency key
-- Policy: allowed sender → recipient pairs in gateway config (`AgentMessaging:Allowed`)
-- Hop limit, cycle refusal, ask timeout; asks nobody waits for end as failed (`ask_timeout`,
+- Policy: any agent may ask any other by default; gateway config can restrict senders (`AgentMessaging`)
+- Hop limit, a per-chain ask budget, deadlock refusal, ask timeout; asks nobody waits for end as failed (`ask_timeout`,
   `ask_cancelled`)
 - Taint and attendance propagate along the chain; each agent pays for its own model calls
 - Minimal UI: sender shown, linked threads linked, agent rows in activity, asks in the trace

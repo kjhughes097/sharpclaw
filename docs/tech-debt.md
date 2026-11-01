@@ -91,9 +91,9 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Item | Notes |
 |---|---|
 | No `IMessageBus` interface | The plan named one, but there is a single DB-backed implementation (`AgentAsks` over the `messages` inbox) and none other planned. Fix: introduce it with the second implementation (e.g. NATS JetStream). |
-| Longer cross-chain cycles end at the timeout | The gateway refuses cycles within a chain and two agents asking each other from separate chains; A → B, B → C, C → A across three separate chains waits until `AgentMessaging:AskTimeoutSeconds`. Fix: a wait-for graph check if it happens in practice. |
+| Recipients are read at agent startup | With any agent free to ask any other, an agent created later isn't offered to existing agents until they restart (the tool's recipient list comes from `GET /agent/tools` at startup). Fix: refresh the policy per turn if agents are added often. |
 | A claimed ask runs on after its asker gives up | After a timeout, an ask the recipient has already claimed finishes (and is paid for) even though nobody reads the reply, apart from the linked thread. Fix: a cancel-turn signal to the agent, if wasted turns show up in spend. |
-| Agent-to-agent policy is config-only | Allowed pairs and descriptions live in gateway config and need a restart; agents read them at startup. Fix: store them in the DB with an admin API if they change often. |
+| Agent-to-agent policy is config-only | `AllowAll`, restricting lists and descriptions live in gateway config and need a restart; agents read them at startup. Fix: store them in the DB with an admin API if they change often. |
 | Agents' descriptions of each other live in config | `AgentMessaging:Descriptions` rather than on the agent record. Fix: an agent `description` field if the UI needs it too. |
 
 ## Code-level debt

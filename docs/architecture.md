@@ -150,7 +150,7 @@ sequenceDiagram
   participant G as Gateway
   participant B as Agent B
   A->>G: POST /agent/tools/ask_agent { agent: B, message } (+ tainted)
-  G->>G: AgentMessaging:Allowed, hop limit, cycles
+  G->>G: AgentMessaging policy, hops, chain budget, deadlocks
   G->>G: linked thread (B owns it) + pending user message, message.created
   B->>G: GET /agent/inbox (fromAgent: A, tainted)
   B->>G: context ([Message from agent A] prefix), model calls, tools…
@@ -158,12 +158,15 @@ sequenceDiagram
   G-->>A: { ok, agent, threadId, reply, truncated } (untrusted tool result)
 ```
 
-The pair must be in `AgentMessaging:Allowed:<sender>` (not allowed and unknown both answer `404`)
-and the recipient enabled. The question is a `user` row in a thread the recipient owns, one per
-(originating thread, sender, recipient), with `sender_agent_id`, `origin_message_id`,
-`origin_tool_call_id` (unique together: a retried call waits on the same ask), `hop` and
-`origin_tainted`; it copies `unattended` from the asking message. The gateway refuses chains longer
-than `MaxHops`, a recipient already in the chain, and two agents asking each other from separate
+Any agent may ask any other unless `AgentMessaging` restricts it (`Allowed:<sender>` lists, or
+`AllowAll=false`); not allowed and unknown both answer `404`, and the recipient must be enabled. The
+question is a `user` row in a thread the recipient owns, one per (originating thread, sender,
+recipient), with `sender_agent_id`, `origin_message_id`, `origin_tool_call_id` (unique together: a
+retried call waits on the same ask), `hop`, `chain_root_id` (the human message the chain started
+from) and `origin_tainted`; it copies `unattended` from the asking message. Inside the write
+transaction that queues it, the gateway refuses chains longer than `MaxHops`, more than
+`MaxAsksPerChain` asks from one human message, a recipient already in the chain, and a recipient
+that is waiting (directly or through other agents) on the sender, which would deadlock across
 chains. While it waits it refreshes the asker's claim; on `AskTimeoutSeconds`, a dropped request or
 the asking turn ending, a still-`pending` question is failed (`ask_timeout`/`ask_cancelled`, `error`
 event), while one the recipient has claimed runs to completion. The asker's reply taints its turn;
@@ -330,7 +333,7 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
   in logs, metric labels or events (`PrivacyTests` and others).
 - Metric labels are limited to agent, model, status, type and listener; never ids.
 - Agents never talk to each other directly: an ask goes only through `POST /agent/tools/ask_agent`,
-  only for pairs in gateway config, never in a cycle or past `MaxHops`, and its reply is untrusted
+  only as gateway config allows, never in a cycle or deadlock, past `MaxHops` or past `MaxAsksPerChain`, and its reply is untrusted
   for the asker (`AgentAskTests`, `AskAgentToolTests`).
 - The client contract (OpenAPI + event fixtures) changes only deliberately (`SnapshotTests`, `npm run check:api`).
 - Product code takes time from an injected `TimeProvider`.

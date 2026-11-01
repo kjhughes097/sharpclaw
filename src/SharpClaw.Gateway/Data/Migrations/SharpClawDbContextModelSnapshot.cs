@@ -482,6 +482,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("agent_id");
 
+                    b.Property<Guid?>("ChainRootId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("chain_root_id");
+
                     b.Property<DateTime?>("ClaimedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("claimed_at");
@@ -583,6 +587,9 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnName("untrusted");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ChainRootId")
+                        .HasFilter("chain_root_id IS NOT NULL");
 
                     b.HasIndex("CorrelationId")
                         .IsUnique()
