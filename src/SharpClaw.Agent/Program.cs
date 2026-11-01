@@ -60,7 +60,7 @@ else
         .Concat(UtilityTools.All(TimeProvider.System))
         .Concat(AgentBrokerTools.All(gateway, policy, config.WorkspacePath))
         .Concat(SkillTools.All(skills ?? SkillLibrary.Empty));
-    var registry = new ToolRegistry(available, toolConfig.Tools);
+    var registry = new ToolRegistry(available, AgentBrokerTools.DropIfNoRecipients(toolConfig.Tools, policy, logger));
     var dispatcher = new ToolDispatcher(registry, toolConfig, gateway, loggerFactory.CreateLogger<ToolDispatcher>());
     tools = new AgentTools(registry, dispatcher, toolConfig.MaxToolIterations);
     logger.LogInformation(

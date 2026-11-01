@@ -21,7 +21,8 @@ public class AgentToolLoopTests
         public List<string> Failures { get; } = new();
         public List<ToolCallReportRequest> Reports { get; } = new();
 
-        public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => Task.FromResult(InboxResult.Of(Message));
+        public InboxMessageDto Inbox { get; set; } = Message;
+        public Task<InboxResult> PollInboxAsync(int waitSeconds, CancellationToken ct) => Task.FromResult(InboxResult.Of(Inbox));
         public Task<ContextResult> GetContextAsync(Guid threadId, int reserveTokens, CancellationToken ct) =>
             Task.FromResult(new ContextResult(new[] { new ChatMessage(Roles.User, "do the task") }, WindowTokens: WindowTokens));
 
@@ -89,6 +90,24 @@ public class AgentToolLoopTests
     private sealed class FixedSoul : ISoulProvider
     {
         public string Read() => "SOUL";
+    }
+
+    [Fact]
+    public async Task A_question_from_a_tainted_asker_starts_the_turn_tainted()
+    {
+        var (loop, gw, tool) = Create();
+        gw.Inbox = Message with { FromAgent = "ade", Tainted = true };
+        gw.Outcomes.Enqueue(ToolCall("call_1", "t"));
+        gw.Outcomes.Enqueue(ChatOutcome.Ok("done"));
+
+        await loop.ProcessOnceAsync(default);
+
+        // A low-risk call is raised to medium by the inherited taint, so it needs an approval,
+        // which this gateway can't give: the call is refused, never run.
+        var report = Assert.Single(gw.Reports);
+        Assert.True(report.Tainted);
+        Assert.Equal(RiskLevels.Medium, report.Risk);
+        Assert.Equal(0, tool.Executions);
     }
 
     [Fact]

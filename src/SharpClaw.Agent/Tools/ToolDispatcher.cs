@@ -134,7 +134,7 @@ public sealed class ToolDispatcher
             ToolResult result;
             try
             {
-                var context = new ToolCallContext(turn.CorrelationId, turn.ThreadId, call.Id, approvalId);
+                var context = new ToolCallContext(turn.CorrelationId, turn.ThreadId, call.Id, approvalId, tainted);
                 result = await tool.ExecuteUncheckedAsync(args, context, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)

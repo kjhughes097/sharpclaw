@@ -122,5 +122,8 @@ public interface IAgentTool
         ExecuteUncheckedAsync(args, ct);
 }
 
-/// <summary>Who a tool call belongs to, and the approval the human gave for it (if one was needed).</summary>
-public sealed record ToolCallContext(Guid CorrelationId, Guid ThreadId, string ToolCallId, Guid? ApprovalId);
+/// <summary>
+/// Who a tool call belongs to, the approval the human gave for it (if one was needed), and whether
+/// the turn had read untrusted content before it (passed on by <c>ask_agent</c>, 3.5 spec section 6.3).
+/// </summary>
+public sealed record ToolCallContext(Guid CorrelationId, Guid ThreadId, string ToolCallId, Guid? ApprovalId, bool Tainted = false);
