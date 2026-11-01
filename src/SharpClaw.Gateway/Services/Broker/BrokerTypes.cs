@@ -29,7 +29,7 @@ public interface IBrokerToolHandler
 /// <summary>
 /// One broker call. <see cref="Agent"/> is the authenticated caller and <see cref="Config"/> its
 /// operator settings: anything agent-specific (such as which sandbox) comes from these, never from
-/// the request.
+/// the request. <see cref="Tainted"/> is the agent's own taint flag for the turn (used by <c>ask_agent</c>).
 /// </summary>
 public sealed record BrokerInvocation(
     AuthenticatedAgent Agent,
@@ -39,7 +39,8 @@ public sealed record BrokerInvocation(
     Guid CorrelationId,
     Guid ThreadId,
     string ToolCallId,
-    Guid? ApprovalId);
+    Guid? ApprovalId,
+    bool Tainted = false);
 
 /// <summary>
 /// What a handler produced. A tool-level outcome (including a tool error such as a 404 page) is a

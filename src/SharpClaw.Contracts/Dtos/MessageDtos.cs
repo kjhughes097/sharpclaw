@@ -37,7 +37,12 @@ public sealed record QueuedMessageResponse(QueuedMessageDto Message);
 
 // ----- Agent inbox / reply / fail -----
 
-public sealed record InboxMessageDto(Guid Id, Guid ThreadId, string Content, DateTime CreatedAt);
+/// <summary>
+/// <c>FromAgent</c>: the asking agent's name when another agent sent it (3.5 spec), else null.
+/// <c>Tainted</c>: the asking turn had read untrusted content, so this turn starts tainted.
+/// </summary>
+public sealed record InboxMessageDto(
+    Guid Id, Guid ThreadId, string Content, DateTime CreatedAt, string? FromAgent = null, bool Tainted = false);
 
 public sealed record InboxMessageResponse(InboxMessageDto Message);
 
