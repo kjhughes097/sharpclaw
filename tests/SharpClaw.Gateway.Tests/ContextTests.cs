@@ -41,14 +41,16 @@ public class ContextTests
         {
             new ChatMessage(Roles.System, "soul"),
             new ChatMessage(Roles.User, "hello é"),
+            new ChatMessage(Roles.User, "an image", ImageIds: new[] { Guid.NewGuid() }),
             new ChatMessage(Roles.Assistant, null, new[] { new ChatToolCall("call_1", "http_fetch", """{"url":"https://x.test/"}""") }),
             new ChatMessage(Roles.Tool, new string('a', 1001), ToolCallId: "call_1"),
         };
         var gateway = new TokenEstimator(new ContextOptions()).Estimate(messages.Select(m => new ContextMessage(m.Role, m.Content,
             m.ToolCalls?.Select(c => new ContextToolCall(c.Id, "function", new ContextFunction(c.Name, c.Arguments))).ToList(),
-            m.ToolCallId)));
+            m.ToolCallId, m.ImageIds)));
 
         Assert.Equal(gateway, SharpClaw.Agent.TurnBudget.Estimate(messages, schemaChars: 0));
+        Assert.Equal(ContextDefaults.ImageTokens, new ContextOptions().ImageTokens);
         Assert.Equal(SharpClaw.Agent.TurnBudget.ReplyReserveTokens, new ContextOptions().ReplyReserveTokens);
     }
 

@@ -4,7 +4,9 @@ namespace SharpClaw.Contracts;
 
 /// <summary>
 /// A model-ready message in the OpenAI wire shape (snake_case <c>tool_calls</c> and
-/// <c>tool_call_id</c>), as returned by the agent context endpoint.
+/// <c>tool_call_id</c>), as returned by the agent context endpoint. <c>ImageIds</c> (a SharpClaw
+/// extension, attachments spec section 4) are images attached to a user message; the gateway
+/// resolves them to image content only when it calls the provider.
 /// </summary>
 public sealed record ContextMessage(
     [property: JsonPropertyName("role")] string Role,
@@ -12,10 +14,12 @@ public sealed record ContextMessage(
     [property: JsonPropertyName("tool_calls"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<ContextToolCall>? ToolCalls = null,
     [property: JsonPropertyName("tool_call_id"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? ToolCallId = null)
+    string? ToolCallId = null,
+    [property: JsonPropertyName("image_ids"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<Guid>? ImageIds = null)
 {
     public ChatMessage ToChatMessage() => new(Role, Content,
-        ToolCalls?.Select(c => new ChatToolCall(c.Id, c.Function.Name, c.Function.Arguments)).ToList(), ToolCallId);
+        ToolCalls?.Select(c => new ChatToolCall(c.Id, c.Function.Name, c.Function.Arguments)).ToList(), ToolCallId, ImageIds);
 }
 
 public sealed record ContextToolCall(

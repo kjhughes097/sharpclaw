@@ -33,6 +33,13 @@ public sealed class FakeProvider : IChatProvider
         _costPerToken = costPerToken;
     }
 
+    /// <summary>Lists the images the request carried, so tests and a dev stack can see they arrived.</summary>
+    private static string ImageNote(ProviderChatRequest request)
+    {
+        var images = request.Messages.SelectMany(m => m.Images ?? []).ToList();
+        return images.Count == 0 ? "" : $" [images: {string.Join(", ", images.Select(i => $"{i.MediaType} {i.Data.Length} bytes"))}]";
+    }
+
     public async IAsyncEnumerable<ChatStreamEvent> StreamAsync(
         ProviderChatRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -45,7 +52,7 @@ public sealed class FakeProvider : IChatProvider
             r.Match.IsMatch(last.Content ?? ""));
 
         // A rule that only returns tool calls streams no text.
-        var response = rule?.Response ?? (rule is { ToolCalls.Count: > 0 } ? "" : $"Fake reply to: {lastUser}");
+        var response = rule?.Response ?? (rule is { ToolCalls.Count: > 0 } ? "" : $"Fake reply to: {lastUser}{ImageNote(request)}");
         var chunkSize = Math.Max(1, rule?.ChunkSize ?? 8);
         var delayMs = rule?.DelayMs ?? 0;
 
