@@ -1,7 +1,7 @@
 # SharpClaw V3 — Phase 3.5 Implementation Spec (agent-to-agent messaging)
 
 **Audience:** an implementing coding agent (and the human reviewing its work).
-**Status:** draft, ready to build (task order in section 13).
+**Status:** **implemented** (tasks 1–6 in section 13).
 **Scope:** one agent can ask another agent a question and get its answer back within the same turn,
 through the gateway, under operator policy. Earlier specs still apply wherever this one doesn't
 change them, in particular the risk model and single dispatch path

@@ -82,6 +82,11 @@ services:
       GitHub__ForkOwner: ${GITHUB_FORK_OWNER:-}
       # Hosts whose http_fetch calls are low risk, e.g.:
       # ToolBroker__FetchAllowHosts__0: learn.microsoft.com
+      # Agent to agent (see README): let assistant ask another agent with ask_agent (also list
+      # ask_agent in its agent.json and enable it above), e.g.:
+      # ToolBroker__Agents__assistant__Tools__2: ask_agent
+      # AgentMessaging__Allowed__assistant__0: cody
+      # AgentMessaging__Descriptions__cody: Coding agent.
     ports:
       # Client API and web UI only; the agent port is never published. Never port-forward this port.
       - "${CLIENT_BIND:-127.0.0.1}:${CLIENT_PORT:-8080}:8080"

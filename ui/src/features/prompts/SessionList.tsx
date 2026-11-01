@@ -110,6 +110,7 @@ export function SessionList({
                 >
                   <span className="flex items-center gap-1.5">
                     <span className="min-w-0 flex-1 truncate">{t.title || 'Untitled session'}</span>
+                    {t.originAgentName && <Badge tone="accent">from {t.originAgentName}</Badge>}
                     {t.inFlight && (
                       <>
                         <Spinner small />

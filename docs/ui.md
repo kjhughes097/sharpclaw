@@ -60,6 +60,22 @@ bar (`components/AppShell.tsx`, `components/TabBar.tsx`). Every tab is a link:
   only the agent query (no new endpoint or event: the list changes only when the agent restarts,
   and the tab refetches when opened). Descriptions are operator text, rendered as plain text.
 
+## Agent to agent (3.5)
+
+[3.5 spec](sharpclaw-3.5-implementation-spec.md) section 9. No new routes or events: a linked
+thread is a normal thread owned by the recipient.
+
+- **Messages** with `sentByAgent` show "from `<agent>` (agent)" as the speaker (`TurnView`), and
+  "Agent `<agent>` said:" for screen readers.
+- **Linked threads** (`thread.originThreadId`) show "· asked by `<agent>`" in `ThreadHeader`, a
+  link to the asking thread, and a "from `<agent>`" badge in the session list.
+- **`ask_agent` tool rows** link to the conversation with the other agent (`askLink` in
+  `ToolActivity.tsx` reads the recipient from the arguments and `threadId` from the stored result;
+  nothing for other tools or unparseable rows).
+- **Trace:** each turn's details list "Asked agents" (`turn.asks`) with status, a link to the
+  linked thread and the fail reason (`ask_timeout`, `ask_cancelled` are in `api/errors.ts`).
+- **Activity** needs nothing new: the gateway already puts the asking agent in `from`/`to`.
+
 ## Approval details (external tools)
 
 Approvals for `sandbox_run`, `github_write` and `github_create_pr` carry a gateway-rendered

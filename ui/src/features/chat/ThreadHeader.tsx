@@ -1,5 +1,6 @@
 import { DropdownMenu } from 'radix-ui';
 import { useState } from 'react';
+import { Link } from 'react-router';
 import type { ThreadDetailResponse } from '../../api/types';
 import { useUpdateThread } from './useUpdateThread';
 
@@ -11,6 +12,7 @@ const MENU_ITEM =
 /**
  * The thread's title, small and muted (click to rename), with a menu: Rename, Trace, Archive or
  * Unarchive, and the tool-details preference. Agent, model and context live in the status bar.
+ * A linked thread (another agent's questions, 3.5 spec) links back to the asking agent's thread.
  */
 export function ThreadHeader({
   threadId,
@@ -36,6 +38,14 @@ export function ThreadHeader({
         onEditingChange={setEditing}
       />
       {thread.archived && <span className="text-xs text-muted">· archived</span>}
+      {thread.originThreadId && (
+        <span className="shrink-0 text-xs text-muted">
+          · asked by{' '}
+          <Link to={`/prompts/${thread.originThreadId}`} className="text-accent underline">
+            {thread.originAgentName ?? 'another agent'}
+          </Link>
+        </span>
+      )}
       <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger
           className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-muted hover:bg-surface-2"

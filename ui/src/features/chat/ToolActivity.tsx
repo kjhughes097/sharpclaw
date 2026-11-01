@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import type { LiveTool } from '../../api/live';
 import type { TraceLlmCallDto, TraceToolCallDto } from '../../api/types';
 import { formatCost, formatCount } from '../../lib/time';
@@ -47,6 +48,23 @@ export function roundMetrics(call: TraceLlmCallDto): string {
 
 const ROW = 'grid grid-cols-[1rem_3.5rem_minmax(0,12rem)_minmax(0,1fr)_auto] items-baseline gap-x-2';
 
+/**
+ * For an `ask_agent` call (3.5 spec), the recipient and its linked thread, read from the stored
+ * arguments and result; null for other tools or when either can't be parsed.
+ */
+export function askLink(item: ToolItem): { agent: string; threadId: string } | null {
+  if (item.name !== 'ask_agent' || !item.result) return null;
+  try {
+    const args = JSON.parse(item.arguments) as { agent?: unknown };
+    const result = JSON.parse(item.result.content) as { threadId?: unknown };
+    return typeof args.agent === 'string' && typeof result.threadId === 'string'
+      ? { agent: args.agent, threadId: result.threadId }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function ToolRow({
   item,
   trace,
@@ -67,6 +85,7 @@ function ToolRow({
   const status = toolStatus(item, trace, approval?.status === 'pending', turnInFlight);
   const label = STATUS_TEXT[status];
   const note = approval?.summary ?? (trace?.risk ? `risk: ${trace.risk}` : '');
+  const ask = askLink(item);
   return (
     <li>
       <button
@@ -86,6 +105,15 @@ function ToolRow({
           {status === 'done' || status === 'failed' ? seconds(trace?.durationMs) : ''}
         </span>
       </button>
+      {ask && (
+        <p className={`${ROW} px-1 text-muted`}>
+          <span />
+          <span />
+          <Link to={`/prompts/${ask.threadId}`} className="col-span-3 truncate text-accent underline">
+            Open the conversation with {ask.agent}
+          </Link>
+        </p>
+      )}
       {round && (
         <p className={`${ROW} px-1 text-muted`}>
           <span />

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts an isolated SharpClaw stack for the Playwright suite: the gateway (fake provider, built UI)
-# and one agent process, on spare ports with a throwaway database. It never touches a running
+# and two agent processes (assistant, and helper, which assistant may ask with ask_agent), on spare ports with a throwaway database. It never touches a running
 # Compose stack. Usage: e2e/stack.sh start|stop. State lives in $E2E_STATE_DIR.
 set -euo pipefail
 
@@ -32,10 +32,15 @@ dotnet build "$ROOT/src/SharpClaw.Gateway" -c Release -v quiet -nologo >/dev/nul
 dotnet build "$ROOT/src/SharpClaw.Agent" -c Release -v quiet -nologo >/dev/null
 dotnet build "$ROOT/src/SharpClaw.Cli" -c Release -v quiet -nologo >/dev/null
 
-# Scripted replies: streaming, tool use needing approval, markdown safety, a long reply.
+# Scripted replies: streaming, tool use needing approval, markdown safety, a long reply, and one
+# agent asking another (assistant asks helper; helper sees the question with its sender prefix).
 cat >"$STATE/script.json" <<'JSON'
 {
   "rules": [
+    { "match": "^ask the helper", "role": "user", "response": "Asking the helper.", "toolCalls": [
+      { "name": "ask_agent", "arguments": { "agent": "helper", "message": "What is 2+2?" } } ] },
+    { "match": "^\\[Message from agent assistant\\]", "role": "user", "response": "The answer is 4." },
+    { "match": "\"reply\":\"The answer is 4.\"", "role": "tool", "response": "The helper says the answer is 4." },
     { "match": "^delete the note", "role": "user", "response": "Deleting it.", "toolCalls": [
       { "name": "workspace_delete", "arguments": { "path": "notes/old.md" } } ] },
     { "match": "^read then delete", "role": "user", "response": "Reading it first.", "toolCalls": [
@@ -53,9 +58,11 @@ JSON
 # Anything above low risk needs approval; no smart mode (it would cost an extra model call).
 cat >"$STATE/config/agent.json" <<'JSON'
 { "allowedRiskLevel": "low", "smartMode": false, "maxToolIterations": 5,
-  "tools": ["workspace_list", "workspace_read", "workspace_write", "workspace_delete"] }
+  "tools": ["workspace_list", "workspace_read", "workspace_write", "workspace_delete", "ask_agent"] }
 JSON
 printf 'You are a test agent.\n' >"$STATE/config/soul.md"
+mkdir -p "$STATE/helper/config" "$STATE/helper/workspace"
+printf 'You are a helper agent.\n' >"$STATE/helper/config/soul.md"
 printf 'old note\n' >"$STATE/workspace/notes/old.md"
 
 GATEWAY_DLL="$ROOT/src/SharpClaw.Gateway/bin/Release/net10.0/SharpClaw.Gateway.dll"
@@ -65,6 +72,8 @@ GATEWAY_DLL="$ROOT/src/SharpClaw.Gateway/bin/Release/net10.0/SharpClaw.Gateway.d
   Database__Path="$STATE/sharpclaw.db" Listeners__ClientPort="$CLIENT_PORT" Listeners__AgentPort="$AGENT_PORT" \
   Ui__RootPath="$ROOT/ui/dist" Approvals__TimeoutSeconds="${E2E_APPROVAL_TIMEOUT:-25}" Approvals__SweepIntervalSeconds=1 \
   Context__ReplyReserveTokens=100 Models__Allowed__0=fake/other Logging__LogLevel__Default=Warning \
+  ToolBroker__Agents__assistant__Tools__0=ask_agent AgentMessaging__Allowed__assistant__0=helper \
+  AgentMessaging__Descriptions__helper="Answers questions." \
     exec dotnet "$GATEWAY_DLL" >"$STATE/gateway.log" 2>&1
 ) &
 echo $! >"$STATE/gateway.pid"
@@ -80,6 +89,10 @@ CLI_DLL="$ROOT/src/SharpClaw.Cli/bin/Release/net10.0/sharpclaw.dll"
 printf '%s\n' "${E2E_PASSWORD:-e2e password 1234}" | SHARPCLAW_URL="$BASE" SHARPCLAW_ADMIN_KEY="$ADMIN_KEY" \
   dotnet "$CLI_DLL" users create "${E2E_USER:-kevin}" --password-stdin >/dev/null
 
+# The helper first, so it is in the assistant's ask_agent recipients when the assistant starts.
+HELPER_TOKEN=$(curl -fsS -X POST "$BASE/api/agents" -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
+  -d '{"name":"helper","model":"fake/model","dailyBudgetUsd":5}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).token.value))')
+
 TOKEN=$(curl -fsS -X POST "$BASE/api/agents" -H "Authorization: Bearer $ADMIN_KEY" -H 'Content-Type: application/json' \
   -d '{"name":"assistant","model":"fake/model","dailyBudgetUsd":5}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).token.value))')
 
@@ -89,5 +102,12 @@ TOKEN=$(curl -fsS -X POST "$BASE/api/agents" -H "Authorization: Bearer $ADMIN_KE
     exec dotnet "$ROOT/src/SharpClaw.Agent/bin/Release/net10.0/SharpClaw.Agent.dll" >"$STATE/agent.log" 2>&1
 ) &
 echo $! >"$STATE/agent.pid"
+
+(
+  GATEWAY_URL="http://127.0.0.1:$AGENT_PORT" AGENT_TOKEN="$HELPER_TOKEN" SOUL_PATH="$STATE/helper/config/soul.md" \
+  WORKSPACE_PATH="$STATE/helper/workspace" AGENT_CONFIG_PATH="$STATE/helper/config/agent.json" LONG_POLL_SECONDS=5 \
+  LOG_LEVEL=Warning exec dotnet "$ROOT/src/SharpClaw.Agent/bin/Release/net10.0/SharpClaw.Agent.dll" >"$STATE/helper.log" 2>&1
+) &
+echo $! >"$STATE/helper.pid"
 
 echo "stack ready on $BASE"

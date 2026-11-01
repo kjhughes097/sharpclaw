@@ -97,3 +97,9 @@ this change use the old boundaries and age out naturally.
   `llm call finished` (status, tokens, cost, latency, ttft) → `message completed` (or
   `message failed`).
 - Verified that prompt and reply text never appear in Loki.
+- Agent to agent (3.5): in the asking turn's scope, `agent ask queued` (recipient, hop),
+  `agent ask finished` (recipient, outcome `done`/`failed`/`ask_timeout`/`ask_cancelled`,
+  duration_ms) and `agent ask refused` (reason `not_found`/`agent_unavailable`/`hop_limit`/
+  `agent_cycle`; the recipient only when it is a real agent); `agent ask dropped` (reason) in the
+  question's scope when an unclaimed ask is failed. Never the question or the reply. Asks are
+  counted by the existing broker metrics with `tool="ask_agent"`; there are no new metric names.

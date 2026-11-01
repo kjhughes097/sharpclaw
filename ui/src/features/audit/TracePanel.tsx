@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useId, useState, type ReactNode } from 'react';
+import { Link } from 'react-router';
 import { api, call } from '../../api/client';
 import { errorMessage, failReasonMessage } from '../../api/errors';
 import { keys } from '../../api/queryKeys';
@@ -156,6 +157,19 @@ function TurnDetails({ turn }: { turn: TraceTurnDto }) {
               </Field>
               <Field label="Duration">{formatDuration(c.durationMs)}</Field>
             </dl>
+          </li>
+        ))}
+      </DetailSection>
+      <DetailSection title="Asked agents" empty="No other agents asked.">
+        {(turn.asks ?? []).map((a) => (
+          <li key={a.messageId} className="rounded-md bg-surface-2 p-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Link to={`/prompts/${a.threadId}`} className="font-medium break-all text-accent underline">
+                {a.agentName}
+              </Link>
+              <Badge tone={statusTone(a.status)}>{humanize(a.status)}</Badge>
+            </div>
+            {a.status === 'failed' && <p className="mt-1 text-danger">{failReasonMessage(a.failReason)}</p>}
           </li>
         ))}
       </DetailSection>
