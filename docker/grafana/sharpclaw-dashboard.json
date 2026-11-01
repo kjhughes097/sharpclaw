@@ -298,7 +298,7 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Approvals by status (rate/min)",
+      "title": "Approvals by status and decider (rate/min)",
       "datasource": "${metrics}",
       "gridPos": {
         "h": 8,
@@ -308,8 +308,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (status) (rate({__name__=\"sharpclaw.approvals\", agent=~\"$agent\"}[5m])) * 60",
-          "legendFormat": "{{status}}"
+          "expr": "sum by (status, type) (rate({__name__=\"sharpclaw.approvals\", agent=~\"$agent\"}[5m])) * 60",
+          "legendFormat": "{{status}} by {{type}}"
         }
       ]
     },

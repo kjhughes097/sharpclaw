@@ -25,7 +25,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Item | Notes |
 |---|---|
 | Agent-reported tool outcomes are self-reported | The gateway independently records every tool call the model requested, so a missing report is visible (`status = requested`), but what a local tool actually did is only what the agent says. Docker isolation limits the damage. |
-| No "always allow" for approvals | Every call above the allowed level asks again. |
 
 ## Accepted by design (pre-3.3 foundations, section 15)
 

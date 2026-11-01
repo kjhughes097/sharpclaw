@@ -42,7 +42,8 @@ public interface ICliGateway
     Task<ToolCallAuditResponse> AuditToolCallsAsync(string? agent, int? limit);
 
     /// <summary>Answers an approval prompt. Throws <see cref="CliException"/> if it was already decided or expired.</summary>
-    Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision);
+    /// <summary><paramref name="remember"/> (approve only) also creates a standing grant (3.6 spec).</summary>
+    Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision, ApprovalRememberRequest? remember = null);
 
     Task<ApprovalListResponse> ListApprovalsAsync(string? status, string? agent);
 

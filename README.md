@@ -233,7 +233,7 @@ Re-run the `dotnet publish` line after pulling CLI changes. Without installing, 
 | `sharpclaw chat <agent> [--thread <id>]` | Interactive chat; `/exit` quits |
 | `sharpclaw ask <agent> "<text>" [--unattended]` | One-shot chat; `--unattended` denies any approval at once |
 | `sharpclaw approvals list [--status pending] [--agent <name>]` | The approval queue |
-| `sharpclaw approvals approve <id>` / `approvals deny <id>` | Answer a pending approval from any terminal |
+| `sharpclaw approvals approve <id> [--remember thread\|agent] [--ttl 1\|8\|24]` / `approvals deny <id>` | Answer a pending approval from any terminal; `--remember` stops asking about that tool |
 | `sharpclaw users create <name> [--password-stdin]` | Create a browser user (prompts twice without echo) |
 | `sharpclaw users list` | Users and whether they are disabled |
 | `sharpclaw users set-password <name> [--password-stdin]` | Reset a password; signs out their sessions |
@@ -295,7 +295,8 @@ How a call is decided (all in the agent's `ToolDispatcher`):
    in a queue (`GET /api/approvals`, `sharpclaw approvals list`) whether or not anyone is
    watching, and expires after 300 s; a message posted `unattended` has its approvals denied at
    once. When a turn ends (reply, failure, claim timeout) its pending approvals expire. Denials
-   go back to the model as a tool error so it can adapt.
+   go back to the model as a tool error so it can adapt. A standing approval or autonomy mode
+   lets the gateway answer for you (see [Fewer approvals](#fewer-approvals)).
 4. Every call is **audited**: the gateway records what the model requested, the agent reports the
    outcome (`sharpclaw audit tools`). Arguments are truncated in the database and never logged.
 5. **Thread history keeps the tool exchanges.** With its reply the agent posts each round's tool
@@ -307,6 +308,24 @@ How a call is decided (all in the agent's `ToolDispatcher`):
    estimates the request as the gateway does; if it won't fit, it replaces the turn's oldest tool
    results with a short stub (pointing at the saved copy in the workspace, when there is one). A
    turn that still doesn't fit fails with `turn_too_large` rather than `context_too_large`.
+
+#### Fewer approvals
+
+Agents run sandboxed, reach the world only through the gateway, spend against a daily budget and
+hold none of your secrets, so most calls shouldn't need you ([3.6 spec](docs/sharpclaw-3.6-approvals-spec.md)):
+
+- **Defaults.** The template agent uses `allowedRiskLevel: medium`; reading its own workspace no
+  longer raises risk (`taintWorkspaceReads: true` restores that); `sandbox_run` is medium and not
+  always-approve (`ToolBroker__AlwaysApprove__2=sandbox_run` restores that).
+- **Approve and remember.** On an approval card, *Approve and remember* stops asking about that tool
+  for this thread, for this agent, or for this agent for 1, 8 or 24 hours (CLI: `--remember`,
+  `--ttl`). The agent page lists these standing approvals and revokes them. `github_write` and
+  `github_create_pr` act as you, so they can't be remembered.
+- **Approve all** on the Approvals page answers every pending approval at once.
+- **Autonomy mode** (agent page, or `PATCH /api/agents/{name}` with `autonomous: true`) approves
+  every call the agent makes, at any risk, GitHub writes included. Blocked calls still never run.
+- Standing approvals and autonomy also answer for `unattended` messages. The gateway records each
+  automatic decision (`decidedBy: grant` or `autonomy`); agents can't see or change either.
 
 No tool executes code or shell commands inside the agent. The agent container (no network,
 read-only root filesystem, only its own `/workspace`) contains anything a workspace tool does.
@@ -716,7 +735,9 @@ Behaviour is specified phase by phase; later specs win where they differ:
 [3.2](docs/sharpclaw-3.2-implementation-spec.md) (tools, risk and approvals) →
 [pre-3.3 foundations](docs/sharpclaw-pre-3.3-foundations-spec.md) (browser auth, replayable events) →
 [3.3](docs/sharpclaw-3.3-implementation-spec.md) (web UI) →
-[3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign), plus the
+[3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign) →
+[3.5](docs/sharpclaw-3.5-implementation-spec.md) (agent to agent) →
+[3.6](docs/sharpclaw-3.6-approvals-spec.md) (fewer approvals), plus the
 [agent tools spec](docs/sharpclaw-agent-tools-spec.md), the
 [external tools spec](docs/sharpclaw-external-tools-spec.md) and the [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
 ([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the

@@ -149,6 +149,34 @@ public partial class CliTests
     }
 
     [Fact]
+    public async Task Approvals_approve_can_remember_with_a_time_box()
+    {
+        var gw = new FakeGateway();
+        var id = Guid.NewGuid();
+        var output = new StringWriter();
+
+        await Commands.RunAsync(new[] { "approvals", "approve", id.ToString(), "--remember", "agent", "--ttl", "8" },
+            gw, output, TextReader.Null, CancellationToken.None);
+
+        Assert.Equal(new ApprovalRememberRequest("agent", 8), gw.LastRemember);
+        Assert.Contains("Not asking again for this tool (agent, 8 h)", output.ToString());
+    }
+
+    [Theory]
+    [InlineData("deny", "--remember", "thread")]
+    [InlineData("approve", "--ttl", "8")]
+    [InlineData("approve", "--ttl", "soon")]
+    public async Task Approvals_remember_options_are_checked(string verb, string option, string value)
+    {
+        var gw = new FakeGateway();
+
+        await Assert.ThrowsAsync<CliException>(() => Commands.RunAsync(
+            new[] { "approvals", verb, Guid.NewGuid().ToString(), option, value }, gw, new StringWriter(), TextReader.Null,
+            CancellationToken.None));
+        Assert.Empty(gw.Decisions);
+    }
+
+    [Fact]
     public async Task Ask_unattended_posts_the_flag()
     {
         var gw = new FakeGateway();

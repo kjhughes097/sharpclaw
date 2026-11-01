@@ -42,7 +42,7 @@ unit suffix is added. Histograms only gain `_bucket`, `_sum` and `_count`.
 | `sharpclaw.inbox.depth` | `sharpclaw.inbox.depth` (only present while messages are pending) |
 | `sharpclaw.auth.failures` | `sharpclaw.auth.failures` (only present after a failure) |
 | `sharpclaw.tool.calls` (3.2) | `sharpclaw.tool.calls` (labels agent, tool, status) |
-| `sharpclaw.approvals` (3.2) | `sharpclaw.approvals` (labels agent, status) |
+| `sharpclaw.approvals` (3.2) | `sharpclaw.approvals` (labels agent, status, type = who decided: user, system, grant, autonomy (3.6)) |
 
 ### Added by the pre-3.3 foundations
 
@@ -57,7 +57,7 @@ Confirmed live in VictoriaMetrics on 2026-10-27 (the dashboard panels use these 
 | `sharpclaw.context.estimated_tokens` | `sharpclaw.context.estimated_tokens_bucket` / `_sum` / `_count` | agent |
 | `sharpclaw.sse.subscribers` | `sharpclaw.sse.subscribers` | scope (`thread`, `global`) |
 | `sharpclaw.approvals.pending` | `sharpclaw.approvals.pending` | agent |
-| `sharpclaw.approval.decision_time` | `sharpclaw.approval.decision_time_bucket` / `_sum` / `_count` | agent, status |
+| `sharpclaw.approval.decision_time` | `sharpclaw.approval.decision_time_bucket` / `_sum` / `_count` | agent, status, type |
 | `sharpclaw.tool.unreported` | `sharpclaw.tool.unreported` | agent (tool calls older than 5 min never reported) |
 
 ### Added by the external tools spec

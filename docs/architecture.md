@@ -134,7 +134,8 @@ sequenceDiagram
    (smart-mode classifier for uncertain calls; it sees a tool's structured fields when it has them,
    never model-supplied free text) → taint bump → approval if above `allowedRiskLevel`, or always
    for an always-approve tool (`POST /agent/approvals` then poll; the human decides via
-   `POST /api/approvals/{id}`) → execute → report (`POST /agent/tool-calls`). Workspace file I/O
+   `POST /api/approvals/{id}`; the gateway answers at once when the agent is in autonomy mode or a
+   standing grant covers the tool, 3.6 spec) → execute → report (`POST /agent/tool-calls`). Workspace file I/O
    opens every path component without following symbolic links (`NoFollow`).
 6. **Finish.** `POST /agent/threads/{id}/messages` stores the tool exchanges plus the reply in one
    transaction and emits `message.completed`; or `POST /agent/messages/{id}/fail` emits `error`.
@@ -199,7 +200,7 @@ The committed contract is [contracts/openapi/sharpclaw-client.v1.json](../contra
 | threads | `GET/POST /api/threads`, `GET/PATCH /api/threads/{id}`, `GET /api/threads/{id}/trace` |
 | messages | `GET/POST /api/threads/{id}/messages` (seq paging), `GET /api/threads/{id}/stream` (SSE) |
 | events | `GET /api/events` (global SSE stream) |
-| approvals | `GET /api/approvals`, `GET /api/approvals/{id}` (adds `detail` for broker calls: a command, capped at 1,000 chars), `POST /api/approvals/{id}` (decide) |
+| approvals | `GET /api/approvals`, `GET /api/approvals/{id}` (adds `detail` for broker calls: a command, capped at 1,000 chars), `POST /api/approvals/{id}` (decide; optional `remember` creates a standing grant), `POST /api/approvals/batch` (decide many), `GET /api/agents/{idOrName}/grants`, `DELETE /api/agents/{idOrName}/grants/{grantId}` |
 | audit | `GET /api/audit/llm-calls`, `GET /api/audit/tool-calls` (keyset cursors) |
 | system | `GET /api/system` (version, provider, clock, `models` allow-list) |
 | dashboard (3.3.1) | `GET /api/usage?range=today\|7d\|30d&agent=` (zero-filled UTC buckets, by model, by agent), `GET /api/activity` (recent prompts and replies across threads), `GET /api/credits` (cached OpenRouter balance) |
@@ -287,7 +288,8 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), [contract
 | `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`) and `sent_by_user` (user name or `admin_key`), or for agent asks `sender_agent_id`, `origin_message_id`/`origin_tool_call_id`, `hop` and `origin_tainted`. |
 | `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose `chat`/`risk_assessment`/`web_search`, outcome). |
 | `tool_calls` | Every tool call the model requested, plus the agent's report. |
-| `approvals` | Approval requests and decisions (`decided_by` = user/system; `decided_by_user` = which user, or `admin_key`); `args_hash` binds an approval to exact arguments, `used_at` marks it consumed by the broker. |
+| `approvals` | Approval requests and decisions (`decided_by` = user/system/grant/autonomy; `decided_by_user` = which user, or `admin_key`; `grant_id` = the grant that approved it); `args_hash` binds an approval to exact arguments, `used_at` marks it consumed by the broker. |
+| `approval_grants` | Standing approvals (3.6): agent, tool, optional thread, optional expiry, who granted, revoked time. Evaluated only by the gateway. `agents.autonomous` is the autonomy-mode flag. |
 | `sandbox_clones` | Where each agent's sandbox clone came from (host, `owner/repo`, base commit), written by the gateway from the runner's answer to `git_clone`; `github_create_pr` trusts only this. |
 | `broker_calls` | Append-only audit of every tool-broker call: agent, turn, tool, target host or repository, status, bytes, duration, approval. Never arguments or results. |
 | `thread_events`, `event_log_state` | Durable SSE events and the retention watermark. |
