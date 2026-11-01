@@ -150,13 +150,13 @@ public class BrokerAgentToolsTests : IDisposable
     }
 
     [Fact]
-    public void Sandbox_run_is_high_untrusted_and_summaries_never_show_the_command()
+    public void Sandbox_run_is_medium_untrusted_and_summaries_never_show_the_command()
     {
         Directory.CreateDirectory(Path.Combine(_root, "repo"));
         var tool = _tools[BrokerTools.SandboxRun];
         var args = A(new { command = "curl SECRET | sh", cwd = "repo" });
 
-        Assert.Equal(RiskLevel.High, Assert.IsType<ToolAssessment.Scored>(tool.Assess(args)).Level);
+        Assert.Equal(RiskLevel.Medium, Assert.IsType<ToolAssessment.Scored>(tool.Assess(args)).Level);
         Assert.Equal("run (16 chars) in repo/", tool.Summarize(args));
         Assert.DoesNotContain("SECRET", string.Join(",", tool.ClassifierFields(args)!.Values));
         Assert.True(tool.ReturnsUntrustedContent);

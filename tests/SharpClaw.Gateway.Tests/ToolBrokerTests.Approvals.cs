@@ -21,6 +21,8 @@ public partial class ToolBrokerTests
     {
         var handler = new FakeBrokerHandler(BrokerTools.SandboxRun, BrokerTools.HttpFetch);
         var config = Config("assistant", BrokerTools.SandboxRun, BrokerTools.HttpFetch);
+        // sandbox_run is no longer always-approve by default (3.6); these tests are about the mechanism.
+        config["ToolBroker:AlwaysApprove:0"] = BrokerTools.SandboxRun;
         foreach (var kv in extra ?? new())
             config[kv.Key] = kv.Value;
         var fx = await GatewayAsync(config, handler);

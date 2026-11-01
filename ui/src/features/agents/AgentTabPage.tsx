@@ -24,6 +24,7 @@ import { ActivityList, useActivity } from '../overview/ActivityList';
 import { isOnline } from '../overview/OverviewPage';
 import { CostByModelCard, UsageCard } from '../overview/UsageCards';
 import { useLiveActivity } from '../overview/useLiveActivity';
+import { ApprovalPolicySection } from './AgentApprovals';
 import { ConfigNote, LastSeen } from './AgentParts';
 import { useAgent, useUpdateAgent } from './agentQueries';
 import { LlmCallsSection } from './AgentLlmCalls';
@@ -111,6 +112,7 @@ function AgentTab({ agent }: { agent: AgentDto }) {
         key={`${agent.model}|${agent.dailyBudgetUsd}|${agent.contextWindowTokens ?? ''}`}
         agent={agent}
       />
+      <ApprovalPolicySection agent={agent} />
       <SkillsSection agent={agent} />
       <TokensSection name={agent.name} />
       <LlmCallsSection name={agent.name} />
@@ -138,6 +140,7 @@ function HeaderStrip({ agent }: { agent: AgentDto }) {
       <span className="flex items-center gap-2">
         <h1 className="text-lg font-semibold">{agent.name}</h1>
         <Badge tone={agent.enabled ? 'ok' : 'neutral'}>{agent.enabled ? 'enabled' : 'disabled'}</Badge>
+        {agent.autonomous && <Badge tone="warn">autonomous</Badge>}
       </span>
       <span className="text-muted">{agent.model}</span>
       <span className="inline-flex items-center gap-1.5">

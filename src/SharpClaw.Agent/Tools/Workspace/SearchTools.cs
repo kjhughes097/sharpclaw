@@ -23,6 +23,7 @@ internal sealed class SearchTool(WorkspaceRoot root) : IAgentTool
         {"type":"object","properties":{"query":{"type":"string","description":"Literal text to find (1-200 characters, case-insensitive)"},"path":{"type":"string","description":"Directory to search, relative to the workspace root; omit for the root"},"glob":{"type":"string","description":"Optional file filter, e.g. *.md or notes/**/*.txt"}},"required":["query"]}
         """;
     public bool ReturnsUntrustedContent => true;
+    public bool ReadsOwnWorkspace => true;
 
     public ToolAssessment Assess(JsonElement args)
     {

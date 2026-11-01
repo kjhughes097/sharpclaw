@@ -233,7 +233,7 @@ Re-run the `dotnet publish` line after pulling CLI changes. Without installing, 
 | `sharpclaw chat <agent> [--thread <id>]` | Interactive chat; `/exit` quits |
 | `sharpclaw ask <agent> "<text>" [--unattended]` | One-shot chat; `--unattended` denies any approval at once |
 | `sharpclaw approvals list [--status pending] [--agent <name>]` | The approval queue |
-| `sharpclaw approvals approve <id>` / `approvals deny <id>` | Answer a pending approval from any terminal |
+| `sharpclaw approvals approve <id> [--remember thread\|agent] [--ttl 1\|8\|24]` / `approvals deny <id>` | Answer a pending approval from any terminal; `--remember` stops asking about that tool |
 | `sharpclaw users create <name> [--password-stdin]` | Create a browser user (prompts twice without echo) |
 | `sharpclaw users list` | Users and whether they are disabled |
 | `sharpclaw users set-password <name> [--password-stdin]` | Reset a password; signs out their sessions |
@@ -254,7 +254,7 @@ e.g. [docker/template/agents/assistant/config/agent.json](docker/template/agents
 
 ```json
 {
-  "allowedRiskLevel": "low",
+  "allowedRiskLevel": "medium",
   "smartMode": true,
   "maxToolIterations": 10,
   "tools": ["workspace_list", "workspace_read", "workspace_search", "workspace_write", "current_time"]
@@ -262,12 +262,14 @@ e.g. [docker/template/agents/assistant/config/agent.json](docker/template/agents
 ```
 
 A missing file runs the agent without tools; an invalid one stops it (exit code 1).
+`taintWorkspaceReads` (default `false`) makes `workspace_read` and `workspace_search` taint the turn
+like web content does; see [Fewer approvals](#fewer-approvals).
 
 | Tool | Risk |
 |---|---|
 | `workspace_list` | low |
-| `workspace_read` | low (content is untrusted: later calls in the turn are scored one level higher); 64 KB per call, page with `offset` / `nextOffset` |
-| `workspace_search` | low (literal, case-insensitive; results are untrusted like `workspace_read`) |
+| `workspace_read` | low; 64 KB per call, page with `offset` / `nextOffset` (results are stubbed in thread history; taint only with `taintWorkspaceReads`) |
+| `workspace_search` | low (literal, case-insensitive; treated like `workspace_read`) |
 | `workspace_find` | low (glob such as `**/*.md`) |
 | `workspace_write` | new file low, overwrite medium; scripts, executables and dotfiles uncertain |
 | `workspace_edit` | medium (replaces text that occurs exactly once); scripts, executables and dotfiles uncertain |
@@ -287,12 +289,14 @@ How a call is decided (all in the agent's `ToolDispatcher`):
    links, size caps. Blocked calls are never offered for approval.
 2. **Risk** comes from the arguments. *Uncertain* calls are classified by an extra LLM call when
    `smartMode` is on (only the tool name and a content-free summary are sent), otherwise treated
-   as high. After untrusted content has been read in the turn, risk goes up one level.
+   as high. After untrusted content (web, GitHub, another agent, sandbox output) has been read in
+   the turn, risk goes up one level.
 3. **Above `allowedRiskLevel`**, the agent asks the user through the gateway. The approval waits
    in a queue (`GET /api/approvals`, `sharpclaw approvals list`) whether or not anyone is
    watching, and expires after 300 s; a message posted `unattended` has its approvals denied at
    once. When a turn ends (reply, failure, claim timeout) its pending approvals expire. Denials
-   go back to the model as a tool error so it can adapt.
+   go back to the model as a tool error so it can adapt. A standing approval or autonomy mode
+   lets the gateway answer for you (see [Fewer approvals](#fewer-approvals)).
 4. Every call is **audited**: the gateway records what the model requested, the agent reports the
    outcome (`sharpclaw audit tools`). Arguments are truncated in the database and never logged.
 5. **Thread history keeps the tool exchanges.** With its reply the agent posts each round's tool
@@ -304,6 +308,24 @@ How a call is decided (all in the agent's `ToolDispatcher`):
    estimates the request as the gateway does; if it won't fit, it replaces the turn's oldest tool
    results with a short stub (pointing at the saved copy in the workspace, when there is one). A
    turn that still doesn't fit fails with `turn_too_large` rather than `context_too_large`.
+
+#### Fewer approvals
+
+Agents run sandboxed, reach the world only through the gateway, spend against a daily budget and
+hold none of your secrets, so most calls shouldn't need you ([3.6 spec](docs/sharpclaw-3.6-approvals-spec.md)):
+
+- **Defaults.** The template agent uses `allowedRiskLevel: medium`; reading its own workspace no
+  longer raises risk (`taintWorkspaceReads: true` restores that); `sandbox_run` is medium and not
+  always-approve (`ToolBroker__AlwaysApprove__2=sandbox_run` restores that).
+- **Approve and remember.** On an approval card, *Approve and remember* stops asking about that tool
+  for this thread, for this agent, or for this agent for 1, 8 or 24 hours (CLI: `--remember`,
+  `--ttl`). The agent page lists these standing approvals and revokes them. `github_write` and
+  `github_create_pr` act as you, so they can't be remembered.
+- **Approve all** on the Approvals page answers every pending approval at once.
+- **Autonomy mode** (agent page, or `PATCH /api/agents/{name}` with `autonomous: true`) approves
+  every call the agent makes, at any risk, GitHub writes included. Blocked calls still never run.
+- Standing approvals and autonomy also answer for `unattended` messages. The gateway records each
+  automatic decision (`decidedBy: grant` or `autonomy`); agents can't see or change either.
 
 No tool executes code or shell commands inside the agent. The agent container (no network,
 read-only root filesystem, only its own `/workspace`) contains anything a workspace tool does.
@@ -327,7 +349,7 @@ be in the agent's `agent.json` **and** listed for it by the operator in the gate
 | `web_search` | gateway | low | OpenRouter web plugin on `WebSearch:Model`; recorded in `llm_calls` and counts against the budget; untrusted |
 | `extract_text` | sandbox | low; script/dotfile output uncertain | `.html` → Markdown, `.pdf` → text, into a new workspace file |
 | `git_clone` | sandbox | medium | Public repos over HTTPS from `ToolBroker:CloneAllowHosts` (github.com, gitlab.com); shallow, no hooks |
-| `sandbox_run` | sandbox | high, **always approved** | `bash -c` in a workspace folder; 10 min (operator max 30); first 16 KB of output inline, the complete output in a log file under `.sandbox/logs/`; untrusted |
+| `sandbox_run` | sandbox | medium | `bash -c` in a workspace folder; 10 min (operator max 30); first 16 KB of output inline, the complete output in a log file under `.sandbox/logs/`; untrusted |
 | `github_read` | gateway | low | Issues, PRs, diffs, comments, files; untrusted |
 | `github_write` | gateway | high, **always approved** | Comment, create issue, add/remove labels |
 | `github_create_pr` | gateway + sandbox | high, **always approved** | PR from your machine user's fork (below) |
@@ -559,7 +581,7 @@ ASP.NET `__` syntax).
 | `ToolBroker:Agents:<name>:Tools` | empty | Broker tools the agent may call (the operator's gate) |
 | `ToolBroker:Agents:<name>:AllTools` | `false` | `true`: the agent may call every broker tool and `Tools` is ignored (the quick start sets this) |
 | `ToolBroker:Agents:<name>:SandboxUrl` / `SandboxSecret` | empty | The agent's sandbox runner and its service secret (`SANDBOX_<NAME>_SECRET`); empty secret: no sandbox (`503 tool_unavailable`) |
-| `ToolBroker:AlwaysApprove` | `sandbox_run`, `github_write`, `github_create_pr` | Tools the gateway never runs without a matching approval; `ToolBroker__AlwaysApprove__0=` (empty) clears it |
+| `ToolBroker:AlwaysApprove` | `github_write`, `github_create_pr` | Tools the gateway never runs without a matching approval; `ToolBroker__AlwaysApprove__0=` (empty) clears it |
 | `ToolBroker:ApprovalUseSeconds` | `600` | An approval must be used this soon after it was decided |
 | `ToolBroker:MaxResponseBytes` | `4194304` | Largest tool result returned to an agent |
 | `ToolBroker:SandboxRunMaxSeconds` | `600` | Longest `sandbox_run` (at most 1800) |
@@ -713,7 +735,9 @@ Behaviour is specified phase by phase; later specs win where they differ:
 [3.2](docs/sharpclaw-3.2-implementation-spec.md) (tools, risk and approvals) →
 [pre-3.3 foundations](docs/sharpclaw-pre-3.3-foundations-spec.md) (browser auth, replayable events) →
 [3.3](docs/sharpclaw-3.3-implementation-spec.md) (web UI) →
-[3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign), plus the
+[3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign) →
+[3.5](docs/sharpclaw-3.5-implementation-spec.md) (agent to agent) →
+[3.6](docs/sharpclaw-3.6-approvals-spec.md) (fewer approvals), plus the
 [agent tools spec](docs/sharpclaw-agent-tools-spec.md), the
 [external tools spec](docs/sharpclaw-external-tools-spec.md) and the [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
 ([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the

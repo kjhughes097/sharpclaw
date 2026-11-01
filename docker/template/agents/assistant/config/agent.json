@@ -1,5 +1,5 @@
 {
-  "allowedRiskLevel": "low",
+  "allowedRiskLevel": "medium",
   "smartMode": true,
   "maxToolIterations": 10,
   "tools": [

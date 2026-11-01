@@ -25,7 +25,6 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Item | Notes |
 |---|---|
 | Agent-reported tool outcomes are self-reported | The gateway independently records every tool call the model requested, so a missing report is visible (`status = requested`), but what a local tool actually did is only what the agent says. Docker isolation limits the damage. |
-| No "always allow" for approvals | Every call above the allowed level asks again. |
 
 ## Accepted by design (pre-3.3 foundations, section 15)
 
@@ -72,7 +71,7 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Item | Notes |
 |---|---|
 | Credentialed integrations live in the gateway | The GitHub token sits next to the OpenRouter keys, and the gateway makes fixed, typed calls to `api.github.com`. A separate credentials container (`toolhost`) was considered and dropped: it would only protect the token from a compromised gateway, which already holds more valuable keys. Fix: split them out into their own container when several credentialed integrations (Jira, Slack, email…) start crowding the gateway, or when one needs more than typed JSON calls. |
-| Sandboxed code can send its agent's workspace to the internet | Sandbox egress is open (private and LAN addresses blocked). Mitigated by gateway-enforced approval for every `sandbox_run` and one workspace per sandbox. Fix: an egress allow-list per agent if workspaces start holding sensitive data. |
+| Sandboxed code can send its agent's workspace to the internet | Sandbox egress is open (private and LAN addresses blocked). Mitigated by one workspace per sandbox and by keeping secrets out of workspaces; since 3.6 `sandbox_run` is medium risk and no longer always-approve by default (operators can set `ToolBroker:AlwaysApprove` back). Fix: an egress allow-list per agent if workspaces start holding sensitive data. |
 | Spilled tool output is never cleaned up | Pages and run logs saved under `.sandbox/fetch/` and `.sandbox/logs/` (external tools spec 7.0) stay in the workspace until someone deletes them. Fix: prune files older than N days at sandbox start if workspaces grow noticeably. |
 | The agent reads the broker policy once at startup | `GET /agent/tools` (always-approve list, fetch and clone hosts) is read when the agent starts; changing `ToolBroker:*` needs an agent restart to change its risk scoring. The gateway's own checks apply immediately either way. |
 | `github_create_pr` is tested against a fake GitHub only | The fork, Git Data and PR calls follow GitHub's REST docs and are covered by a fake api.github.com; no live PR has been opened yet. Fix: a manual run on a scratch repository, recorded in [verification-log.md](verification-log.md). |
@@ -85,6 +84,12 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Skill contents are trusted | `skill_read` results don't taint the turn: skills are operator-curated and mounted read-only, like `soul.md`. A third-party skill could carry prompt injection; the README warns operators to review skills before adding them. Fix: mark skills as untrusted (or per-skill trust) if operators start importing skills they don't review. |
 | One shared skill library for every agent | No per-agent selection; every agent with `skill_read` sees every skill. Fix: an optional `skills` list in `agent.json` if agents need different sets. |
 | The skill index is built only at startup | New, removed or re-described skills need an agent restart (file contents are read live). Fix: re-scan per turn if restarts become a nuisance. |
+
+## Accepted by design (Phase 3.6 spec)
+
+| Item | Notes |
+|---|---|
+| Workspace reads don't taint by default | `workspace_read` / `workspace_search` results are still stubbed in thread history, but no longer raise the risk of later calls. Content that reached the workspace through a download, clone or sandbox run, read in a later call, is treated as trusted. Accepted because agents hold no secrets and act only inside their sandbox. Fix: provenance tracking per file, or set `taintWorkspaceReads: true` for agents that handle sensitive data. |
 
 ## Accepted by design (Phase 3.5 spec)
 

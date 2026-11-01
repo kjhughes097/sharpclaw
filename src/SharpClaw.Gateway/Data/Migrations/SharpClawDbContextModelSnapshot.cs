@@ -24,6 +24,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("id");
 
+                    b.Property<bool>("Autonomous")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("autonomous");
+
                     b.Property<int?>("ContextWindowTokens")
                         .HasColumnType("INTEGER")
                         .HasColumnName("context_window_tokens");
@@ -179,6 +183,10 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("expires_at");
 
+                    b.Property<Guid?>("GrantId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("grant_id");
+
                     b.Property<string>("Reason")
                         .IsRequired()
                         .HasColumnType("TEXT")
@@ -224,6 +232,51 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.HasIndex("CorrelationId");
 
                     b.ToTable("approvals", (string)null);
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.ApprovalGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("AgentId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("agent_id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedByUser")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_by_user");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<Guid?>("ThreadId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("thread_id");
+
+                    b.Property<string>("ToolName")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("tool_name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AgentId", "ToolName");
+
+                    b.ToTable("approval_grants", (string)null);
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.BrokerCall", b =>
@@ -873,6 +926,15 @@ namespace SharpClaw.Gateway.Data.Migrations
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.Approval", b =>
+                {
+                    b.HasOne("SharpClaw.Gateway.Data.Agent", null)
+                        .WithMany()
+                        .HasForeignKey("AgentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.ApprovalGrant", b =>
                 {
                     b.HasOne("SharpClaw.Gateway.Data.Agent", null)
                         .WithMany()

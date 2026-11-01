@@ -18,6 +18,12 @@ public class Agent
     /// <summary>When the agent last reported its skills (<c>PUT /agent/skills</c>); null if never.</summary>
     public DateTime? SkillsReportedAt { get; set; }
 
+    /// <summary>
+    /// Autonomy mode (3.6 spec Q7): the gateway approves every approval this agent raises. Set only
+    /// through the client API, never by the agent.
+    /// </summary>
+    public bool Autonomous { get; set; }
+
     public List<AgentToken> Tokens { get; set; } = new();
 }
 
@@ -257,6 +263,31 @@ public class Approval
     /// arguments (e.g. the command, capped at 1,000 characters). Never in lists, events or logs.
     /// </summary>
     public string? Detail { get; set; }
+
+    /// <summary>The standing grant that approved this call (<c>decided_by = grant</c>), if any.</summary>
+    public Guid? GrantId { get; set; }
+}
+
+/// <summary>
+/// A standing approval (3.6 spec section 5): calls of one tool by one agent are approved by the
+/// gateway without asking, in one thread (<see cref="ThreadId"/> set) or in all of them.
+/// </summary>
+public class ApprovalGrant
+{
+    public Guid Id { get; set; }
+    public Guid AgentId { get; set; }
+    public string ToolName { get; set; } = "";
+
+    /// <summary>Null for an agent-wide grant.</summary>
+    public Guid? ThreadId { get; set; }
+
+    /// <summary>Null means until revoked.</summary>
+    public DateTime? ExpiresAt { get; set; }
+
+    /// <summary>The user who granted it, or <c>admin_key</c>.</summary>
+    public string? CreatedByUser { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? RevokedAt { get; set; }
 }
 
 /// <summary>

@@ -8,4 +8,9 @@ describe('deciderLabel', () => {
     expect(deciderLabel('system', null)).toBe('system');
     expect(deciderLabel(null, null)).toBeNull();
   });
+
+  it('labels automatic decisions', () => {
+    expect(deciderLabel('grant', null)).toBe('standing approval');
+    expect(deciderLabel('autonomy', null)).toBe('autonomy mode');
+  });
 });

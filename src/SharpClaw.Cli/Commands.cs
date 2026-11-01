@@ -224,14 +224,29 @@ public static class Commands
             {
                 var raw = a.Positionals.ElementAtOrDefault(2) ?? throw new CliException("approval id is required.");
                 if (!Guid.TryParse(raw, out var id)) throw new CliException("approval id must be a GUID.");
+                var remember = Remember(a, verb);
                 var decided = await gw.DecideApprovalAsync(id,
-                    verb == "approve" ? ApprovalStatuses.Approved : ApprovalStatuses.Denied);
-                await o.WriteLineAsync($"Approval {decided.Id}: {decided.Status}.");
+                    verb == "approve" ? ApprovalStatuses.Approved : ApprovalStatuses.Denied, remember);
+                await o.WriteLineAsync($"Approval {decided.Id}: {decided.Status}." +
+                    (remember is null ? "" : $" Not asking again for this tool ({remember.Scope}" +
+                        (remember.TtlHours is { } h ? $", {h} h" : "") + ")."));
                 break;
             }
             default:
                 throw new CliException(Usage);
         }
+    }
+
+    /// <summary><c>--remember thread|agent [--ttl 1|8|24]</c>: a standing grant (3.6 spec section 8); the gateway validates the values.</summary>
+    private static ApprovalRememberRequest? Remember(ParsedArgs a, string verb)
+    {
+        var scope = a.Get("remember");
+        var ttl = a.Has("ttl") ? a.GetInt("ttl") ?? throw new CliException("--ttl must be a number of hours.") : (int?)null;
+        if (scope is null)
+            return ttl is null ? null : throw new CliException("--ttl needs --remember.");
+        if (verb != "approve")
+            throw new CliException("--remember only goes with approve.");
+        return new ApprovalRememberRequest(scope, ttl);
     }
 
     private static async Task Chat(ParsedArgs a, ICliGateway gw, TextWriter o, TextReader input, CancellationToken ct)
@@ -291,7 +306,7 @@ public static class Commands
           sharpclaw chat <agent> [--thread <id>]
           sharpclaw ask <agent> "<text>" [--unattended]
           sharpclaw approvals list [--status pending] [--agent <name>]
-          sharpclaw approvals approve <id>
+          sharpclaw approvals approve <id> [--remember thread|agent] [--ttl 1|8|24]
           sharpclaw approvals deny <id>
           sharpclaw users create <name> [--password-stdin]
           sharpclaw users list

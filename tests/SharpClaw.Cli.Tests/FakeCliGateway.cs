@@ -152,11 +152,14 @@ public partial class CliTests
             return Task.FromResult(new UserAdminDto(Guid.NewGuid(), name, disabled, TestClock.Now));
         }
 
-        public Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision)
+        public ApprovalRememberRequest? LastRemember { get; private set; }
+
+        public Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision, ApprovalRememberRequest? remember = null)
         {
             if (DecisionConflicts)
                 throw new CliException("Approval is already expired.");
             Decisions.Add((approvalId, decision));
+            LastRemember = remember;
             return Task.FromResult(new ApprovalDto(approvalId, decision, "user", TestClock.Now));
         }
 

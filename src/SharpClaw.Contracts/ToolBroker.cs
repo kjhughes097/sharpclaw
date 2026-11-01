@@ -28,8 +28,17 @@ public static class BrokerTools
         AskAgent,
     };
 
-    /// <summary>Tools the gateway always requires an approval for unless the operator says otherwise (Q2).</summary>
-    public static readonly IReadOnlyList<string> DefaultAlwaysApprove = new[] { SandboxRun, GitHubWrite, GitHubCreatePr };
+    /// <summary>
+    /// Tools the gateway always requires an approval for unless the operator says otherwise (Q2).
+    /// <c>sandbox_run</c> left this list in 3.6 (spec section 4).
+    /// </summary>
+    public static readonly IReadOnlyList<string> DefaultAlwaysApprove = new[] { GitHubWrite, GitHubCreatePr };
+
+    /// <summary>
+    /// Tools that act as the user outside the sandbox: never covered by a standing grant, only by
+    /// autonomy mode (3.6 spec Q6).
+    /// </summary>
+    public static readonly IReadOnlySet<string> NonGrantable = new HashSet<string>(StringComparer.Ordinal) { GitHubWrite, GitHubCreatePr };
 }
 
 /// <summary>

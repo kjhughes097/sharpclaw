@@ -4,7 +4,8 @@ namespace SharpClaw.Contracts;
 
 public sealed record CreateAgentRequest(string Name, string Model, double DailyBudgetUsd, int? ContextWindowTokens = null);
 
-public sealed record UpdateAgentRequest(string? Model, double? DailyBudgetUsd, bool? Enabled, int? ContextWindowTokens = null);
+/// <summary><c>Autonomous</c>: autonomy mode, the gateway approves every approval the agent raises (3.6 spec Q7).</summary>
+public sealed record UpdateAgentRequest(string? Model, double? DailyBudgetUsd, bool? Enabled, int? ContextWindowTokens = null, bool? Autonomous = null);
 
 /// <summary>
 /// <c>ContextWindowTokens</c> is the agent's override; null means the gateway default.
@@ -24,7 +25,8 @@ public sealed record AgentDto(
     IReadOnlyList<AgentSkillDto> Skills,
     int? ContextWindowTokens = null,
     DateTime? LastSeenAt = null,
-    DateTime? SkillsReportedAt = null);
+    DateTime? SkillsReportedAt = null,
+    bool Autonomous = false);
 
 /// <summary>A skill an agent has loaded: its operator-chosen name and one-line description.</summary>
 public sealed record AgentSkillDto(string Name, string Description);

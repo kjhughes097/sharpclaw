@@ -116,10 +116,10 @@ public sealed class CliGateway : ICliGateway, IDisposable
         return await ReadAsync<ToolCallAuditResponse>(resp);
     }
 
-    public async Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision)
+    public async Task<ApprovalDto> DecideApprovalAsync(Guid approvalId, string decision, ApprovalRememberRequest? remember = null)
     {
         using var resp = await _http.PostAsJsonAsync($"{_baseUrl}/api/approvals/{approvalId}",
-            new DecideApprovalRequest(decision), SharpClawJson.Options);
+            new DecideApprovalRequest(decision, remember), SharpClawJson.Options);
         return (await ReadAsync<ApprovalResponse>(resp)).Approval;
     }
 

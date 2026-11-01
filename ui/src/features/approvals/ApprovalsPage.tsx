@@ -1,12 +1,14 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Tabs } from 'radix-ui';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { api, call } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { usePendingApprovals } from '../../api/hooks';
 import { keys } from '../../api/queryKeys';
 import type { ApprovalDetailDto } from '../../api/types';
-import { EmptyState, ErrorState, LoadingState } from '../../components/ui';
+import { useToast } from '../../app/toast';
+import { Button, ConfirmDialog, EmptyState, ErrorState, LoadingState } from '../../components/ui';
 import { ApprovalCard } from './ApprovalCard';
 
 function ApprovalList({
@@ -33,6 +35,49 @@ function ApprovalList({
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Approves every pending approval shown, in one request (3.6 spec Q9), after a confirmation. */
+function ApproveAll({ approvals }: { approvals: ApprovalDetailDto[] }) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const batch = useMutation({
+    mutationFn: (ids: string[]) =>
+      call(() => api.POST('/api/approvals/batch', { body: { decision: 'approved', ids } })),
+    onSuccess: (result) =>
+      toast(
+        `Approved ${result.decided.length}.${result.skipped ? ` ${result.skipped} were already decided.` : ''}`,
+        'success',
+      ),
+    onError: (err) => toast(errorMessage(err), 'error'),
+    onSettled: () => {
+      setOpen(false);
+      void queryClient.invalidateQueries({ queryKey: keys.approvals });
+      void queryClient.invalidateQueries({ queryKey: keys.allThreadDetails });
+    },
+  });
+  if (approvals.length < 2) return null;
+  const critical = approvals.some((a) => a.risk === 'critical');
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>Approve all ({approvals.length})</Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Approve all ${approvals.length} pending approvals?`}
+        description={
+          critical
+            ? 'At least one of them is critical risk. Each call runs once; nothing is remembered.'
+            : 'Each call runs once; nothing is remembered.'
+        }
+        confirmLabel="Approve all"
+        danger={critical}
+        busy={batch.isPending}
+        onConfirm={() => batch.mutate(approvals.slice(0, 100).map((a) => a.id))}
+      />
+    </>
   );
 }
 
@@ -69,6 +114,11 @@ export function ApprovalsPage() {
           ))}
         </Tabs.List>
         <Tabs.Content value="pending">
+          {pending.data && pending.data.length > 1 && (
+            <div className="flex justify-end px-4 pt-3">
+              <ApproveAll approvals={pending.data} />
+            </div>
+          )}
           <ApprovalList query={pending} empty="Nothing is waiting for you." />
         </Tabs.Content>
         <Tabs.Content value="recent">

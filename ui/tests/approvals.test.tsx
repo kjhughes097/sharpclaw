@@ -8,11 +8,11 @@ import { renderApp, renderWithProviders } from './utils';
 import { ApprovalCard } from '../src/features/approvals/ApprovalCard';
 
 function decisions() {
-  const posted: { id: string; decision: string }[] = [];
+  const posted: { id: string; decision: string; remember?: unknown }[] = [];
   server.use(
     http.post('*/api/approvals/:id', async ({ params, request }) => {
-      const body = (await request.json()) as { decision: string };
-      posted.push({ id: String(params.id), decision: body.decision });
+      const body = (await request.json()) as { decision: string; remember?: unknown };
+      posted.push({ id: String(params.id), decision: body.decision, remember: body.remember });
       return HttpResponse.json({
         approval: { id: params.id, status: body.decision, decidedBy: 'user', expiresAt: '' },
       });
@@ -67,7 +67,13 @@ describe('approvals', () => {
     );
     renderWithProviders(
       <>
-        <ApprovalCard approval={fixtures.approval({ id: 'run-1', toolName: 'sandbox_run', summary: 'run (24 chars) in repo/' })} />
+        <ApprovalCard
+          approval={fixtures.approval({
+            id: 'run-1',
+            toolName: 'sandbox_run',
+            summary: 'run (24 chars) in repo/',
+          })}
+        />
         <ApprovalCard approval={fixtures.approval({ id: 'del-1' })} />
       </>,
     );
@@ -91,6 +97,88 @@ describe('approvals', () => {
     await user.click(screen.getByRole('button', { name: 'Approve' }));
     await user.click(screen.getByRole('button', { name: 'Yes, approve' }));
     await waitFor(() => expect(posted).toEqual([{ id: 'approval-1', decision: 'approved' }]));
+  });
+
+  it('approves and remembers from the menu', async () => {
+    setServerTime('2026-10-25T12:00:00Z');
+    const posted = decisions();
+    const { user } = renderWithProviders(<ApprovalCard approval={fixtures.approval()} />);
+    await user.click(await screen.findByRole('button', { name: "Approve and don't ask again" }));
+    const items = await screen.findAllByRole('menuitem');
+    expect(items.map((i) => i.textContent)).toEqual([
+      'Approve for this thread',
+      'Approve for this agent',
+      'Approve for this agent for 1 h',
+      'Approve for this agent for 8 h',
+      'Approve for this agent for 24 h',
+    ]);
+    await user.click(screen.getByRole('menuitem', { name: 'Approve for this agent for 8 h' }));
+    await waitFor(() =>
+      expect(posted).toEqual([
+        { id: 'approval-1', decision: 'approved', remember: { scope: 'agent', ttlHours: 8 } },
+      ]),
+    );
+    expect(await screen.findByText(/won't ask again/)).toBeInTheDocument();
+  });
+
+  it('a critical approval confirms before remembering', async () => {
+    setServerTime('2026-10-25T12:00:00Z');
+    const posted = decisions();
+    const { user } = renderWithProviders(<ApprovalCard approval={fixtures.approval({ risk: 'critical' })} />);
+    await user.click(await screen.findByRole('button', { name: "Approve and don't ask again" }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Approve for this thread' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('stop asking (this tool in this thread)');
+    expect(posted).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Yes, approve' }));
+    await waitFor(() =>
+      expect(posted).toEqual([
+        { id: 'approval-1', decision: 'approved', remember: { scope: 'thread', ttlHours: null } },
+      ]),
+    );
+  });
+
+  it('offers no standing approval for tools that act as the user', async () => {
+    setServerTime('2026-10-25T12:00:00Z');
+    renderWithProviders(<ApprovalCard approval={fixtures.approval({ toolName: 'github_write' })} />);
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "Approve and don't ask again" })).toBeNull();
+  });
+
+  it('shows automatic decisions', () => {
+    renderWithProviders(
+      <>
+        <ApprovalCard approval={fixtures.approval({ status: 'approved', decidedBy: 'grant' })} />
+        <ApprovalCard
+          approval={fixtures.approval({ id: 'a-2', status: 'approved', decidedBy: 'autonomy' })}
+        />
+      </>,
+    );
+    expect(screen.getByText('Approved by standing approval')).toBeInTheDocument();
+    expect(screen.getByText('Approved by autonomy mode')).toBeInTheDocument();
+  });
+
+  it('approves all pending approvals in one request after confirming', async () => {
+    let batch: unknown;
+    server.use(
+      http.get('*/api/approvals', () =>
+        HttpResponse.json({
+          approvals: [
+            fixtures.approval(),
+            fixtures.approval({ id: 'approval-2', toolName: 'workspace_write' }),
+          ],
+        }),
+      ),
+      http.post('*/api/approvals/batch', async ({ request }) => {
+        batch = await request.json();
+        return HttpResponse.json({ decided: [], skipped: 0 });
+      }),
+    );
+    const { user } = renderApp('/approvals');
+    await user.click(await screen.findByRole('button', { name: 'Approve all (2)' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Approve all 2 pending approvals?' });
+    expect(batch).toBeUndefined();
+    await user.click(within(dialog).getByRole('button', { name: 'Approve all' }));
+    await waitFor(() => expect(batch).toEqual({ decision: 'approved', ids: ['approval-1', 'approval-2'] }));
   });
 
   it('a 409 shows "Already decided."', async () => {

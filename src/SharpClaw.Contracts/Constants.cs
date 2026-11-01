@@ -144,6 +144,12 @@ public static class ApprovalDecidedBy
     public const string User = "user";
     public const string System = "system";
 
+    /// <summary>Approved by the gateway because a standing grant covers the call (3.6 spec).</summary>
+    public const string Grant = "grant";
+
+    /// <summary>Approved by the gateway because the agent is in autonomy mode (3.6 spec).</summary>
+    public const string Autonomy = "autonomy";
+
     /// <summary><c>decided_by_user</c> when an admin-key client (the CLI) decided.</summary>
     public const string AdminKeyUser = "admin_key";
 }

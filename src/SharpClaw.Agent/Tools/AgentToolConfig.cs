@@ -14,7 +14,8 @@ public sealed record AgentToolConfig(
     RiskLevel AllowedRiskLevel,
     bool SmartMode,
     int MaxToolIterations,
-    IReadOnlyList<string> Tools)
+    IReadOnlyList<string> Tools,
+    bool TaintWorkspaceReads = false)
 {
     /// <summary>Used when the config file is missing: chat only, no tools.</summary>
     public static AgentToolConfig NoTools { get; } = new(RiskLevel.Low, false, 10, Array.Empty<string>());
@@ -45,6 +46,9 @@ public sealed record AgentToolConfig(
 
         var smartMode = root["smartMode"] is { } sm && sm.GetValueKind() == JsonValueKind.True;
 
+        // The agent's own workspace is not untrusted by default (3.6 spec section 3).
+        var taintWorkspaceReads = root["taintWorkspaceReads"] is { } tw && tw.GetValueKind() == JsonValueKind.True;
+
         var maxIterations = 10;
         if (root["maxToolIterations"] is { } mi)
         {
@@ -68,7 +72,7 @@ public sealed record AgentToolConfig(
             }
         }
 
-        return new AgentToolConfig(allowed, smartMode, maxIterations, tools);
+        return new AgentToolConfig(allowed, smartMode, maxIterations, tools, taintWorkspaceReads);
     }
 }
 

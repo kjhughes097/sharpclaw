@@ -52,6 +52,38 @@ export interface paths {
     patch: operations['updateAgent'];
     trace?: never;
   };
+  '/api/agents/{idOrName}/grants': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['listApprovalGrants'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/agents/{idOrName}/grants/{grantId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    delete: operations['revokeApprovalGrant'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/agents/{idOrName}/tokens': {
     parameters: {
       query?: never;
@@ -94,6 +126,22 @@ export interface paths {
     get: operations['listApprovals'];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/approvals/batch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations['decideApprovals'];
     delete?: never;
     options?: never;
     head?: never;
@@ -432,6 +480,8 @@ export interface components {
       nextCursor?: null | string;
     };
     AgentDto: {
+      /** @default false */
+      autonomous: boolean;
       /** Format: int32 */
       contextWindowTokens?: null | number;
       /** Format: date-time */
@@ -481,6 +531,8 @@ export interface components {
       /** Format: date-time */
       expiresAt: string;
       /** Format: uuid */
+      grantId?: null | string;
+      /** Format: uuid */
       id: string;
       reason: string;
       risk: string;
@@ -498,11 +550,34 @@ export interface components {
       /** Format: date-time */
       expiresAt: string;
       /** Format: uuid */
+      grantId?: null | string;
+      /** Format: uuid */
       id: string;
       status: string;
     };
+    ApprovalGrantDto: {
+      /** Format: date-time */
+      createdAt: string;
+      createdByUser: null | string;
+      /** Format: date-time */
+      expiresAt: null | string;
+      /** Format: uuid */
+      id: string;
+      scope: string;
+      /** Format: uuid */
+      threadId: null | string;
+      toolName: string;
+    };
+    ApprovalGrantListResponse: {
+      grants: components['schemas']['ApprovalGrantDto'][];
+    };
     ApprovalListResponse: {
       approvals: components['schemas']['ApprovalDetailDto'][];
+    };
+    ApprovalRememberRequest: {
+      scope: string;
+      /** Format: int32 */
+      ttlHours?: null | number;
     };
     ApprovalResponse: {
       approval: components['schemas']['ApprovalDto'];
@@ -510,6 +585,17 @@ export interface components {
     AuditResponse: {
       calls: components['schemas']['LlmCallDto'][];
       nextCursor?: null | string;
+    };
+    BatchDecideApprovalsRequest: {
+      decision: string;
+      ids?: null | string[];
+      /** Format: uuid */
+      threadId?: null | string;
+    };
+    BatchDecideApprovalsResponse: {
+      decided: components['schemas']['ApprovalDto'][];
+      /** Format: int32 */
+      skipped: number;
     };
     ChangePasswordRequest: {
       currentPassword: string;
@@ -571,6 +657,7 @@ export interface components {
     };
     DecideApprovalRequest: {
       decision: string;
+      remember?: null | components['schemas']['ApprovalRememberRequest'];
     };
     InFlightTurnDto: {
       /** Format: date-time */
@@ -922,6 +1009,7 @@ export interface components {
       userMessageId: string;
     };
     UpdateAgentRequest: {
+      autonomous?: null | boolean;
       /** Format: int32 */
       contextWindowTokens?: null | number;
       /** Format: double */
@@ -1409,6 +1497,157 @@ export interface operations {
       };
     };
   };
+  listApprovalGrants: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        idOrName: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApprovalGrantListResponse'];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+    };
+  };
+  revokeApprovalGrant: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        idOrName: string;
+        grantId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description No Content */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+    };
+  };
   listTokens: {
     parameters: {
       query?: never;
@@ -1660,6 +1899,84 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['ApprovalListResponse'];
+        };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+    };
+  };
+  decideApprovals: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        'application/json': null | components['schemas']['BatchDecideApprovalsRequest'];
+      };
+    };
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['BatchDecideApprovalsResponse'];
         };
       };
       /** @description Bad Request */

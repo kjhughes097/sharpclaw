@@ -21,7 +21,7 @@ test.describe('tools and approvals', () => {
 
     await page
       .getByRole('region', { name: 'Approval for workspace_delete' })
-      .getByRole('button', { name: 'Approve' })
+      .getByRole('button', { name: 'Approve', exact: true })
       .click();
     await expect(messages(page).getByText('The tool step is finished.')).toBeVisible({ timeout: 20_000 });
     await expect(page).toHaveTitle('SharpClaw');
@@ -32,8 +32,32 @@ test.describe('tools and approvals', () => {
     await expect(page.getByText('"ok": true')).toBeVisible();
   });
 
+  test('approve and remember for this thread: the next call runs without asking', async ({
+    page,
+    request,
+  }) => {
+    await login(page);
+    await openNewThread(page, request, 'Remember');
+    await send(page, 'delete the note');
+    const card = page.getByRole('region', { name: 'Approval for workspace_delete' });
+    await expect(card).toBeVisible({ timeout: 20_000 });
+    await card.getByRole('button', { name: "Approve and don't ask again" }).click();
+    await page.getByRole('menuitem', { name: 'Approve for this thread' }).click();
+    await expect(messages(page).getByText('The tool step is finished.')).toBeVisible({ timeout: 20_000 });
+
+    seedWorkspaceFile('notes/old.md');
+    await send(page, 'delete the note');
+    await expect(messages(page).getByText('The tool step is finished.')).toHaveCount(2, { timeout: 20_000 });
+    // Only the first, already-decided card: the second call never asked.
+    await expect(page.getByRole('region', { name: 'Approval for workspace_delete' })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+    const recent = await (await admin(request).get('/api/approvals?limit=1')).json();
+    expect(recent.approvals[0]).toMatchObject({ status: 'approved', decidedBy: 'grant' });
+  });
+
   test('a critical-risk call needs a second confirmation', async ({ page, request }) => {
-    // Reading a file makes the turn untrusted, which raises the delete from high to critical.
+    // With taintWorkspaceReads (e2e/stack.sh), reading a file makes the turn untrusted, which
+    // raises the delete from high to critical.
     seedWorkspaceFile('notes/crit.md', 'critical note\n');
     await login(page);
     await openNewThread(page, request, 'Critical');
@@ -41,12 +65,12 @@ test.describe('tools and approvals', () => {
     const card = page.getByRole('region', { name: 'Approval for workspace_delete' });
     await expect(card.getByText('risk: critical')).toBeVisible({ timeout: 20_000 });
 
-    await card.getByRole('button', { name: 'Approve' }).click();
+    await card.getByRole('button', { name: 'Approve', exact: true }).click();
     await expect(card.getByRole('alert')).toHaveText('This is a critical-risk action. Approve it?');
     await card.getByRole('button', { name: 'Cancel' }).click();
     await expect(card.getByRole('alert')).toHaveCount(0);
 
-    await card.getByRole('button', { name: 'Approve' }).click();
+    await card.getByRole('button', { name: 'Approve', exact: true }).click();
     await card.getByRole('button', { name: 'Yes, approve' }).click();
     await expect(messages(page).getByText('The tool step is finished.')).toBeVisible({ timeout: 20_000 });
     const recent = await (await admin(request).get('/api/approvals?limit=1')).json();
@@ -79,7 +103,7 @@ test.describe('tools and approvals', () => {
     });
     const inbox = other.getByRole('region', { name: 'Approval for workspace_delete' });
     await expect(inbox).toBeVisible();
-    await inbox.getByRole('button', { name: 'Approve' }).click();
+    await inbox.getByRole('button', { name: 'Approve', exact: true }).click();
     await expect(messages(page).getByText('The tool step is finished.')).toBeVisible({ timeout: 20_000 });
     await expect(other.getByText('Nothing is waiting for you.')).toBeVisible();
     expect(threadId).toBeTruthy();

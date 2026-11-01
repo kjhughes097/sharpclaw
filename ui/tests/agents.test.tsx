@@ -431,4 +431,81 @@ describe('agent tab', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Disable' }));
     await waitFor(() => expect(body).toMatchObject({ enabled: false }));
   });
+
+  it('asks before turning autonomy mode on, and turns it off without asking', async () => {
+    const bodies: unknown[] = [];
+    let autonomous = false;
+    server.use(
+      ...detailHandlers(),
+      http.get('*/api/agents/:name', () => HttpResponse.json(fixtures.agent({ autonomous }))),
+      http.patch('*/api/agents/:name', async ({ request }) => {
+        const body = (await request.json()) as { autonomous?: boolean };
+        bodies.push(body);
+        autonomous = body.autonomous ?? autonomous;
+        return HttpResponse.json(fixtures.agent({ autonomous }));
+      }),
+    );
+    const { user } = renderApp('/agents/assistant');
+    const section = await screen.findByRole('region', { name: 'Approvals' });
+    await user.click(within(section).getByRole('button', { name: 'Turn on' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn on autonomy mode for assistant?' });
+    expect(dialog).toHaveTextContent('including GitHub comments and pull requests');
+    expect(bodies).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: 'Turn on' }));
+    await waitFor(() =>
+      expect(bodies).toEqual([expect.objectContaining({ autonomous: true, enabled: null })]),
+    );
+    expect(await screen.findByText('autonomous')).toBeInTheDocument();
+
+    await user.click(within(section).getByRole('button', { name: 'Turn off' }));
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toMatchObject({ autonomous: false });
+  });
+
+  it('lists standing approvals and revokes one', async () => {
+    const revoked: string[] = [];
+    let grants = [
+      {
+        id: 'grant-1',
+        toolName: 'sandbox_run',
+        scope: 'thread',
+        threadId: 'thread-1',
+        expiresAt: null,
+        createdByUser: 'kevin',
+        createdAt: '2026-10-25T11:00:00Z',
+      },
+      {
+        id: 'grant-2',
+        toolName: 'workspace_edit',
+        scope: 'agent',
+        threadId: null,
+        expiresAt: '2026-10-25T20:00:00Z',
+        createdByUser: 'admin_key',
+        createdAt: '2026-10-25T11:30:00Z',
+      },
+    ];
+    server.use(
+      ...detailHandlers(),
+      http.get('*/api/agents/:name/grants', () => HttpResponse.json({ grants })),
+      http.delete('*/api/agents/:name/grants/:id', ({ params }) => {
+        revoked.push(String(params.id));
+        grants = grants.filter((g) => g.id !== params.id);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const { user, container } = renderApp('/agents/assistant');
+    const table = await screen.findByRole('table', { name: 'Standing approvals for assistant' });
+    expect(within(table).getByRole('link', { name: 'one thread' })).toHaveAttribute(
+      'href',
+      '/prompts/thread-1',
+    );
+    expect(within(table).getByText('all threads')).toBeInTheDocument();
+    expect(within(table).getByText('until revoked')).toBeInTheDocument();
+    expect(within(table).getByText(/by admin key/)).toBeInTheDocument();
+    expect(await axe(container)).toHaveNoViolations();
+
+    await user.click(within(table).getByRole('button', { name: 'Revoke standing approval for sandbox_run' }));
+    await waitFor(() => expect(revoked).toEqual(['grant-1']));
+    await waitFor(() => expect(screen.queryByText('sandbox_run')).not.toBeInTheDocument());
+  });
 });

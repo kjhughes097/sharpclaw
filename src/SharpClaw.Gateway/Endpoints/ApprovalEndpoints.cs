@@ -22,6 +22,7 @@ public static class ApprovalEndpoints
     private const int MaxSummaryChars = 200;
     private const int MaxReasonChars = 200;
     private const int MaxListLimit = 200;
+    private const int MaxBatchIds = 100;
 
     public static void MapAgent(RouteGroupBuilder agent)
     {
@@ -35,6 +36,7 @@ public static class ApprovalEndpoints
         approvals.MapGet("", List).WithName("listApprovals").Produces<ApprovalListResponse>();
         approvals.MapGet("/{id}", Get).WithName("getApproval").Produces<ApprovalDetailResponse>();
         approvals.MapPost("/{id}", Decide).WithName("decideApproval").Produces<ApprovalResponse>();
+        approvals.MapPost("/batch", DecideBatch).WithName("decideApprovals").Produces<BatchDecideApprovalsResponse>();
     }
 
     private static async Task<IResult> Create(
@@ -68,8 +70,11 @@ public static class ApprovalEndpoints
         var now = time.GetUtcNow().UtcDateTime;
         await InboxRepository.TouchClaimAsync(db, agent.Id, body.CorrelationId, now, ct);
 
-        // The poster declared nobody will answer: deny now rather than make the agent wait.
-        var unattended = userMsg.Unattended;
+        // Autonomy or a standing grant approves at once (3.6 spec section 6); otherwise, when the
+        // poster declared nobody will answer, deny now rather than make the agent wait.
+        var auto = await ApprovalPolicy.DecideAsync(db, agent.Id, body.ToolName, body.ThreadId, now, ct);
+        var unattended = auto is null && userMsg.Unattended;
+        var decidedNow = auto is not null || unattended;
         var approval = new Approval
         {
             Id = Guid.CreateVersion7(),
@@ -83,17 +88,22 @@ public static class ApprovalEndpoints
             Reason = body.Reason,
             ArgsHash = prepared.ArgsHash,
             Detail = prepared.Detail,
-            Status = unattended ? ApprovalStatuses.Denied : ApprovalStatuses.Pending,
-            DecidedBy = unattended ? ApprovalDecidedBy.System : null,
-            DecidedAt = unattended ? now : null,
+            Status = auto is not null ? ApprovalStatuses.Approved : unattended ? ApprovalStatuses.Denied : ApprovalStatuses.Pending,
+            DecidedBy = auto?.DecidedBy ?? (unattended ? ApprovalDecidedBy.System : null),
+            DecidedAt = decidedNow ? now : null,
+            GrantId = auto?.GrantId,
             CreatedAt = now,
             ExpiresAt = now.AddSeconds(options.Value.TimeoutSeconds),
         };
-        // The approval row and its approval.requested event commit together.
+        // The approval row and its event commit together. An automatic approval publishes only
+        // approval.decided, so no card flashes up for the human.
         await events.WriteAsync(db, batch =>
         {
             db.Approvals.Add(approval);
-            if (!unattended)
+            if (auto is not null)
+                batch.Add(approval.ThreadId, SseEventNames.ApprovalDecided,
+                    new ApprovalDecidedEvent(approval.Id, approval.CorrelationId, approval.Status, approval.DecidedBy!, approval.ThreadId));
+            else if (!unattended)
                 batch.Add(approval.ThreadId, SseEventNames.ApprovalRequested,
                     new ApprovalRequestedEvent(approval.Id, approval.CorrelationId, approval.ToolName,
                         approval.Summary, approval.Risk, approval.Reason, approval.ExpiresAt, approval.ThreadId));
@@ -102,13 +112,13 @@ public static class ApprovalEndpoints
 
         var logger = loggerFactory.CreateLogger("SharpClaw.Gateway.Approvals");
         using (LogScopes.Turn(logger, approval.ThreadId, approval.CorrelationId))
-            logger.LogInformation("approval requested: tool={Tool} risk={Risk} status={Status}",
-                approval.ToolName, approval.Risk, approval.Status);
+            logger.LogInformation("approval requested: tool={Tool} risk={Risk} status={Status} decided_by={DecidedBy}",
+                approval.ToolName, approval.Risk, approval.Status, approval.DecidedBy);
 
-        if (unattended)
+        if (decidedNow)
         {
-            metrics.RecordApproval(agent.Name, approval.Status);
-            metrics.RecordApprovalDecisionTime(agent.Name, approval.Status, 0);
+            metrics.RecordApproval(agent.Name, approval.Status, approval.DecidedBy!);
+            metrics.RecordApprovalDecisionTime(agent.Name, approval.Status, approval.DecidedBy!, 0);
         }
         else
         {
@@ -208,24 +218,83 @@ public static class ApprovalEndpoints
 
     private static async Task<IResult> Decide(
         Guid id, DecideApprovalRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
-        ApprovalDecisions decisions, CancellationToken ct)
+        ApprovalDecisions decisions, ILoggerFactory loggerFactory, CancellationToken ct)
     {
         if (body?.Decision is not (ApprovalStatuses.Approved or ApprovalStatuses.Denied))
             return ApiResults.ValidationFailed("decision must be 'approved' or 'denied'.");
+        if (body.Remember is not null && body.Decision != ApprovalStatuses.Approved)
+            return ApiResults.ValidationFailed("remember is only valid with 'approved'.");
 
         var approval = await db.Approvals.AsNoTracking().FirstOrDefaultAsync(a => a.Id == id, ct);
         if (approval is null)
             return ApiResults.NotFound("Approval not found.");
+        if (body.Remember is not null && ApprovalGrantEndpoints.Validate(body.Remember, approval.ToolName) is { } rememberError)
+            return ApiResults.ValidationFailed(rememberError);
 
-        await ExpireIfDueAsync(db, decisions, approval, time.GetUtcNow().UtcDateTime, ct);
+        var now = time.GetUtcNow().UtcDateTime;
+        var actor = ClientAuthFilter.ActorName(http);
+        await ExpireIfDueAsync(db, decisions, approval, now, ct);
         if (approval.Status != ApprovalStatuses.Pending ||
-            !await decisions.TryDecideAsync(db, approval, body.Decision, ApprovalDecidedBy.User, ct, ClientAuthFilter.ActorName(http)))
+            !await decisions.TryDecideAsync(db, approval, body.Decision, ApprovalDecidedBy.User, ct, actor))
         {
             var current = await db.Approvals.AsNoTracking().Where(a => a.Id == id).Select(a => a.Status).FirstAsync(ct);
             return ApiResults.Conflict($"Approval is already {current}.");
         }
 
+        // Only a decision that won creates the grant, so a 409 never leaves one behind.
+        if (body.Remember is not null)
+        {
+            db.ApprovalGrants.Add(ApprovalGrantEndpoints.NewGrant(approval, body.Remember, actor, now));
+            await db.SaveChangesAsync(ct);
+            loggerFactory.CreateLogger("SharpClaw.Gateway.Approvals").LogInformation(
+                "approval grant created: tool={Tool} scope={Scope} ttl_hours={TtlHours} by={Actor}",
+                approval.ToolName, body.Remember.Scope, body.Remember.TtlHours, actor);
+        }
+
         return Results.Json(new ApprovalResponse(ToDto(approval)), SharpClawJson.Options);
+    }
+
+    /// <summary>Decides every pending approval in a list of ids or a thread (3.6 spec section 7).</summary>
+    private static async Task<IResult> DecideBatch(
+        BatchDecideApprovalsRequest? body, HttpContext http, SharpClawDbContext db, TimeProvider time,
+        ApprovalDecisions decisions, CancellationToken ct)
+    {
+        if (body?.Decision is not (ApprovalStatuses.Approved or ApprovalStatuses.Denied))
+            return ApiResults.ValidationFailed("decision must be 'approved' or 'denied'.");
+        if ((body.Ids is null) == (body.ThreadId is null))
+            return ApiResults.ValidationFailed("Give exactly one of ids or threadId.");
+        if (body.Ids is { } given && given.Count is < 1 or > MaxBatchIds)
+            return ApiResults.ValidationFailed($"ids must hold 1-{MaxBatchIds} approval ids.");
+
+        List<Approval> candidates;
+        var requested = 0;
+        if (body.Ids is { } ids)
+        {
+            var distinct = ids.Distinct().ToList();
+            requested = distinct.Count;
+            candidates = await db.Approvals.AsNoTracking().Where(a => distinct.Contains(a.Id)).ToListAsync(ct);
+        }
+        else
+        {
+            if (!await db.Threads.AsNoTracking().AnyAsync(t => t.Id == body.ThreadId, ct))
+                return ApiResults.NotFound("Thread not found.");
+            candidates = await db.Approvals.AsNoTracking()
+                .Where(a => a.ThreadId == body.ThreadId && a.Status == ApprovalStatuses.Pending).ToListAsync(ct);
+            requested = candidates.Count;
+        }
+
+        var now = time.GetUtcNow().UtcDateTime;
+        var actor = ClientAuthFilter.ActorName(http);
+        var decided = new List<ApprovalDto>();
+        foreach (var approval in candidates.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id))
+        {
+            await ExpireIfDueAsync(db, decisions, approval, now, ct);
+            if (approval.Status == ApprovalStatuses.Pending &&
+                await decisions.TryDecideAsync(db, approval, body.Decision, ApprovalDecidedBy.User, ct, actor))
+                decided.Add(ToDto(approval));
+        }
+
+        return Results.Json(new BatchDecideApprovalsResponse(decided, requested - decided.Count), SharpClawJson.Options);
     }
 
     /// <summary>Backup for the sweeper: an overdue approval is expired when it is read.</summary>
@@ -249,11 +318,11 @@ public static class ApprovalEndpoints
         return db.Agents.AsNoTracking().Where(a => ids.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.Name, ct);
     }
 
-    private static ApprovalDto ToDto(Approval a) => new(a.Id, a.Status, a.DecidedBy, a.ExpiresAt);
+    private static ApprovalDto ToDto(Approval a) => new(a.Id, a.Status, a.DecidedBy, a.ExpiresAt, a.GrantId);
 
     /// <summary>The detail (a command, a file list) is only for the single-approval view, never lists.</summary>
     private static ApprovalDetailDto ToDetail(Approval a, IReadOnlyDictionary<Guid, string> names, bool includeDetail = false) => new(
         a.Id, names.GetValueOrDefault(a.AgentId, ""), a.ThreadId, a.CorrelationId, a.ToolName, a.Summary, a.Risk,
         a.Reason, a.Status, a.CreatedAt, a.ExpiresAt, a.DecidedBy, a.DecidedAt, a.DecidedByUser,
-        includeDetail ? a.Detail : null);
+        includeDetail ? a.Detail : null, a.GrantId);
 }

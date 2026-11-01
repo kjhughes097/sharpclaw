@@ -88,6 +88,7 @@ public static class WorkspaceTools
             {"type":"object","properties":{"path":{"type":"string","description":"File path relative to the workspace root"},"offset":{"type":"integer","minimum":0,"description":"Byte offset to start reading from (default 0); use nextOffset from a truncated result"}},"required":["path"]}
             """;
         public bool ReturnsUntrustedContent => true;
+        public bool ReadsOwnWorkspace => true;
 
         public ToolAssessment Assess(JsonElement args)
         {

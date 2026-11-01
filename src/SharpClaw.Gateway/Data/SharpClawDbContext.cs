@@ -17,6 +17,7 @@ public class SharpClawDbContext : DbContext
     public DbSet<LlmCall> LlmCalls => Set<LlmCall>();
     public DbSet<ToolCallRecord> ToolCalls => Set<ToolCallRecord>();
     public DbSet<Approval> Approvals => Set<Approval>();
+    public DbSet<ApprovalGrant> ApprovalGrants => Set<ApprovalGrant>();
     public DbSet<ThreadEvent> ThreadEvents => Set<ThreadEvent>();
     public DbSet<EventLogState> EventLogState => Set<EventLogState>();
     public DbSet<User> Users => Set<User>();
@@ -136,6 +137,16 @@ public class SharpClawDbContext : DbContext
             e.Property(x => x.ArgsHash).HasMaxLength(64);
             e.Property(x => x.Detail).HasMaxLength(ApprovalDetailLimits.MaxChars);
             e.HasIndex(x => x.CorrelationId);
+            e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
+        });
+
+        b.Entity<ApprovalGrant>(e =>
+        {
+            e.ToTable("approval_grants");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.ToolName).HasMaxLength(64);
+            e.Property(x => x.CreatedByUser).HasMaxLength(100);
+            e.HasIndex(x => new { x.AgentId, x.ToolName });
             e.HasOne<Agent>().WithMany().HasForeignKey(x => x.AgentId);
         });
 

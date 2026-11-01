@@ -56,8 +56,9 @@ cat >"$STATE/script.json" <<'JSON'
 JSON
 
 # Anything above low risk needs approval; no smart mode (it would cost an extra model call).
+# Workspace reads taint the turn so a read-then-delete reaches critical (tools.spec.ts).
 cat >"$STATE/config/agent.json" <<'JSON'
-{ "allowedRiskLevel": "low", "smartMode": false, "maxToolIterations": 5,
+{ "allowedRiskLevel": "low", "smartMode": false, "maxToolIterations": 5, "taintWorkspaceReads": true,
   "tools": ["workspace_list", "workspace_read", "workspace_write", "workspace_delete", "ask_agent"] }
 JSON
 printf 'You are a test agent.\n' >"$STATE/config/soul.md"

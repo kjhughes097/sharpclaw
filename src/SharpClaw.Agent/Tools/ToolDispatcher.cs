@@ -146,7 +146,7 @@ public sealed class ToolDispatcher
                 result = ToolResult.Error("tool_failed", $"The tool failed ({ex.GetType().Name}).");
             }
 
-            if (result.Ok && tool.ReturnsUntrustedContent)
+            if (result.Ok && tool.ReturnsUntrustedContent && (!tool.ReadsOwnWorkspace || _config.TaintWorkspaceReads))
                 turn.Tainted = true;
 
             return new Outcome(result, result.Ok ? ToolCallStatuses.Succeeded : ToolCallStatuses.Failed,

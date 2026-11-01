@@ -17,6 +17,7 @@ public static class EndpointMapping
         ThreadsEndpoints.Map(client);
         AuditEndpoints.Map(client);
         ApprovalEndpoints.MapClient(client);
+        ApprovalGrantEndpoints.Map(client);
         SystemEndpoints.Map(client);
         UsageEndpoints.Map(client);
         ActivityEndpoints.Map(client);
