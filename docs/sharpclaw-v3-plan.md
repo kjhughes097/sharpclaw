@@ -2,7 +2,7 @@
 
 Third iteration, started from absolute basics. Phases 3.1–3.3 are defined in detail; later phases are deliberately rough and will be refined when reached.
 
-**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`; pre-3.3 foundations: `sharpclaw-pre-3.3-foundations-spec.md`; Phase 3.3: `sharpclaw-3.3-implementation-spec.md`.
+**Document map:** this file is the overall plan and roadmap. Each phase gets its own implementation spec once it is ready to build, and that spec is the source of truth for the phase. Phase 3.1: `sharpclaw-3.1-implementation-spec.md`; Phase 3.2: `sharpclaw-3.2-implementation-spec.md`; pre-3.3 foundations: `sharpclaw-pre-3.3-foundations-spec.md`; Phase 3.3: `sharpclaw-3.3-implementation-spec.md`; Phase 3.5: `sharpclaw-3.5-implementation-spec.md`.
 
 ## 1. Architecture
 
@@ -190,12 +190,30 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 - Skills: operator-curated instructions (and scripts) on a shared read-only `/skills` volume,
   loaded on demand with `skill_read`: see the [skills spec](sharpclaw-skills-spec.md)
 
-## Phase 3.5 — Agent-to-agent messaging *(outline)*
+## Phase 3.5 — Agent-to-agent messaging *(specified)*
 
-- Mailbox table, `POST /messages`, delivery via long-poll/SSE, acks, idempotency keys
-- Policy: allowed sender → recipient pairs
-- Correlation IDs for request/reply, thread hop limits and budgets, TTL and dead-letter status
-- `IMessageBus` interface
+> **Source of truth:** `sharpclaw-3.5-implementation-spec.md`. This section is a summary only.
+
+**Goal:** an agent can ask another agent for help and get the answer back in the same turn, through
+the gateway, under operator policy.
+
+**Scope**
+- A synchronous `ask_agent(agent, message)` broker tool: the gateway queues the message in the
+  recipient's inbox and returns its reply as the (untrusted) tool result, or a timeout
+- Asks reuse the `messages`/`threads` inbox: one linked thread per (originating thread, sender,
+  recipient); the recipient's claim, reply and failure are the acks; (turn, tool call id) is the
+  idempotency key
+- Policy: allowed sender → recipient pairs in gateway config (`AgentMessaging:Allowed`)
+- Hop limit, cycle refusal, ask timeout; asks nobody waits for end as failed (`ask_timeout`,
+  `ask_cancelled`)
+- Taint and attendance propagate along the chain; each agent pays for its own model calls
+- Minimal UI: sender shown, linked threads linked, agent rows in activity, asks in the trace
+- No `IMessageBus` interface (no second implementation)
+
+**Exit criteria**
+- With the fake provider, one agent asks another and finishes its turn using the answer; both
+  threads, the trace and the audit show the hop.
+- Disallowed pairs, cycles and over-long chains are refused before anything is queued.
 
 ## Phase 3.6 — Autonomy *(outline)*
 
