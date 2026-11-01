@@ -175,12 +175,16 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 
 ---
 
-## Phase 3.4 — Controls *(outline)*
+## Phase 3.4 — Controls (built)
 
-- Human approval in the UI (the CLI flow lands in 3.2; the queue API in the pre-3.3 foundations)
-- Per-thread budgets, rate limits, global kill switch
-- Richer policy rules
-- Network tools mediated by the gateway (design agreed in the 3.2 spec)
+> Built: the items below. The rest of the original outline (per-thread budgets, rate limits, a
+> global kill switch, richer policy rules) moved to the 3.7+ backlog.
+
+- Human approval in the UI (the CLI flow landed in 3.2; the queue API in the pre-3.3 foundations;
+  inline and inbox approvals in 3.3)
+- Network tools mediated by the gateway: superseded by the
+  [external tools spec](sharpclaw-external-tools-spec.md) (credentialed tools in the gateway;
+  network access and code execution in a per-agent sandbox behind the gateway's egress proxy)
 - More agent-local tools (workspace search/find/edit/append/move/copy, read paging,
   `current_time`, `calculate`): see the [agent tools spec](sharpclaw-agent-tools-spec.md)
 - Skills: operator-curated instructions (and scripts) on a shared read-only `/skills` volume,
@@ -201,6 +205,8 @@ Five things the web UI needs, built before it so the UI doesn't have to work aro
 
 ## Phase 3.7+ — Backlog *(undefined, to be refined)*
 
+- Controls (moved from 3.4): per-thread budgets, rate limits on agents and LLM calls, a global
+  kill switch, richer policy rules (scope to be defined; today only the 3.2 risk scoring exists)
 - Observability beyond 3.1: alerts, direct agent telemetry, trace view in the UI
 - Agent memory model and tooling
 - External channels (Slack, Telegram)
