@@ -27,7 +27,8 @@ public sealed class TokenEstimator(ContextOptions options)
         long chars = m.Content?.Length ?? 0;
         if (m.ToolCalls is { Count: > 0 })
             chars += JsonSerializer.Serialize(m.ToolCalls, SharpClawJson.Options).Length;
-        return ContextDefaults.Tokens(chars, options.CharsPerToken) + options.MessageOverheadTokens;
+        return ContextDefaults.Tokens(chars, options.CharsPerToken) + options.MessageOverheadTokens +
+            (m.ImageIds?.Count ?? 0) * options.ImageTokens;
     }
 
     public int Estimate(IEnumerable<ContextMessage> messages) => messages.Sum(Estimate);
@@ -69,7 +70,9 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
                 .Where(m => m.ThreadId == threadId && m.Seq >= fromSeq).OrderBy(m => m.Seq).ToListAsync(ct);
 
             var senders = await MessageQueries.SenderNamesAsync(db, rows, ct);
-            var result = await BuildAsync(threadId, rows, current.Id, windowTokens, reserveTokens, ct, olderTurns, senders);
+            var attachments = await ReplayAttachmentsAsync(db, rows, ct);
+            var result = await BuildAsync(
+                threadId, rows, current.Id, windowTokens, reserveTokens, ct, olderTurns, senders, attachments);
             // Done unless every loaded turn fitted and there are older ones that might fit too.
             if (!hasOlder || result.TooLarge || result.DroppedTurns > olderTurns)
                 return result;
@@ -80,12 +83,14 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
     /// <param name="currentCorrelationId">The user message being processed.</param>
     /// <param name="olderTurns">Turns before those in <paramref name="rows"/>; they count as dropped.</param>
     /// <param name="senderNames">Names of agents that sent user messages in <paramref name="rows"/>.</param>
+    /// <param name="attachments">Attachments of user messages in <paramref name="rows"/>, by message id.</param>
     public async Task<Result> BuildAsync(
         Guid threadId, IReadOnlyList<Message> rows, Guid currentCorrelationId, int windowTokens, int reserveTokens,
-        CancellationToken ct, int olderTurns = 0, IReadOnlyDictionary<Guid, string>? senderNames = null)
+        CancellationToken ct, int olderTurns = 0, IReadOnlyDictionary<Guid, string>? senderNames = null,
+        IReadOnlyDictionary<Guid, List<ReplayAttachment>>? attachments = null)
     {
         var estimator = new TokenEstimator(options);
-        var turns = GroupTurns(rows, currentCorrelationId, estimator, senderNames);
+        var turns = GroupTurns(rows, currentCorrelationId, estimator, senderNames, attachments);
         var currentIndex = turns.FindIndex(t => t.CorrelationId == currentCorrelationId);
         if (currentIndex < 0)
             return new Result(Array.Empty<ContextMessage>(), 0, 0, false);
@@ -140,7 +145,8 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
     /// another message was queued while it ran. Turns after the current one are not included.
     /// </summary>
     private static List<Turn> GroupTurns(
-        IReadOnlyList<Message> rows, Guid currentCorrelationId, TokenEstimator estimator, IReadOnlyDictionary<Guid, string>? senderNames)
+        IReadOnlyList<Message> rows, Guid currentCorrelationId, TokenEstimator estimator,
+        IReadOnlyDictionary<Guid, string>? senderNames, IReadOnlyDictionary<Guid, List<ReplayAttachment>>? attachments)
     {
         var byCorrelation = rows
             .Where(r => !(r.Role == Roles.User && r.Kind == MessageKinds.Message) && r.CorrelationId is not null)
@@ -153,11 +159,34 @@ public sealed class ContextBuilder(ContextOptions options, IContextSummariser su
             var turnRows = new List<Message> { user };
             if (byCorrelation.TryGetValue(user.Id, out var rest))
                 turnRows.AddRange(rest);
-            var messages = turnRows.Select(r => ModelReplay.ToContextMessage(r, currentCorrelationId, senderNames)).ToList();
+            var messages = turnRows
+                .Select(r => ModelReplay.ToContextMessage(r, currentCorrelationId, senderNames, attachments?.GetValueOrDefault(r.Id)))
+                .ToList();
             turns.Add(new Turn(user.Id, messages, estimator.Estimate(messages)));
             if (user.Id == currentCorrelationId)
                 break;
         }
         return turns;
+    }
+
+    /// <summary>
+    /// What replay needs of the attachments on the user messages in <paramref name="rows"/>: text
+    /// files' contents (they are inlined) but never image bytes (images travel by id).
+    /// </summary>
+    public static async Task<IReadOnlyDictionary<Guid, List<ReplayAttachment>>> ReplayAttachmentsAsync(
+        SharpClawDbContext db, IReadOnlyList<Message> rows, CancellationToken ct)
+    {
+        var ids = rows.Where(r => r.Role == Roles.User && r.Kind == MessageKinds.Message).Select(r => r.Id).ToList();
+        if (ids.Count == 0)
+            return new Dictionary<Guid, List<ReplayAttachment>>();
+        var found = await db.MessageAttachments.AsNoTracking()
+            .Where(a => ids.Contains(a.MessageId))
+            .OrderBy(a => a.Position)
+            .Select(a => new { a.Id, a.MessageId, a.Kind, a.FileName, Text = a.Kind == AttachmentKinds.Text ? a.Data : null })
+            .ToListAsync(ct);
+        return found.GroupBy(a => a.MessageId).ToDictionary(g => g.Key, g => g
+            .Select(a => new ReplayAttachment(a.Id, a.Kind, a.FileName,
+                a.Text is null ? null : AttachmentValidator.DecodeText(a.Text)))
+            .ToList());
     }
 }

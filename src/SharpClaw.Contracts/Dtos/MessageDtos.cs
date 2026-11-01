@@ -2,14 +2,25 @@ namespace SharpClaw.Contracts;
 
 // ----- Messages -----
 
-/// <summary><c>Unattended</c>: nobody will answer approvals for this message (scripts, schedules).</summary>
-public sealed record PostMessageRequest(string Content, bool Unattended = false);
+/// <summary>
+/// <c>Unattended</c>: nobody will answer approvals for this message (scripts, schedules).
+/// <c>Attachments</c>: files sent with the prompt (attachments spec); <c>Content</c> may then be empty.
+/// </summary>
+public sealed record PostMessageRequest(
+    string Content, bool Unattended = false, IReadOnlyList<AttachmentUpload>? Attachments = null);
+
+/// <summary>A file sent with a message. <c>Data</c> is base64; the kind comes from the file name's extension.</summary>
+public sealed record AttachmentUpload(string FileName, string Data);
+
+/// <summary>A stored attachment's metadata. <c>Kind</c> is <c>image</c> or <c>text</c> (see <c>AttachmentKinds</c>).</summary>
+public sealed record AttachmentDto(Guid Id, string FileName, string Kind, string MediaType, long SizeBytes);
 
 /// <summary>
 /// A thread row. <c>Kind</c> is <c>message</c> (user messages and final replies), <c>tool_request</c>
 /// (role assistant, <c>ToolCalls</c> set) or <c>tool_result</c> (role tool, <c>ToolCallId</c> set).
 /// Rows are ordered by <c>Seq</c>. <c>FailReason</c> is the reason code on a failed user message.
 /// <c>SentByAgent</c>: on a user message another agent sent (<c>ask_agent</c>), that agent's name.
+/// <c>Attachments</c>: files sent with a user message; null when there are none.
 /// </summary>
 public sealed record MessageDto(
     Guid Id,
@@ -27,7 +38,8 @@ public sealed record MessageDto(
     bool Truncated = false,
     string? FailReason = null,
     string? SentByUser = null,
-    string? SentByAgent = null);
+    string? SentByAgent = null,
+    IReadOnlyList<AttachmentDto>? Attachments = null);
 
 /// <summary><c>HasMoreBefore</c>: older rows exist before the first one returned.</summary>
 public sealed record MessageListResponse(IReadOnlyList<MessageDto> Messages, bool HasMoreBefore = false);

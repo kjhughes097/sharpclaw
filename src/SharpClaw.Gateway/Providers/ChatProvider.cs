@@ -6,15 +6,25 @@ public sealed record ProviderToolCall(string Id, string Name, string ArgumentsJs
 /// <summary>A tool offered to the model. <c>ParametersJson</c> is a JSON Schema object, passed through.</summary>
 public sealed record ProviderTool(string Name, string? Description, string? ParametersJson);
 
+/// <summary>An image sent to the model with a user message (attachments spec section 5).</summary>
+public sealed record ProviderImage(string MediaType, byte[] Data)
+{
+    public string DataUri() => $"data:{MediaType};base64,{Convert.ToBase64String(Data)}";
+}
+
 /// <summary>
 /// One conversation message. <c>Content</c> is null only for an assistant message that carries
-/// <c>ToolCalls</c>; a <c>tool</c> message answers the call identified by <c>ToolCallId</c>.
+/// <c>ToolCalls</c>; a <c>tool</c> message answers the call identified by <c>ToolCallId</c>. On a
+/// user message, <c>ImageIds</c> are the attached images the agent asked for and <c>Images</c>
+/// their bytes, filled in by the gateway once it has checked the ids.
 /// </summary>
 public sealed record ProviderChatMessage(
     string Role,
     string? Content,
     IReadOnlyList<ProviderToolCall>? ToolCalls = null,
-    string? ToolCallId = null);
+    string? ToolCallId = null,
+    IReadOnlyList<Guid>? ImageIds = null,
+    IReadOnlyList<ProviderImage>? Images = null);
 
 public sealed record ProviderChatRequest(
     string Model,

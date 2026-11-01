@@ -187,6 +187,10 @@ per agent), **Prompts** (pick an agent and model, sessions, chat), one tab per a
   and recreate the gateway. It defaults to `127.0.0.1` (this machine only).
 - **Users:** the quick start creates the first one. Add more with `sharpclaw users create <name>`
   (user management stays in the CLI); change your own password under **Account**.
+- **Attach files:** the 📎 button, drag and drop, or pasting an image adds up to 5 files to a
+  message: images (PNG, JPEG, GIF, WebP up to 5 MB) the model sees, and text or code files (up
+  to 256 KB, UTF-8) inlined into the prompt. They stay in the thread's history like the text.
+  Images need a vision-capable model. See the [attachments spec](docs/sharpclaw-attachments-spec.md).
 - **Themes:** Default (dark), Light and LCARS, from the menu under your name.
 - **Plain HTTP:** your password and session cookie cross the LAN unencrypted. That's accepted for a
   home network; **never port-forward 8080** from your router. A local TLS reverse proxy is the
@@ -566,6 +570,8 @@ ASP.NET `__` syntax).
 | `Inbox:MaxWaitSeconds` | `60` | Upper clamp for long-poll `wait` |
 | `Inbox:ClaimTimeoutSeconds` | `300` | Stale claims return to `pending` |
 | `Messages:MaxContentChars` | `32000` | |
+| `Messages:MaxAttachments` | `5` | Files per message ([attachments spec](docs/sharpclaw-attachments-spec.md)); `0` turns attachments off |
+| `Messages:MaxImageBytes` / `MaxTextBytes` | `5242880` / `262144` | Per attached image / text file |
 | `Approvals:TimeoutSeconds` | `300` | Pending approvals expire (count as denied) after this |
 | `Approvals:SweepIntervalSeconds` | `10` | How often overdue approvals are expired |
 | `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
@@ -578,6 +584,7 @@ ASP.NET `__` syntax).
 | `Context:ReplyReserveTokens` | `2000` | Kept free for the model's reply |
 | `Context:CharsPerToken` | `4` | Estimation heuristic |
 | `Context:MessageOverheadTokens` | `4` | Added per message |
+| `Context:ImageTokens` | `1000` | Estimate per attached image |
 | `ToolBroker:Agents:<name>:Tools` | empty | Broker tools the agent may call (the operator's gate) |
 | `ToolBroker:Agents:<name>:AllTools` | `false` | `true`: the agent may call every broker tool and `Tools` is ignored (the quick start sets this) |
 | `ToolBroker:Agents:<name>:SandboxUrl` / `SandboxSecret` | empty | The agent's sandbox runner and its service secret (`SANDBOX_<NAME>_SECRET`); empty secret: no sandbox (`503 tool_unavailable`) |
@@ -737,7 +744,8 @@ Behaviour is specified phase by phase; later specs win where they differ:
 [3.3](docs/sharpclaw-3.3-implementation-spec.md) (web UI) →
 [3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign) →
 [3.5](docs/sharpclaw-3.5-implementation-spec.md) (agent to agent) →
-[3.6](docs/sharpclaw-3.6-approvals-spec.md) (fewer approvals), plus the
+[3.6](docs/sharpclaw-3.6-approvals-spec.md) (fewer approvals) →
+[attachments](docs/sharpclaw-attachments-spec.md) (files in the prompt), plus the
 [agent tools spec](docs/sharpclaw-agent-tools-spec.md), the
 [external tools spec](docs/sharpclaw-external-tools-spec.md) and the [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
 ([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the

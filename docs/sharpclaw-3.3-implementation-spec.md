@@ -468,7 +468,7 @@ The UI has no runtime configuration: it is same-origin and discovers everything 
 
 ## 14. Out of scope
 
-Stop or cancel a turn; editing, regenerating or deleting messages; thread deletion; search; attachments and file upload; a workspace file browser; editing `soul.md`, agent config files or tool policy in the UI; user management in the UI (CLI only); multi-user data separation; passkeys, OIDC, two-factor; password reset flows; TLS and HTTP/2; PWA, service workers and offline mode; push or browser notifications; syntax highlighting; internationalisation; a manual theme toggle; frontend telemetry or error reporting; charts beyond the optional Usage page; Grafana changes.
+Stop or cancel a turn; editing, regenerating or deleting messages; thread deletion; search; attachments and file upload (since added by the [attachments spec](sharpclaw-attachments-spec.md)); a workspace file browser; editing `soul.md`, agent config files or tool policy in the UI; user management in the UI (CLI only); multi-user data separation; passkeys, OIDC, two-factor; password reset flows; TLS and HTTP/2; PWA, service workers and offline mode; push or browser notifications; syntax highlighting; internationalisation; a manual theme toggle; frontend telemetry or error reporting; charts beyond the optional Usage page; Grafana changes.
 
 ## 15. Known gaps accepted in this phase
 

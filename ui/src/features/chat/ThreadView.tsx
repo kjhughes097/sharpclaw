@@ -3,11 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, call } from '../../api/client';
 import { errorMessage } from '../../api/errors';
 import { keys } from '../../api/queryKeys';
-import type { TraceLlmCallDto, TraceToolCallDto } from '../../api/types';
+import type { MessageDto, TraceLlmCallDto, TraceToolCallDto } from '../../api/types';
 import { useLiveTurns } from '../../app/services';
 import { Button, ErrorState, LoadingState, Spinner } from '../../components/ui';
 import { getExpandToolDetails, setExpandToolDetails } from '../../lib/prefs';
-import { Composer } from './Composer';
+import { refetchAttachments } from './attachments';
+import { Composer, type OutgoingMessage } from './Composer';
 import { ThreadBanners } from './ThreadBanners';
 import { ThreadHeader } from './ThreadHeader';
 import { TurnView } from './TurnView';
@@ -58,21 +59,21 @@ export function ThreadView({
 
   // ----- Sending -----
   const send = useMutation({
-    mutationFn: (content: string) =>
+    mutationFn: ({ content, attachments }: OutgoingMessage) =>
       call(() =>
         api.POST('/api/threads/{id}/messages', {
           params: { path: { id: threadId } },
-          body: { content, unattended: false },
+          body: { content, unattended: false, attachments: attachments.length ? attachments : null },
         }),
       ),
   });
   const [sendError, setSendError] = useState<string | null>(null);
   const onSend = useCallback(
-    async (content: string) => {
+    async (outgoing: OutgoingMessage) => {
       setSendError(null);
       try {
-        const { message } = await send.mutateAsync(content);
-        addOptimistic(message, content);
+        const { message } = await send.mutateAsync(outgoing);
+        addOptimistic(message, outgoing.content, outgoing.attachments);
         pinToBottom();
         void queryClient.invalidateQueries({ queryKey: keys.thread(threadId) });
         return true;
@@ -82,6 +83,21 @@ export function ThreadView({
       }
     },
     [send, addOptimistic, queryClient, threadId, pinToBottom],
+  );
+
+  /** Resends a failed message with the same text and files (downloaded again from the gateway). */
+  const onResend = useCallback(
+    async (failed: MessageDto) => {
+      try {
+        const attachments = failed.attachments?.length
+          ? await refetchAttachments(threadId, failed.attachments)
+          : [];
+        await onSend({ content: failed.content, attachments });
+      } catch (error) {
+        setSendError(errorMessage(error));
+      }
+    },
+    [onSend, threadId],
   );
 
   const onLoadEarlier = () => {
@@ -161,7 +177,8 @@ export function ThreadView({
                   inFlight?.correlationId === turn.correlationId ? (inFlight.claimedAt ?? null) : null
                 }
                 highlighted={!!highlightMessageId && turn.user?.id === highlightMessageId}
-                onResend={(content) => void onSend(content)}
+                threadId={threadId}
+                onResend={(message) => void onResend(message)}
               />
             ))}
           </ol>

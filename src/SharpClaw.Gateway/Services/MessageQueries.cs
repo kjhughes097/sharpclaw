@@ -16,7 +16,8 @@ public static class MessageQueries
             query = query.Where(m => m.Kind == MessageKinds.Message);
         var rows = await query.OrderBy(m => m.Seq).ToListAsync(ct);
         var senders = await SenderNamesAsync(db, rows, ct);
-        return rows.Select(m => ToDto(m, senders)).ToList();
+        var attachments = await AttachmentsAsync(db, rows, ct);
+        return rows.Select(m => ToDto(m, senders, attachments)).ToList();
     }
 
     /// <summary>
@@ -57,15 +58,35 @@ public static class MessageQueries
             ? await scope.AnyAsync(m => m.Seq < rows[0].Seq, ct)
             : afterSeq is { } a && await scope.AnyAsync(m => m.Seq <= a, ct);
         var senders = await SenderNamesAsync(db, rows, ct);
-        return (rows.Select(m => ToDto(m, senders)).ToList(), hasMoreBefore);
+        var attachments = await AttachmentsAsync(db, rows, ct);
+        return (rows.Select(m => ToDto(m, senders, attachments)).ToList(), hasMoreBefore);
     }
 
     /// <param name="senderNames">Names of the agents that sent messages in the page (asks), by id.</param>
-    public static MessageDto ToDto(Message m, IReadOnlyDictionary<Guid, string>? senderNames = null) => new(
+    /// <param name="attachments">Attachment metadata by message id.</param>
+    public static MessageDto ToDto(
+        Message m, IReadOnlyDictionary<Guid, string>? senderNames = null,
+        IReadOnlyDictionary<Guid, List<AttachmentDto>>? attachments = null) => new(
         m.Id, m.Role, m.Content, m.Status, m.CorrelationId, m.CreatedAt, m.Kind, m.Seq,
         m.ToolCalls is null ? null : JsonSerializer.Deserialize<List<ChatToolCall>>(m.ToolCalls, SharpClawJson.Options),
         m.ToolCallId, m.ToolOk, m.Untrusted, m.Truncated, m.FailReason, m.SentByUser,
-        m.SenderAgentId is { } sender ? senderNames?.GetValueOrDefault(sender) : null);
+        m.SenderAgentId is { } sender ? senderNames?.GetValueOrDefault(sender) : null,
+        attachments?.GetValueOrDefault(m.Id));
+
+    /// <summary>Attachment metadata (never the bytes) for the user messages in <paramref name="rows"/>, by message id.</summary>
+    public static async Task<IReadOnlyDictionary<Guid, List<AttachmentDto>>> AttachmentsAsync(
+        SharpClawDbContext db, IEnumerable<Message> rows, CancellationToken ct)
+    {
+        var ids = rows.Where(r => r.Role == Roles.User && r.Kind == MessageKinds.Message).Select(r => r.Id).ToList();
+        if (ids.Count == 0)
+            return new Dictionary<Guid, List<AttachmentDto>>();
+        var found = await db.MessageAttachments.AsNoTracking()
+            .Where(a => ids.Contains(a.MessageId))
+            .OrderBy(a => a.Position)
+            .Select(a => new { a.MessageId, Dto = new AttachmentDto(a.Id, a.FileName, a.Kind, a.MediaType, a.SizeBytes) })
+            .ToListAsync(ct);
+        return found.GroupBy(a => a.MessageId).ToDictionary(g => g.Key, g => g.Select(a => a.Dto).ToList());
+    }
 
     /// <summary>Names of the agents that sent any of <paramref name="rows"/>; null when none did.</summary>
     public static async Task<IReadOnlyDictionary<Guid, string>?> SenderNamesAsync(
