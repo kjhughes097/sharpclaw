@@ -254,7 +254,7 @@ e.g. [docker/template/agents/assistant/config/agent.json](docker/template/agents
 
 ```json
 {
-  "allowedRiskLevel": "low",
+  "allowedRiskLevel": "medium",
   "smartMode": true,
   "maxToolIterations": 10,
   "tools": ["workspace_list", "workspace_read", "workspace_search", "workspace_write", "current_time"]
@@ -262,12 +262,14 @@ e.g. [docker/template/agents/assistant/config/agent.json](docker/template/agents
 ```
 
 A missing file runs the agent without tools; an invalid one stops it (exit code 1).
+`taintWorkspaceReads` (default `false`) makes `workspace_read` and `workspace_search` taint the turn
+like web content does; see [Fewer approvals](#fewer-approvals).
 
 | Tool | Risk |
 |---|---|
 | `workspace_list` | low |
-| `workspace_read` | low (content is untrusted: later calls in the turn are scored one level higher); 64 KB per call, page with `offset` / `nextOffset` |
-| `workspace_search` | low (literal, case-insensitive; results are untrusted like `workspace_read`) |
+| `workspace_read` | low; 64 KB per call, page with `offset` / `nextOffset` (results are stubbed in thread history; taint only with `taintWorkspaceReads`) |
+| `workspace_search` | low (literal, case-insensitive; treated like `workspace_read`) |
 | `workspace_find` | low (glob such as `**/*.md`) |
 | `workspace_write` | new file low, overwrite medium; scripts, executables and dotfiles uncertain |
 | `workspace_edit` | medium (replaces text that occurs exactly once); scripts, executables and dotfiles uncertain |
@@ -287,7 +289,8 @@ How a call is decided (all in the agent's `ToolDispatcher`):
    links, size caps. Blocked calls are never offered for approval.
 2. **Risk** comes from the arguments. *Uncertain* calls are classified by an extra LLM call when
    `smartMode` is on (only the tool name and a content-free summary are sent), otherwise treated
-   as high. After untrusted content has been read in the turn, risk goes up one level.
+   as high. After untrusted content (web, GitHub, another agent, sandbox output) has been read in
+   the turn, risk goes up one level.
 3. **Above `allowedRiskLevel`**, the agent asks the user through the gateway. The approval waits
    in a queue (`GET /api/approvals`, `sharpclaw approvals list`) whether or not anyone is
    watching, and expires after 300 s; a message posted `unattended` has its approvals denied at
@@ -327,7 +330,7 @@ be in the agent's `agent.json` **and** listed for it by the operator in the gate
 | `web_search` | gateway | low | OpenRouter web plugin on `WebSearch:Model`; recorded in `llm_calls` and counts against the budget; untrusted |
 | `extract_text` | sandbox | low; script/dotfile output uncertain | `.html` → Markdown, `.pdf` → text, into a new workspace file |
 | `git_clone` | sandbox | medium | Public repos over HTTPS from `ToolBroker:CloneAllowHosts` (github.com, gitlab.com); shallow, no hooks |
-| `sandbox_run` | sandbox | high, **always approved** | `bash -c` in a workspace folder; 10 min (operator max 30); first 16 KB of output inline, the complete output in a log file under `.sandbox/logs/`; untrusted |
+| `sandbox_run` | sandbox | medium | `bash -c` in a workspace folder; 10 min (operator max 30); first 16 KB of output inline, the complete output in a log file under `.sandbox/logs/`; untrusted |
 | `github_read` | gateway | low | Issues, PRs, diffs, comments, files; untrusted |
 | `github_write` | gateway | high, **always approved** | Comment, create issue, add/remove labels |
 | `github_create_pr` | gateway + sandbox | high, **always approved** | PR from your machine user's fork (below) |
@@ -559,7 +562,7 @@ ASP.NET `__` syntax).
 | `ToolBroker:Agents:<name>:Tools` | empty | Broker tools the agent may call (the operator's gate) |
 | `ToolBroker:Agents:<name>:AllTools` | `false` | `true`: the agent may call every broker tool and `Tools` is ignored (the quick start sets this) |
 | `ToolBroker:Agents:<name>:SandboxUrl` / `SandboxSecret` | empty | The agent's sandbox runner and its service secret (`SANDBOX_<NAME>_SECRET`); empty secret: no sandbox (`503 tool_unavailable`) |
-| `ToolBroker:AlwaysApprove` | `sandbox_run`, `github_write`, `github_create_pr` | Tools the gateway never runs without a matching approval; `ToolBroker__AlwaysApprove__0=` (empty) clears it |
+| `ToolBroker:AlwaysApprove` | `github_write`, `github_create_pr` | Tools the gateway never runs without a matching approval; `ToolBroker__AlwaysApprove__0=` (empty) clears it |
 | `ToolBroker:ApprovalUseSeconds` | `600` | An approval must be used this soon after it was decided |
 | `ToolBroker:MaxResponseBytes` | `4194304` | Largest tool result returned to an agent |
 | `ToolBroker:SandboxRunMaxSeconds` | `600` | Longest `sandbox_run` (at most 1800) |

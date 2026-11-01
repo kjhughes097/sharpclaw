@@ -49,7 +49,12 @@ public class AgentToolConfigTests : IDisposable
         Assert.False(config.SmartMode);
         Assert.Equal(10, config.MaxToolIterations);
         Assert.Empty(config.Tools);
+        Assert.False(config.TaintWorkspaceReads);
     }
+
+    [Fact]
+    public void TaintWorkspaceReads_can_be_switched_on() =>
+        Assert.True(Load("""{ "taintWorkspaceReads": true }""")!.TaintWorkspaceReads);
 
     [Theory]
     [InlineData("not json")]

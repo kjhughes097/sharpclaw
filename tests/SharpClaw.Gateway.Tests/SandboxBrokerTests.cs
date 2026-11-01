@@ -131,6 +131,7 @@ public class SandboxBrokerTests : IAsyncLifetime
         var config = SandboxConfig();
         config["ToolBroker:Agents:assistant:Tools:3"] = BrokerTools.SandboxRun;
         config["ToolBroker:FetchAllowHosts:0"] = "docs.github.com";
+        config["ToolBroker:AlwaysApprove:0"] = BrokerTools.SandboxRun;
         await using var fx = await GatewayAsync(config);
         var (_, token) = await fx.CreateAgentAsync("assistant");
         var (_, other) = await fx.CreateAgentAsync("other");

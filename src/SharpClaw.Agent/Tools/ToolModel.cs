@@ -87,6 +87,12 @@ public interface IAgentTool
     /// <summary>True when results may contain untrusted content (sets taint for the rest of the turn).</summary>
     bool ReturnsUntrustedContent { get; }
 
+    /// <summary>
+    /// True for tools whose untrusted content comes only from the agent's own workspace. They taint
+    /// the turn only when <c>taintWorkspaceReads</c> is on (3.6 spec section 3).
+    /// </summary>
+    bool ReadsOwnWorkspace => false;
+
     ToolAssessment Assess(JsonElement args);
 
     /// <summary>Short human-readable description for approval prompts. Never includes content.</summary>

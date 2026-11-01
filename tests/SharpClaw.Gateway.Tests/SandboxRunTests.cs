@@ -10,8 +10,9 @@ using static SharpClaw.Gateway.Tests.BrokerTestHelpers;
 namespace SharpClaw.Gateway.Tests;
 
 /// <summary>
-/// <c>sandbox_run</c> through the gateway (spec sections 7.5, Q1, Q2, Q6): always approved by a
-/// human who sees the command in the approval detail and nowhere else; the operator's time limit.
+/// <c>sandbox_run</c> through the gateway (spec sections 7.5, Q1, Q2, Q6): an approval, when there
+/// is one, shows the command in its detail and nowhere else; operators can make it always-approve
+/// again (3.6 spec section 4); the operator's time limit.
 /// </summary>
 public class SandboxRunTests : IAsyncLifetime
 {
@@ -76,9 +77,21 @@ public class SandboxRunTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Without_an_approval_nothing_runs()
+    public async Task By_default_it_runs_without_a_gateway_enforced_approval()
     {
         var (fx, t) = await SetupAsync();
+        await using var _ = fx;
+
+        var resp = await t.InvokeAsync(BrokerTools.SandboxRun, new { command = "touch ran" });
+
+        resp.EnsureSuccessStatusCode();
+        Assert.True(File.Exists(Path.Combine(_workspace, "ran")));
+    }
+
+    [Fact]
+    public async Task When_the_operator_makes_it_always_approve_nothing_runs_without_an_approval()
+    {
+        var (fx, t) = await SetupAsync(new() { ["ToolBroker:AlwaysApprove:0"] = BrokerTools.SandboxRun });
         await using var _ = fx;
 
         var resp = await t.InvokeAsync(BrokerTools.SandboxRun, new { command = "touch ran" });
@@ -122,7 +135,7 @@ public class SandboxRunTests : IAsyncLifetime
     [Fact]
     public async Task The_operator_time_limit_applies()
     {
-        var (fx, t) = await SetupAsync(new() { ["ToolBroker:SandboxRunMaxSeconds"] = "30", ["ToolBroker:AlwaysApprove:0"] = "" });
+        var (fx, t) = await SetupAsync(new() { ["ToolBroker:SandboxRunMaxSeconds"] = "30" });
         await using var _ = fx;
 
         var body = await (await t.InvokeAsync(BrokerTools.SandboxRun, new { command = "true", timeoutSeconds = 31 })).Content.ReadFromJsonAsync<JsonElement>();

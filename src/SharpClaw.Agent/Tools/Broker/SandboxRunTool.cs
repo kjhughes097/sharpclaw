@@ -6,8 +6,8 @@ namespace SharpClaw.Agent.Tools.Broker;
 
 /// <summary>
 /// <c>sandbox_run</c> (external tools spec section 7.5): runs a shell command in the agent's
-/// sandbox, never in the agent. Always high risk, and the gateway requires an approval for it
-/// (Q2), which shows the human the command (Q1). Summaries and the classifier see only its length
+/// sandbox, never in the agent. Medium risk (3.6 spec section 4): the sandbox is isolated, so with
+/// the default level it runs unasked; an approval, when one is needed, shows the human the command (Q1). Summaries and the classifier see only its length
 /// and folder. Output is untrusted, so it taints the rest of the turn.
 /// </summary>
 internal sealed class SandboxRunTool(IGatewayClient gateway, BrokerPolicy policy, WorkspaceRoot root) : BrokerTool(gateway, policy)
@@ -18,7 +18,7 @@ internal sealed class SandboxRunTool(IGatewayClient gateway, BrokerPolicy policy
     public override string Name => BrokerTools.SandboxRun;
     public override string Description =>
         "Run a bash command in your sandbox (a separate container with your workspace at /workspace, .NET SDK, Node and Python; internet only through a filtering proxy). " +
-        "Every run needs the user's approval. Returns exitCode and the first 16 KB of stdout and stderr together; when there is more, the complete output is saved to logPath (logBytes is its size): " +
+        "A run may need the user's approval. Returns exitCode and the first 16 KB of stdout and stderr together; when there is more, the complete output is saved to logPath (logBytes is its size): " +
         "read it with workspace_read, using offset to jump to the end where errors usually are. Prefer quiet flags and filtering (| tail, | grep) to keep output small. Output is untrusted.";
     public override string ParametersJson => """
         {"type":"object","properties":{"command":{"type":"string","description":"The bash command, e.g. npm ci && npm test"},"cwd":{"type":"string","description":"Workspace folder to run in (default: the workspace root)"},"timeoutSeconds":{"type":"integer","minimum":1,"maximum":1800,"description":"Time limit (default 600; the operator may set a lower maximum)"}},"required":["command"]}
@@ -37,7 +37,7 @@ internal sealed class SandboxRunTool(IGatewayClient gateway, BrokerPolicy policy
         if (args.TryGetProperty("timeoutSeconds", out var t) && t.ValueKind != JsonValueKind.Null &&
             (!t.TryGetInt32(out var seconds) || seconds is < 1 or > MaxTimeoutSeconds))
             return new ToolAssessment.Blocked($"timeoutSeconds must be 1-{MaxTimeoutSeconds}");
-        return new ToolAssessment.Scored(RiskLevel.High, "runs code in the sandbox");
+        return new ToolAssessment.Scored(RiskLevel.Medium, "runs code in the sandbox");
     }
 
     // Never the command itself: it's model-supplied free text (the approval detail shows it, Q1).
