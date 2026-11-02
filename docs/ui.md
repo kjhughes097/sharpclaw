@@ -76,6 +76,25 @@ thread is a normal thread owned by the recipient.
   linked thread and the fail reason (`ask_timeout`, `ask_cancelled` are in `api/errors.ts`).
 - **Activity** needs nothing new: the gateway already puts the asking agent in `from`/`to`.
 
+## Attachments
+
+[Attachments spec](sharpclaw-attachments-spec.md) section 6. `features/chat/attachments.ts` mirrors
+the gateway's `AttachmentRules` (extensions, 5 files, 5 MB per image, 256 KB per text file) so the
+picker's `accept` and the pre-checks match; the gateway stays the authority.
+
+- **Composer:** the 📎 button opens a hidden multi-file input; files can also be dropped on the
+  composer, and pasting an image adds it as `pasted-<time>.png`. Each file is checked and read
+  with `FileReader` into a removable chip (images get a `data:` thumbnail). Rejected files are
+  listed in an inline alert. Send posts `attachments: [{ fileName, data }]` (base64) and works with
+  files and no text. Pending files live in component state only and are dropped on switching
+  threads (text drafts keep their in-memory map).
+- **Sent messages:** `TurnView` shows `message.attachments` under the user text: images as lazy
+  thumbnails linking to `GET /api/threads/{id}/attachments/{attachmentId}` (same origin, cookie
+  auth, allowed by `img-src 'self'`), text files as `download` links. An optimistic row's files
+  have no id yet and show by name until the real row arrives.
+- **Resend** of a failed message downloads its files again (`refetchAttachments`) and posts them
+  with the text.
+
 ## Approval details (external tools)
 
 Approvals for `sandbox_run`, `github_write` and `github_create_pr` carry a gateway-rendered
@@ -195,8 +214,9 @@ asserts no CSP violations, so `style-src-attr 'unsafe-inline'` was not needed.
 
 **Rendering.** Assistant text is markdown (`react-markdown` + `remark-gfm`, `skipHtml`, no
 `rehype-raw`). Links are limited to `http(s)`, `mailto` and `#anchors`, open in a new tab with
-`rel="noopener noreferrer nofollow"`. Images are never loaded: a markdown image becomes a text link
-(prompt-injected content can't exfiltrate data through an image URL). User text, tool arguments and
+`rel="noopener noreferrer nofollow"`. Images in markdown are never loaded: a markdown image becomes a text link
+(prompt-injected content can't exfiltrate data through an image URL). The only images shown are
+the user's own attachments, loaded same-origin from the gateway. User text, tool arguments and
 tool results are always plain text. Messages over 200,000 characters render as plain text first.
 
 **No secure context.** Over `http://<lan-host>` the browser has no `navigator.clipboard`,

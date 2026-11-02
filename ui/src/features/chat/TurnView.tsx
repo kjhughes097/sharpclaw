@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { failReasonMessage } from '../../api/errors';
 import type { LiveTurn } from '../../api/live';
-import type { TraceLlmCallDto, TraceToolCallDto } from '../../api/types';
+import type { MessageDto, TraceLlmCallDto, TraceToolCallDto } from '../../api/types';
 import { Badge, Button } from '../../components/ui';
 import { AssistantText, Markdown, PlainText } from '../../lib/markdown';
 import { formatTimeOfDay, serverNow, useServerNow } from '../../lib/time';
 import { ApprovalCard, type ApprovalView } from '../approvals/ApprovalCard';
+import { attachmentUrl, formatSize } from './attachments';
 import { ToolActivity } from './ToolActivity';
 import type { Turn } from './turns';
 
@@ -53,6 +54,56 @@ function StreamingBubble({ text, since }: { text: string; since: string }) {
 
 const LABEL = 'text-[0.7rem] tracking-wide text-muted uppercase';
 
+/**
+ * Files sent with a user message: images as thumbnails, text files as download links. Both load
+ * from the gateway (same origin). An optimistic row's files have no id yet and show by name only.
+ */
+function MessageAttachments({
+  threadId,
+  attachments,
+}: {
+  threadId: string;
+  attachments: NonNullable<MessageDto['attachments']>;
+}) {
+  return (
+    <ul aria-label="Attached files" className="mt-1.5 flex flex-wrap gap-2">
+      {attachments.map((a, i) => {
+        const label = `${a.fileName} (${formatSize(Number(a.sizeBytes))})`;
+        if (!a.id)
+          return (
+            <li key={`${a.fileName}-${i}`} className="text-xs text-muted">
+              {label}
+            </li>
+          );
+        const url = attachmentUrl(threadId, a.id);
+        return (
+          <li key={a.id}>
+            {a.kind === 'image' ? (
+              <a href={url} target="_blank" rel="noopener noreferrer" title={label}>
+                <img
+                  src={url}
+                  alt={a.fileName}
+                  loading="lazy"
+                  className="max-h-40 max-w-60 rounded border border-border object-contain"
+                />
+              </a>
+            ) : (
+              <a
+                href={url}
+                download={a.fileName}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-surface px-2 py-1 text-xs underline"
+              >
+                <span aria-hidden="true">📄</span>
+                {label}
+              </a>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** "KEN · 10:40:00": who spoke and when (local time). */
 function SpeakerLabel({ name, at }: { name: string; at: string | null | undefined }) {
   return (
@@ -79,6 +130,7 @@ export function TurnView({
   expandTools,
   claimedAt,
   highlighted,
+  threadId,
   onResend,
 }: {
   turn: Turn;
@@ -90,7 +142,8 @@ export function TurnView({
   expandTools: boolean;
   claimedAt: string | null;
   highlighted: boolean;
-  onResend: (content: string) => void;
+  threadId: string;
+  onResend: (message: MessageDto) => void;
 }) {
   const user = turn.user;
   const status = user?.status;
@@ -110,7 +163,10 @@ export function TurnView({
             <span className="sr-only">
               {user.sentByAgent ? `Agent ${user.sentByAgent} said: ` : 'You said: '}
             </span>
-            <PlainText text={user.content} />
+            {user.content && <PlainText text={user.content} />}
+            {user.attachments?.length ? (
+              <MessageAttachments threadId={threadId} attachments={user.attachments} />
+            ) : null}
           </div>
           {(status === 'pending' || status === 'claimed') && (
             <div className="mt-1 flex items-center gap-2 text-xs text-muted">
@@ -121,7 +177,7 @@ export function TurnView({
           {status === 'failed' && (
             <div role="alert" className="mt-2 rounded-md border border-danger bg-danger-soft p-2 text-sm">
               <p>{failReasonMessage(user.failReason)}</p>
-              <Button className="mt-2" onClick={() => onResend(user.content)}>
+              <Button className="mt-2" onClick={() => onResend(user)}>
                 Resend
               </Button>
             </div>

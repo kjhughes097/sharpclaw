@@ -101,6 +101,15 @@ These are deliberate scope limits, not oversights. Revisit when the phase that n
 | Agent-to-agent policy is config-only | `AllowAll`, restricting lists and descriptions live in gateway config and need a restart; agents read them at startup. Fix: store them in the DB with an admin API if they change often. |
 | Agents' descriptions of each other live in config | `AgentMessaging:Descriptions` rather than on the agent record. Fix: an agent `description` field if the UI needs it too. |
 
+## Accepted by design (attachments spec)
+
+| Item | Notes |
+|---|---|
+| Attachment bytes live in SQLite | Up to 25 MB of images per message, as BLOBs in `message_attachments`, kept as long as the thread (nothing is deleted). Simple and transactional with the message. Fix: move the bytes to files under `/data` if the database grows awkwardly large. |
+| Images are replayed on every turn | Attachments stay in history (attachments spec Q5), so each later turn re-sends the images still in the window and pays for them again. The gateway also re-reads and re-encodes them per model call. Fix: an option to replay only the newest turn's images, if image spend shows up. |
+| No vision-capability check | Posting an image to an agent whose model can't take images fails upstream like any provider error. Fix: a per-model capability list in `Models` config if this confuses users. |
+| Image token estimate is a flat number | `Context:ImageTokens` (1000) per image, whatever its size. Fix: estimate from the dimensions if context-window misses show up. |
+
 ## Code-level debt
 
 | # | Item | Severity | Why accepted | Fix when / how |

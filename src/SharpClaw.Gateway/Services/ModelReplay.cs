@@ -1,8 +1,12 @@
+using System.Text;
 using System.Text.Json;
 using SharpClaw.Contracts;
 using SharpClaw.Gateway.Data;
 
 namespace SharpClaw.Gateway.Services;
+
+/// <summary>An attachment as replay sees it: <c>Text</c> is the decoded file for text attachments, null for images.</summary>
+public sealed record ReplayAttachment(Guid Id, string Kind, string FileName, string? Text);
 
 /// <summary>
 /// Maps stored thread rows to model-facing messages (pre-3.3 spec section 5.4). Untrusted tool
@@ -19,8 +23,10 @@ public static class ModelReplay
 
     /// <param name="currentCorrelationId">The turn being processed; its untrusted results are kept.</param>
     /// <param name="senderNames">Names of the agents that sent user messages in these rows, by id.</param>
+    /// <param name="attachments">The row's attachments, when it is a user message that has any.</param>
     public static ContextMessage ToContextMessage(
-        Message row, Guid currentCorrelationId, IReadOnlyDictionary<Guid, string>? senderNames = null)
+        Message row, Guid currentCorrelationId, IReadOnlyDictionary<Guid, string>? senderNames = null,
+        IReadOnlyList<ReplayAttachment>? attachments = null)
     {
         switch (row.Kind)
         {
@@ -35,7 +41,50 @@ public static class ModelReplay
                 if (row.Role == Roles.User && row.SenderAgentId is { } sender)
                     return new ContextMessage(row.Role,
                         FromAgentPrefix(senderNames?.GetValueOrDefault(sender) ?? "unknown") + row.Content);
+                if (row.Role == Roles.User && attachments is { Count: > 0 })
+                    return WithAttachments(row.Content, attachments);
                 return new ContextMessage(row.Role, row.Content);
         }
+    }
+
+    /// <summary>
+    /// A user message with its attachments (attachments spec section 4): each text file is inlined
+    /// after the text in a fence the file can't close early; each image gets a marker line, and its
+    /// id rides along for the gateway to resolve when it calls the provider.
+    /// </summary>
+    public static ContextMessage WithAttachments(string content, IReadOnlyList<ReplayAttachment> attachments)
+    {
+        var sb = new StringBuilder(content);
+        var imageIds = new List<Guid>();
+        foreach (var a in attachments)
+        {
+            if (sb.Length > 0)
+                sb.Append("\n\n");
+            if (a.Kind == AttachmentKinds.Image)
+            {
+                sb.Append("[Attached image: ").Append(a.FileName).Append(']');
+                imageIds.Add(a.Id);
+                continue;
+            }
+            var text = a.Text ?? "";
+            var fence = new string('`', Math.Max(3, LongestBacktickRun(text) + 1));
+            sb.Append("[Attached file: ").Append(a.FileName).Append("]\n")
+                .Append(fence).Append('\n').Append(text);
+            if (!text.EndsWith('\n'))
+                sb.Append('\n');
+            sb.Append(fence);
+        }
+        return new ContextMessage(Roles.User, sb.ToString(), ImageIds: imageIds.Count > 0 ? imageIds : null);
+    }
+
+    private static int LongestBacktickRun(string text)
+    {
+        int longest = 0, run = 0;
+        foreach (var c in text)
+        {
+            run = c == '`' ? run + 1 : 0;
+            longest = Math.Max(longest, run);
+        }
+        return longest;
     }
 }

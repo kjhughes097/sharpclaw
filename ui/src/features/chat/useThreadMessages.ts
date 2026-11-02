@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, call } from '../../api/client';
 import { keys } from '../../api/queryKeys';
 import type { MessageDto } from '../../api/types';
+import { kindOf } from './attachments';
 
 export const PAGE_SIZE = 100;
 
@@ -103,9 +104,16 @@ export function useThreadMessages(threadId: string) {
     }
   }, [rows, threadId, latestRows]);
 
-  /** Shows the user's message at once from the 202 response. */
+  /**
+   * Shows the user's message at once from the 202 response. Its attachments have no ids yet, so
+   * they show by name only until the real row replaces it.
+   */
   const addOptimistic = useCallback(
-    (message: { id: string; status: string; createdAt: string }, content: string) => {
+    (
+      message: { id: string; status: string; createdAt: string },
+      content: string,
+      attachments: { fileName: string; data: string }[] = [],
+    ) => {
       const maxSeq = Math.max(0, ...rows.map((r) => r.seq ?? 0));
       setOptimistic((current) => [
         ...current,
@@ -125,6 +133,15 @@ export function useThreadMessages(threadId: string) {
           untrusted: false,
           truncated: false,
           failReason: null,
+          attachments: attachments.length
+            ? attachments.map((a) => ({
+                id: '',
+                fileName: a.fileName,
+                kind: kindOf(a.fileName) ?? 'text',
+                mediaType: '',
+                sizeBytes: Math.floor((a.data.length * 3) / 4),
+              }))
+            : null,
         },
       ]);
     },

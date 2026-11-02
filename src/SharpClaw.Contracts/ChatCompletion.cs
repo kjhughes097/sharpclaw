@@ -5,13 +5,15 @@ public sealed record ChatToolCall(string Id, string Name, string Arguments);
 
 /// <summary>
 /// OpenAI-style chat message with string content. An assistant message may carry
-/// <c>ToolCalls</c> (with null content); a <c>tool</c> message answers <c>ToolCallId</c>.
+/// <c>ToolCalls</c> (with null content); a <c>tool</c> message answers <c>ToolCallId</c>. A user
+/// message may carry <c>ImageIds</c>: attached images, passed through to the gateway by id.
 /// </summary>
 public sealed record ChatMessage(
     string Role,
     string? Content,
     IReadOnlyList<ChatToolCall>? ToolCalls = null,
-    string? ToolCallId = null);
+    string? ToolCallId = null,
+    IReadOnlyList<Guid>? ImageIds = null);
 
 /// <summary>
 /// OpenAI-compatible chat completion request. <c>Model</c> is accepted but ignored by the

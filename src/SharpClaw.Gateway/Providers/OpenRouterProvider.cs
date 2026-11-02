@@ -242,7 +242,9 @@ public sealed class OpenRouterProvider : IChatProvider
     {
         w.WriteStartObject();
         w.WriteString("role", m.Role);
-        if (m.Content is null) w.WriteNull("content");
+        if (m.Images is { Count: > 0 })
+            WriteContentParts(w, m.Content, m.Images);
+        else if (m.Content is null) w.WriteNull("content");
         else w.WriteString("content", m.Content);
         if (m.ToolCallId is { } toolCallId) w.WriteString("tool_call_id", toolCallId);
         if (m.ToolCalls is { Count: > 0 })
@@ -264,6 +266,31 @@ public sealed class OpenRouterProvider : IChatProvider
             w.WriteEndArray();
         }
         w.WriteEndObject();
+    }
+
+    /// <summary>OpenAI content parts: the text (when there is any), then one <c>image_url</c> per image.</summary>
+    private static void WriteContentParts(Utf8JsonWriter w, string? text, IReadOnlyList<ProviderImage> images)
+    {
+        w.WritePropertyName("content");
+        w.WriteStartArray();
+        if (!string.IsNullOrEmpty(text))
+        {
+            w.WriteStartObject();
+            w.WriteString("type", "text");
+            w.WriteString("text", text);
+            w.WriteEndObject();
+        }
+        foreach (var image in images)
+        {
+            w.WriteStartObject();
+            w.WriteString("type", "image_url");
+            w.WritePropertyName("image_url");
+            w.WriteStartObject();
+            w.WriteString("url", image.DataUri());
+            w.WriteEndObject();
+            w.WriteEndObject();
+        }
+        w.WriteEndArray();
     }
 
     private static void WriteTool(Utf8JsonWriter w, ProviderTool t)

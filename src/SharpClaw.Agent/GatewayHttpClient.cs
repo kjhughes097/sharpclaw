@@ -99,6 +99,9 @@ public sealed class GatewayHttpClient : IGatewayClient
             }).ToList();
         if (m.ToolCallId is not null)
             wire["tool_call_id"] = m.ToolCallId;
+        // Attached images go back by id; the gateway checks and resolves them (attachments spec section 5).
+        if (m.ImageIds is { Count: > 0 })
+            wire["image_ids"] = m.ImageIds;
         return wire;
     }
 

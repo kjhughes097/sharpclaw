@@ -81,6 +81,28 @@ public class GatewayHttpClientTests
     }
 
     [Fact]
+    public void Payload_passes_attached_image_ids_through_and_omits_them_when_absent()
+    {
+        var id = Guid.NewGuid();
+        var json = JsonSerializer.Serialize(GatewayHttpClient.BuildPayload(
+            new[] { new ChatMessage(Roles.User, "look", ImageIds: new[] { id }), new ChatMessage(Roles.User, "plain") },
+            Array.Empty<IAgentTool>()), SharpClawJson.Options);
+        using var doc = JsonDocument.Parse(json);
+        var wire = doc.RootElement.GetProperty("messages");
+
+        Assert.Equal(id.ToString(), wire[0].GetProperty("image_ids")[0].GetString());
+        Assert.False(wire[1].TryGetProperty("image_ids", out _));
+    }
+
+    [Fact]
+    public void Context_image_ids_survive_into_chat_messages()
+    {
+        var id = Guid.NewGuid();
+        var context = JsonSerializer.Deserialize<ContextMessage>($$"""{"role":"user","content":"x","image_ids":["{{id}}"]}""");
+        Assert.Equal(new[] { id }, context!.ToChatMessage().ImageIds);
+    }
+
+    [Fact]
     public void Payload_without_tools_omits_tools_and_tool_choice()
     {
         var json = JsonSerializer.Serialize(

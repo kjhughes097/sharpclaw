@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SharpClaw.Contracts;
@@ -29,8 +30,14 @@ public static class ThreadsEndpoints
 
         var messages = client.MapGroup("/threads/{id}").WithTags("messages");
         messages.MapGet("/messages", GetMessages).WithName("listMessages").Produces<MessageListResponse>();
+        // Attachments arrive base64 in the body, so this one endpoint takes more than Kestrel's default.
+        var maxPostBody = ((IEndpointRouteBuilder)client).ServiceProvider
+            .GetRequiredService<IOptions<MessagesOptions>>().Value.MaxPostBodyBytes;
         messages.MapPost("/messages", PostMessage).WithName("postMessage")
+            .WithMetadata(new RequestSizeLimitAttribute(maxPostBody))
             .Produces<QueuedMessageResponse>(StatusCodes.Status202Accepted);
+        messages.MapGet("/attachments/{attachmentId}", GetAttachment).WithName("getAttachment")
+            .Produces(StatusCodes.Status200OK, contentType: "application/octet-stream");
         messages.MapGet("/stream", StreamThread).WithName("streamThread").ProducesEventStream();
 
         client.MapGet("/events", StreamAll).WithName("streamEvents").WithTags("events").ProducesEventStream();
@@ -235,17 +242,44 @@ public static class ThreadsEndpoints
         Guid id, PostMessageRequest? body, HttpContext http, MessageTurns turns, IOptions<MessagesOptions> messages,
         CancellationToken ct)
     {
-        if (body is null || string.IsNullOrEmpty(body.Content))
+        var hasAttachments = body?.Attachments is { Count: > 0 };
+        if (body is null || body.Content is null || (body.Content.Length == 0 && !hasAttachments))
             return ApiResults.ValidationFailed("content is required.");
         if (body.Content.Length > messages.Value.MaxContentChars)
             return ApiResults.ValidationFailed($"content exceeds {messages.Value.MaxContentChars} characters.");
+        var (attachments, attachmentError) = AttachmentValidator.Validate(body.Attachments, messages.Value);
+        if (attachmentError is not null)
+            return ApiResults.ValidationFailed(attachmentError);
 
-        var message = await turns.PostAsync(id, body.Content, body.Unattended, ct, ClientAuthFilter.ActorName(http));
+        var message = await turns.PostAsync(
+            id, body.Content, body.Unattended, ct, ClientAuthFilter.ActorName(http), attachments);
         if (message is null)
             return ApiResults.NotFound("Thread not found.");
 
         var dto = new QueuedMessageDto(message.Id, message.Status, message.CreatedAt);
         return Results.Json(new QueuedMessageResponse(dto), SharpClawJson.Options, statusCode: 202);
+    }
+
+    /// <summary>
+    /// An attachment's bytes (attachments spec section 3). Text is always served as a download and
+    /// <c>nosniff</c> stops a browser from reinterpreting either kind. Like every <c>/api</c>
+    /// response it is <c>no-store</c> (set by the security headers).
+    /// </summary>
+    private static async Task<IResult> GetAttachment(
+        Guid id, Guid attachmentId, HttpContext http, SharpClawDbContext db, CancellationToken ct)
+    {
+        var a = await db.MessageAttachments.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == attachmentId && x.ThreadId == id, ct);
+        if (a is null)
+            return ApiResults.NotFound("Attachment not found.");
+
+        var headers = http.Response.Headers;
+        headers.XContentTypeOptions = "nosniff";
+        var disposition = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue(
+            a.Kind == AttachmentKinds.Image ? "inline" : "attachment");
+        disposition.SetHttpFileName(a.FileName);
+        headers.ContentDisposition = disposition.ToString();
+        return Results.Bytes(a.Data, a.MediaType);
     }
 
     private static async Task<IResult> StreamThread(

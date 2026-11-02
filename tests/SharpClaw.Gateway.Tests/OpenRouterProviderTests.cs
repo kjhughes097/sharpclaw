@@ -11,7 +11,7 @@ namespace SharpClaw.Gateway.Tests;
 /// OpenRouterProvider against a fake HttpMessageHandler serving canned upstream SSE, so the parsing,
 /// error and timeout paths are covered without network access.
 /// </summary>
-public class OpenRouterProviderTests
+public partial class OpenRouterProviderTests
 {
     private static ProviderChatRequest Request() => new(
         "openai/gpt-4o-mini",

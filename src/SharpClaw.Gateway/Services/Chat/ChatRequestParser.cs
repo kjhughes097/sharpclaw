@@ -106,7 +106,25 @@ public static partial class ChatRequestParser
             toolCallId = idEl.GetString();
         }
 
-        return (new ProviderChatMessage(role, content, toolCalls, toolCallId), null);
+        List<Guid>? imageIds = null;
+        if (m.TryGetProperty("image_ids", out var imagesEl) && imagesEl.ValueKind != JsonValueKind.Null)
+        {
+            if (role != Roles.User)
+                return (null, ApiResults.ValidationFailed("only user messages may carry image_ids."));
+            if (imagesEl.ValueKind != JsonValueKind.Array)
+                return (null, ApiResults.ValidationFailed("image_ids must be an array."));
+            imageIds = new List<Guid>();
+            foreach (var idEl in imagesEl.EnumerateArray())
+            {
+                if (idEl.ValueKind != JsonValueKind.String || !Guid.TryParse(idEl.GetString(), out var imageId))
+                    return (null, ApiResults.ValidationFailed("image_ids must be GUID strings."));
+                imageIds.Add(imageId);
+            }
+            if (imageIds.Count == 0)
+                imageIds = null;
+        }
+
+        return (new ProviderChatMessage(role, content, toolCalls, toolCallId, imageIds), null);
     }
 
     private static (List<ProviderToolCall>? Calls, IResult? Error) ParseToolCalls(JsonElement callsEl)

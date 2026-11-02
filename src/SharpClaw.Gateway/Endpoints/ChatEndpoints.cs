@@ -78,6 +78,8 @@ public static class ChatEndpoints
             var (parsed, parseError) = ChatRequestParser.Parse(bodyDoc.RootElement);
             if (parseError is not null)
                 return parseError;
+            if (await ResolveImagesAsync(db, threadId, parsed!.Messages, ct) is { } imageError)
+                return imageError;
 
             var now = svc.Time.GetUtcNow().UtcDateTime;
             // Claim heartbeat: a multi-round tool turn must not be requeued as if the agent had died.
@@ -155,13 +157,35 @@ public static class ChatEndpoints
         return null;
     }
 
+    /// <summary>
+    /// Replaces each user message's <c>image_ids</c> with the image bytes (attachments spec section
+    /// 5). Every id must be an image attached in this thread, so an agent can only show the model
+    /// what its own user sent, and never makes the provider fetch a URL. Null means go ahead.
+    /// </summary>
+    private static async Task<IResult?> ResolveImagesAsync(
+        SharpClawDbContext db, Guid threadId, List<ProviderChatMessage> messages, CancellationToken ct)
+    {
+        var ids = messages.SelectMany(m => m.ImageIds ?? []).Distinct().ToList();
+        if (ids.Count == 0)
+            return null;
+        var images = await db.MessageAttachments.AsNoTracking()
+            .Where(a => ids.Contains(a.Id) && a.ThreadId == threadId && a.Kind == AttachmentKinds.Image)
+            .ToDictionaryAsync(a => a.Id, a => new ProviderImage(a.MediaType, a.Data), ct);
+        if (images.Count != ids.Count)
+            return ApiResults.ValidationFailed("image_ids must be images attached in this thread.");
+        for (var i = 0; i < messages.Count; i++)
+            if (messages[i].ImageIds is { Count: > 0 } imageIds)
+                messages[i] = messages[i] with { Images = imageIds.Select(id => images[id]).ToList() };
+        return null;
+    }
+
     /// <summary>Estimate of the prompt: the messages plus the tool schemas offered with them.</summary>
     private static int EstimatePrompt(ParsedChatRequest request, JsonElement root, ContextOptions options)
     {
         var estimator = new TokenEstimator(options);
         var messages = request.Messages.Select(m => new ContextMessage(m.Role, m.Content,
             m.ToolCalls?.Select(c => new ContextToolCall(c.Id, "function", new ContextFunction(c.Name, c.ArgumentsJson))).ToList(),
-            m.ToolCallId));
+            m.ToolCallId, m.ImageIds));
         var schemaChars = root.TryGetProperty("tools", out var tools) ? tools.GetRawText().Length : 0;
         return estimator.Estimate(messages) + estimator.EstimateChars(schemaChars);
     }

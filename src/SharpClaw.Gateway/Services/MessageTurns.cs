@@ -26,9 +26,11 @@ public sealed class MessageTurns(
     /// <summary>
     /// Queues a user message on the thread and wakes its agent. Null when the thread doesn't exist.
     /// <paramref name="sentByUser"/> records who posted it (see <c>ClientAuthFilter.ActorName</c>).
+    /// <paramref name="attachments"/> are stored in the same transaction as the message.
     /// </summary>
     public async Task<Message?> PostAsync(
-        Guid threadId, string content, bool unattended, CancellationToken ct, string? sentByUser = null)
+        Guid threadId, string content, bool unattended, CancellationToken ct, string? sentByUser = null,
+        IReadOnlyList<ValidatedAttachment>? attachments = null)
     {
         var now = time.GetUtcNow().UtcDateTime;
         var message = await events.WriteAsync(db, async batch =>
@@ -37,11 +39,26 @@ public sealed class MessageTurns(
             var thread = await db.Threads.FirstOrDefaultAsync(t => t.Id == threadId, ct);
             if (thread is null)
                 return null;
-            return await AddUserMessageAsync(db, batch, thread, content, now, ct, m =>
+            var msg = await AddUserMessageAsync(db, batch, thread, content, now, ct, m =>
             {
                 m.Unattended = unattended;
                 m.SentByUser = sentByUser;
-            });
+            }, attachments?.Select(a => a.FileName).ToList());
+            foreach (var (a, position) in (attachments ?? []).Select((a, i) => (a, i)))
+                db.MessageAttachments.Add(new MessageAttachment
+                {
+                    Id = Guid.CreateVersion7(),
+                    MessageId = msg.Id,
+                    ThreadId = thread.Id,
+                    Position = position,
+                    Kind = a.Kind,
+                    FileName = a.FileName,
+                    MediaType = a.MediaType,
+                    SizeBytes = a.Data.Length,
+                    Data = a.Data,
+                    CreatedAt = now,
+                });
+            return msg;
         }, ct);
         if (message is null)
             return null;
@@ -56,10 +73,11 @@ public sealed class MessageTurns(
     /// Adds a <c>pending</c> user message to <paramref name="thread"/> with its <c>message.created</c>
     /// event. Call inside <see cref="IEventPublisher.WriteAsync{T}"/>, so the seq, preview and
     /// auto-title can't race another post. <paramref name="init"/> sets who sent it.
+    /// <paramref name="attachmentNames"/> stand in for the preview and title when the text is empty.
     /// </summary>
     internal static async Task<Message> AddUserMessageAsync(
         SharpClawDbContext db, EventBatch batch, ConversationThread thread, string content, DateTime now,
-        CancellationToken ct, Action<Message> init)
+        CancellationToken ct, Action<Message> init, IReadOnlyList<string>? attachmentNames = null)
     {
         var isFirst = !await db.Messages.AnyAsync(m => m.ThreadId == thread.Id && m.Role == Roles.User, ct);
         var msg = new Message
@@ -76,7 +94,11 @@ public sealed class MessageTurns(
         };
         init(msg);
         db.Messages.Add(msg);
-        ThreadActivity.OnMessage(thread, content, now, isFirst);
+        ThreadActivity.OnMessage(thread,
+            string.IsNullOrWhiteSpace(content) && attachmentNames is { Count: > 0 }
+                ? "Attached: " + string.Join(", ", attachmentNames)
+                : content,
+            now, isFirst);
         batch.Add(thread.Id, SseEventNames.MessageCreated, new MessageCreatedEvent(msg.Id, thread.Id, msg.Id));
         return msg;
     }

@@ -5,8 +5,8 @@ This page describes the system **as it is now**. It is the first thing to read. 
 [pre-3.3 foundations](sharpclaw-pre-3.3-foundations-spec.md) → [3.3](sharpclaw-3.3-implementation-spec.md) →
 [3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md),
 the [external tools spec](sharpclaw-external-tools-spec.md) and the
-[skills spec](sharpclaw-skills-spec.md), and [3.5](sharpclaw-3.5-implementation-spec.md),
-agent-to-agent messaging)
+[skills spec](sharpclaw-skills-spec.md), [3.5](sharpclaw-3.5-implementation-spec.md),
+agent-to-agent messaging, and the [attachments spec](sharpclaw-attachments-spec.md))
 record *why* and *when* each behaviour was decided; they remain the source of truth for detailed
 behaviour, with later specs winning. Keep this page in step with the code when structure changes.
 
@@ -117,16 +117,20 @@ sequenceDiagram
   G-->>C: message.completed
 ```
 
-1. **Post.** The client posts to `POST /api/threads/{id}/messages`. The gateway stores a `pending`
-   user message (with `seq`), emits `message.created` and signals the agent's inbox.
+1. **Post.** The client posts to `POST /api/threads/{id}/messages`, optionally with base64
+   attachments (images and text files, checked by `AttachmentValidator`). The gateway stores a
+   `pending` user message (with `seq`) and its `message_attachments` in one transaction, emits
+   `message.created` and signals the agent's inbox.
 2. **Claim.** The agent's `GET /agent/inbox?wait=` long poll atomically claims the oldest pending
    message (`claimed`). A claim older than `Inbox:ClaimTimeoutSeconds` is requeued; chat calls,
    approval creation and approval polls refresh it (heartbeat).
 3. **Context.** The agent fetches `GET /agent/threads/{id}/context?reserveTokens=`. The gateway
    returns the whole turns that fit the window, newest first (`ContextBuilder`, which reads only the
    newest turns it needs, not the whole thread), and records `droppedTurns`/`estimatedTokens` on the thread.
+   Text attachments are inlined into their user message; images appear as `image_ids` (never bytes).
 4. **Model calls.** `POST /v1/chat/completions` (streaming only). The gateway checks ownership, the
-   per-message call limit, the daily budget and the context size, resolves the model (the thread's
+   per-message call limit, the daily budget and the context size, resolves any `image_ids` on user
+   messages (each must be an image attached in this thread) to `image_url` data parts, resolves the model (the thread's
    override while it is still in `Models:Allowed`, else the agent's), then streams from the provider as
    OpenAI-style SSE. Deltas are teed to the thread (`delta`, plus `ActiveTurnBuffers` for
    `snapshot`). Every call is recorded in `llm_calls` (append-only) and requested tool calls in `tool_calls`.
@@ -180,7 +184,7 @@ as `rejected`. Budgets reset at UTC midnight.
 **Context window.** The window is the agent's `contextWindowTokens` (default
 `Context:DefaultWindowTokens`) minus the agent's reserve for its system message (soul plus skill index) and tool schemas and
 `Context:ReplyReserveTokens`. Whole turns that don't fit are dropped, oldest first, and replaced by a
-note; tokens are estimated as characters / 4. A turn that alone doesn't fit, a chat request over the
+note; tokens are estimated as characters / 4, plus `Context:ImageTokens` per attached image. A turn that alone doesn't fit, a chat request over the
 window, or a provider context-length error fails the turn with `context_too_large`. Within a turn
 the agent's `TurnBudget` keeps its own tool traffic inside the window: before each call after the
 first it estimates the request exactly as the gateway does and replaces the turn's oldest tool
@@ -198,7 +202,7 @@ The committed contract is [contracts/openapi/sharpclaw-client.v1.json](../contra
 | users (admin key) | `GET/POST /api/users`, `PATCH /api/users/{name}`, `PUT /api/users/{name}/password` |
 | agents, tokens | `GET/POST /api/agents`, `GET/PATCH /api/agents/{idOrName}`, `GET/POST /api/agents/{idOrName}/tokens`, `DELETE …/tokens/{tokenId}` |
 | threads | `GET/POST /api/threads`, `GET/PATCH /api/threads/{id}`, `GET /api/threads/{id}/trace` |
-| messages | `GET/POST /api/threads/{id}/messages` (seq paging), `GET /api/threads/{id}/stream` (SSE) |
+| messages | `GET/POST /api/threads/{id}/messages` (seq paging; attachments on post), `GET /api/threads/{id}/attachments/{attachmentId}`, `GET /api/threads/{id}/stream` (SSE) |
 | events | `GET /api/events` (global SSE stream) |
 | approvals | `GET /api/approvals`, `GET /api/approvals/{id}` (adds `detail` for broker calls: a command, capped at 1,000 chars), `POST /api/approvals/{id}` (decide; optional `remember` creates a standing grant), `POST /api/approvals/batch` (decide many), `GET /api/agents/{idOrName}/grants`, `DELETE /api/agents/{idOrName}/grants/{grantId}` |
 | audit | `GET /api/audit/llm-calls`, `GET /api/audit/tool-calls` (keyset cursors) |
@@ -286,6 +290,7 @@ Payloads and their samples: [ui.md § Live events](ui.md#live-events), [contract
 | `agent_skills` | The skills each agent last reported (`agent_id`, `name`, `description`); replaced as a whole by `PUT /agent/skills`, deleted with the agent. |
 | `threads` | Owner agent, title, archived, `last_message_at`/`last_preview`, last context figures, optional `model` override (must be in `Models:Allowed` to take effect); on linked threads, `origin_thread_id`/`origin_agent_id` (the asking agent's thread). |
 | `messages` | User messages, final replies and tool exchange rows (`kind`), ordered by per-thread `seq`; user rows carry the queue state (`pending → claimed → done/failed`) and `sent_by_user` (user name or `admin_key`), or for agent asks `sender_agent_id`, `origin_message_id`/`origin_tool_call_id`, `hop` and `origin_tainted`. |
+| `message_attachments` | Files sent with a user message: `kind` (`image`/`text`), name, media type, size, bytes, `position`; `thread_id` denormalised for ownership checks ([attachments spec](sharpclaw-attachments-spec.md)). |
 | `llm_calls` | Append-only audit of every model call (tokens, cost, latency, purpose `chat`/`risk_assessment`/`web_search`, outcome). |
 | `tool_calls` | Every tool call the model requested, plus the agent's report. |
 | `approvals` | Approval requests and decisions (`decided_by` = user/system/grant/autonomy; `decided_by_user` = which user, or `admin_key`; `grant_id` = the grant that approved it); `args_hash` binds an approval to exact arguments, `used_at` marks it consumed by the broker. |
@@ -337,6 +342,8 @@ changes go through EF migrations in `src/SharpClaw.Gateway/Data/Migrations`.
 - Agents never talk to each other directly: an ask goes only through `POST /agent/tools/ask_agent`,
   only as gateway config allows, never in a cycle or deadlock, past `MaxHops` or past `MaxAsksPerChain`, and its reply is untrusted
   for the asker (`AgentAskTests`, `AskAgentToolTests`).
+- An agent can show the model only images its own thread's user attached, by id; it can never pass
+  image bytes or a URL for the provider to fetch (`AttachmentTests`).
 - The client contract (OpenAPI + event fixtures) changes only deliberately (`SnapshotTests`, `npm run check:api`).
 - Product code takes time from an injected `TimeProvider`.
 

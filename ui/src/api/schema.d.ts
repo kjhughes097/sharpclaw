@@ -341,6 +341,22 @@ export interface paths {
     patch: operations['updateThread'];
     trace?: never;
   };
+  '/api/threads/{id}/attachments/{attachmentId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations['getAttachment'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/threads/{id}/messages': {
     parameters: {
       query?: never;
@@ -582,6 +598,19 @@ export interface components {
     ApprovalResponse: {
       approval: components['schemas']['ApprovalDto'];
     };
+    AttachmentDto: {
+      fileName: string;
+      /** Format: uuid */
+      id: string;
+      kind: string;
+      mediaType: string;
+      /** Format: int64 */
+      sizeBytes: number;
+    };
+    AttachmentUpload: {
+      data: string;
+      fileName: string;
+    };
     AuditResponse: {
       calls: components['schemas']['LlmCallDto'][];
       nextCursor?: null | string;
@@ -707,6 +736,7 @@ export interface components {
       user: components['schemas']['UserDto'];
     };
     MessageDto: {
+      attachments?: null | components['schemas']['AttachmentDto'][];
       content: string;
       /** Format: uuid */
       correlationId: null | string;
@@ -754,6 +784,7 @@ export interface components {
       toolName: string;
     };
     PostMessageRequest: {
+      attachments?: null | components['schemas']['AttachmentUpload'][];
       content: string;
       /** @default false */
       unattended: boolean;
@@ -3140,6 +3171,81 @@ export interface operations {
         content: {
           'application/json': components['schemas']['ThreadResponse'];
         };
+      };
+      /** @description Bad Request */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Forbidden */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Not Found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Conflict */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+      /** @description Internal Server Error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiErrorResponse'];
+        };
+      };
+    };
+  };
+  getAttachment: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        id: string;
+        attachmentId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description OK */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Bad Request */
       400: {

@@ -87,6 +87,7 @@ public static class TurnBudget
             chars += JsonSerializer.Serialize(
                 m.ToolCalls.Select(c => new ContextToolCall(c.Id, "function", new ContextFunction(c.Name, c.Arguments))),
                 SharpClawJson.Options).Length;
-        return ContextDefaults.Tokens(chars) + ContextDefaults.MessageOverheadTokens;
+        return ContextDefaults.Tokens(chars) + ContextDefaults.MessageOverheadTokens +
+            (m.ImageIds?.Count ?? 0) * ContextDefaults.ImageTokens;
     }
 }

@@ -662,6 +662,63 @@ namespace SharpClaw.Gateway.Data.Migrations
                     b.ToTable("messages", (string)null);
                 });
 
+            modelBuilder.Entity("SharpClaw.Gateway.Data.MessageAttachment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<byte[]>("Data")
+                        .IsRequired()
+                        .HasColumnType("BLOB")
+                        .HasColumnName("data");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("MediaType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("media_type");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("message_id");
+
+                    b.Property<int>("Position")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("position");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("size_bytes");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("thread_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageId");
+
+                    b.ToTable("message_attachments", (string)null);
+                });
+
             modelBuilder.Entity("SharpClaw.Gateway.Data.SandboxClone", b =>
                 {
                     b.Property<Guid>("Id")
@@ -961,6 +1018,15 @@ namespace SharpClaw.Gateway.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Agent");
+                });
+
+            modelBuilder.Entity("SharpClaw.Gateway.Data.MessageAttachment", b =>
+                {
+                    b.HasOne("SharpClaw.Gateway.Data.Message", null)
+                        .WithMany()
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SharpClaw.Gateway.Data.SandboxClone", b =>
