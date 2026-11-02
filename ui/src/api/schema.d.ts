@@ -833,7 +833,8 @@ export interface components {
       budgetResetAtUtc: string;
       models: string[];
       provider: string;
-      transcription: boolean;
+      /** Format: int32 */
+      transcriptionMaxSeconds: null | number;
       /** Format: date-time */
       utcNow: string;
       version: string;

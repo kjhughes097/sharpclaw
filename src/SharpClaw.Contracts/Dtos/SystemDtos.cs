@@ -5,11 +5,12 @@ namespace SharpClaw.Contracts;
 /// <summary>
 /// <c>Provider</c> is <c>OpenRouter</c> or <c>Fake</c>; <c>BudgetResetAtUtc</c> is the next UTC midnight.
 /// <c>Models</c>: the ids a thread may switch to (<c>Models:Allowed</c>), possibly empty.
-/// <c>Transcription</c>: whether voice input is on (a whisper model is configured; voice spec).
+/// <c>TranscriptionMaxSeconds</c>: the longest voice recording accepted, or null when voice input is
+/// off (no whisper model configured; voice spec).
 /// </summary>
 public sealed record SystemInfoResponse(
     string Version, string Provider, DateTime UtcNow, DateTime BudgetResetAtUtc, IReadOnlyList<string> Models,
-    bool Transcription);
+    int? TranscriptionMaxSeconds);
 
 // ----- Voice input (voice spec section 3) -----
 

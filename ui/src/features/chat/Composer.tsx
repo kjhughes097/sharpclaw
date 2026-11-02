@@ -7,6 +7,7 @@ import {
   type DragEvent,
   type KeyboardEvent,
 } from 'react';
+import { useSystem } from '../../api/hooks';
 import { MAX_CONTENT_CHARS } from '../../api/types';
 import { Button } from '../../components/ui';
 import {
@@ -19,6 +20,8 @@ import {
   readAttachment,
   type PendingAttachment,
 } from './attachments';
+import { useVoiceInput } from './useVoiceInput';
+import { VoiceButtons, VoiceStatus } from './VoiceControls';
 
 /** What the composer sends: the text and any attached files (base64). */
 export interface OutgoingMessage {
@@ -57,12 +60,21 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  // Null when the gateway has no transcription model: then there is no microphone button.
+  const voiceMaxSeconds = useSystem().data?.transcriptionMaxSeconds ?? null;
+  const voice = useVoiceInput({
+    maxSeconds: voiceMaxSeconds ?? 0,
+    onTranscript: (transcript) => sendTranscript(transcript),
+  });
+  const { cancel: cancelVoice } = voice;
 
   useEffect(() => {
     setText(drafts.get(threadId) ?? '');
     setFiles([]);
     setFileErrors([]);
-  }, [threadId]);
+    // A recording belongs to the thread it was started in.
+    cancelVoice();
+  }, [threadId, cancelVoice]);
 
   // Auto-grow up to a limit.
   useLayoutEffect(() => {
@@ -123,7 +135,8 @@ export function Composer({
 
   const tooLong = text.length > MAX_CONTENT_CHARS;
   const empty = text.trim().length === 0 && files.length === 0;
-  const disabled = empty || tooLong || busy;
+  const recording = voice.phase !== 'idle';
+  const disabled = empty || tooLong || busy || recording;
 
   const send = async () => {
     if (disabled) return;
@@ -132,6 +145,22 @@ export function Composer({
       update('');
       setFiles([]);
       setFileErrors([]);
+    }
+  };
+
+  /**
+   * Sends what was said straight away, after any typed draft and with any attached files. If it
+   * can't be sent, the words go into the draft so they can be fixed and sent by hand.
+   */
+  const sendTranscript = async (transcript: string) => {
+    const content = [text.trim(), transcript].filter(Boolean).join('\n\n');
+    const attachments = files.map((f) => ({ fileName: f.fileName, data: f.data }));
+    if (content.length <= MAX_CONTENT_CHARS && (await onSend({ content, attachments }))) {
+      update('');
+      setFiles([]);
+      setFileErrors([]);
+    } else {
+      update(content);
     }
   };
 
@@ -164,6 +193,7 @@ export function Composer({
       {turnInFlight && !empty && (
         <p className="px-1 pb-1 text-xs text-muted">The agent is busy; your message will queue.</p>
       )}
+      {voiceMaxSeconds !== null && <VoiceStatus voice={voice} maxSeconds={voiceMaxSeconds} />}
       {fileErrors.length > 0 && (
         <ul role="alert" className="px-1 pb-1 text-xs text-danger">
           {fileErrors.map((error) => (
@@ -224,6 +254,7 @@ export function Composer({
         >
           📎
         </Button>
+        {voiceMaxSeconds !== null && <VoiceButtons voice={voice} disabled={busy} />}
         <label htmlFor={`composer-${threadId}`} className="sr-only">
           Message
         </label>

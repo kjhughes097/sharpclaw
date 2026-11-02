@@ -31,7 +31,7 @@ public static class SystemEndpoints
             ? FakeProvider
             : OpenRouterProvider;
         return Results.Json(new SystemInfoResponse(Version, name, now, DateTime.SpecifyKind(nextMidnight, DateTimeKind.Utc),
-                models.Value.Allowed, transcription.Value.Enabled),
+                models.Value.Allowed, transcription.Value.Enabled ? transcription.Value.MaxSeconds : null),
             SharpClawJson.Options);
     }
 

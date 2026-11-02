@@ -72,7 +72,7 @@ public sealed class TranscriptionTests : IDisposable
         Assert.Equal(Spoken, body!.Text);
         Assert.Equal(24000, Assert.Single(transcriber.Calls).Length);
         var info = await admin.GetFromJsonAsync<SystemInfoResponse>("/api/system", SharpClawJson.Options);
-        Assert.True(info!.Transcription);
+        Assert.Equal(2, info!.TranscriptionMaxSeconds);
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class TranscriptionTests : IDisposable
         Assert.Equal(ErrorCodes.TranscriptionUnavailable, (await ErrorAsync(resp)).Error.Code);
         Assert.Empty(transcriber.Calls);
         var info = await admin.GetFromJsonAsync<SystemInfoResponse>("/api/system", SharpClawJson.Options);
-        Assert.False(info!.Transcription);
+        Assert.Null(info!.TranscriptionMaxSeconds);
     }
 
     [Fact]

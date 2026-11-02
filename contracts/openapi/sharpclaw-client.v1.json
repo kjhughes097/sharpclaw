@@ -1243,8 +1243,12 @@
           "provider": {
             "type": "string"
           },
-          "transcription": {
-            "type": "boolean"
+          "transcriptionMaxSeconds": {
+            "format": "int32",
+            "type": [
+              "null",
+              "integer"
+            ]
           },
           "utcNow": {
             "format": "date-time",
@@ -1260,7 +1264,7 @@
           "utcNow",
           "budgetResetAtUtc",
           "models",
-          "transcription"
+          "transcriptionMaxSeconds"
         ],
         "type": "object"
       },
