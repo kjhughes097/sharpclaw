@@ -198,7 +198,7 @@ The UI always posts messages with `unattended = false`. The admin-only user-mana
 | `X-Content-Type-Options` | `nosniff` |
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `no-referrer` |
-| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=()` |
+| `Permissions-Policy` | `camera=(), microphone=(self), geolocation=(), payment=()` (microphone added by the [voice spec](sharpclaw-voice-spec.md)) |
 | `Cross-Origin-Opener-Policy` | `same-origin` |
 | `Cross-Origin-Resource-Policy` | `same-origin` |
 

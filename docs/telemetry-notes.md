@@ -72,6 +72,12 @@ Expected names (dots kept, as above); not yet confirmed live.
 | `sharpclaw.egress.bytes` | `sharpclaw.egress.bytes` | agent |
 | `sharpclaw.auth.failures` (extended) | `sharpclaw.auth.failures` | listener `egress`, method `proxy_credential` |
 
+### Added by the voice spec
+
+| OTel instrument | Landed name(s) | Labels |
+|---|---|---|
+| `sharpclaw.transcription.duration` | `sharpclaw.transcription.duration_bucket` / `_sum` / `_count` | status (`ok`, `error`) |
+
 Because the names contain dots, PromQL/MetricsQL must select them as
 `{__name__="sharpclaw.llm.calls", agent="assistant"}`.
 

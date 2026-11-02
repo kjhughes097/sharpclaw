@@ -6,7 +6,8 @@ This page describes the system **as it is now**. It is the first thing to read. 
 [3.3.1](sharpclaw-3.3.1-ui-redesign-spec.md), plus the [agent tools spec](sharpclaw-agent-tools-spec.md),
 the [external tools spec](sharpclaw-external-tools-spec.md) and the
 [skills spec](sharpclaw-skills-spec.md), [3.5](sharpclaw-3.5-implementation-spec.md),
-agent-to-agent messaging, and the [attachments spec](sharpclaw-attachments-spec.md))
+agent-to-agent messaging, the [attachments spec](sharpclaw-attachments-spec.md) and the
+[voice spec](sharpclaw-voice-spec.md))
 record *why* and *when* each behaviour was decided; they remain the source of truth for detailed
 behaviour, with later specs winning. Keep this page in step with the code when structure changes.
 
@@ -206,7 +207,8 @@ The committed contract is [contracts/openapi/sharpclaw-client.v1.json](../contra
 | events | `GET /api/events` (global SSE stream) |
 | approvals | `GET /api/approvals`, `GET /api/approvals/{id}` (adds `detail` for broker calls: a command, capped at 1,000 chars), `POST /api/approvals/{id}` (decide; optional `remember` creates a standing grant), `POST /api/approvals/batch` (decide many), `GET /api/agents/{idOrName}/grants`, `DELETE /api/agents/{idOrName}/grants/{grantId}` |
 | audit | `GET /api/audit/llm-calls`, `GET /api/audit/tool-calls` (keyset cursors) |
-| system | `GET /api/system` (version, provider, clock, `models` allow-list) |
+| system | `GET /api/system` (version, provider, clock, `models` allow-list, `transcriptionMaxSeconds`) |
+| voice | `POST /api/transcriptions` (`audio/wav`, 16 kHz mono PCM → `{ text }`; transcribed in-process by whisper.cpp, audio never stored; `503 transcription_unavailable` without a model) |
 | dashboard (3.3.1) | `GET /api/usage?range=today\|7d\|30d&agent=` (zero-filled UTC buckets, by model, by agent), `GET /api/activity` (recent prompts and replies across threads), `GET /api/credits` (cached OpenRouter balance) |
 
 Agent listener: `GET /agent/inbox`, `GET /agent/threads/{id}/messages`,

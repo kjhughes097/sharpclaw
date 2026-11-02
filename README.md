@@ -191,6 +191,11 @@ per agent), **Prompts** (pick an agent and model, sessions, chat), one tab per a
   message: images (PNG, JPEG, GIF, WebP up to 5 MB) the model sees, and text or code files (up
   to 256 KB, UTF-8) inlined into the prompt. They stay in the thread's history like the text.
   Images need a vision-capable model. See the [attachments spec](docs/sharpclaw-attachments-spec.md).
+- **Voice input:** the 🎤 button records a spoken message; ■ stops it, the gateway transcribes it
+  on this machine (whisper.cpp on the CPU, the bundled `base.en` model) and the text is sent like a
+  typed message. Audio is never stored or sent anywhere. Browsers only allow the microphone on
+  HTTPS or `localhost`, so over plain HTTP on the LAN it needs a TLS reverse proxy. See the
+  [voice spec](docs/sharpclaw-voice-spec.md).
 - **Themes:** Default (dark), Light and LCARS, from the menu under your name.
 - **Plain HTTP:** your password and session cookie cross the LAN unencrypted. That's accepted for a
   home network; **never port-forward 8080** from your router. A local TLS reverse proxy is the
@@ -572,6 +577,8 @@ ASP.NET `__` syntax).
 | `Messages:MaxContentChars` | `32000` | |
 | `Messages:MaxAttachments` | `5` | Files per message ([attachments spec](docs/sharpclaw-attachments-spec.md)); `0` turns attachments off |
 | `Messages:MaxImageBytes` / `MaxTextBytes` | `5242880` / `262144` | Per attached image / text file |
+| `Transcription:ModelPath` | image: `/app/models/ggml-base.en.bin` | Whisper model for voice input ([voice spec](docs/sharpclaw-voice-spec.md)); empty turns it off. Build with `WHISPER_MODEL=small.en WHISPER_MODEL_SHA256=…` (or `WHISPER_MODEL=`) to change it |
+| `Transcription:Language` / `MaxSeconds` / `Threads` | `en` / `120` / `4` | Spoken language (`auto` to detect), longest recording, CPU threads |
 | `Approvals:TimeoutSeconds` | `300` | Pending approvals expire (count as denied) after this |
 | `Approvals:SweepIntervalSeconds` | `10` | How often overdue approvals are expired |
 | `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: LLM calls allowed per user message |
@@ -745,7 +752,8 @@ Behaviour is specified phase by phase; later specs win where they differ:
 [3.3.1](docs/sharpclaw-3.3.1-ui-redesign-spec.md) (tabbed UI redesign) →
 [3.5](docs/sharpclaw-3.5-implementation-spec.md) (agent to agent) →
 [3.6](docs/sharpclaw-3.6-approvals-spec.md) (fewer approvals) →
-[attachments](docs/sharpclaw-attachments-spec.md) (files in the prompt), plus the
+[attachments](docs/sharpclaw-attachments-spec.md) (files in the prompt) →
+[voice](docs/sharpclaw-voice-spec.md) (speak a prompt), plus the
 [agent tools spec](docs/sharpclaw-agent-tools-spec.md), the
 [external tools spec](docs/sharpclaw-external-tools-spec.md) and the [skills spec](docs/sharpclaw-skills-spec.md). The orientation notes
 ([pre-3.3](docs/pre-3.3-orientation.md), [3.3](docs/3.3-orientation.md)) and the
