@@ -1224,6 +1224,10 @@
         ],
         "type": "object"
       },
+      "Stream": {
+        "format": "binary",
+        "type": "string"
+      },
       "SystemInfoResponse": {
         "properties": {
           "budgetResetAtUtc": {
@@ -1239,6 +1243,9 @@
           "provider": {
             "type": "string"
           },
+          "transcription": {
+            "type": "boolean"
+          },
           "utcNow": {
             "format": "date-time",
             "type": "string"
@@ -1252,7 +1259,8 @@
           "provider",
           "utcNow",
           "budgetResetAtUtc",
-          "models"
+          "models",
+          "transcription"
         ],
         "type": "object"
       },
@@ -2073,6 +2081,17 @@
           "toolCalls",
           "approvals",
           "totals"
+        ],
+        "type": "object"
+      },
+      "TranscriptionResponse": {
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
         ],
         "type": "object"
       },
@@ -5515,6 +5534,116 @@
         ]
       }
     },
+    "/api/transcriptions": {
+      "post": {
+        "operationId": "createTranscription",
+        "requestBody": {
+          "content": {
+            "audio/wav": {
+              "schema": {
+                "$ref": "#/components/schemas/Stream"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Payload Too Large"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "tags": [
+          "transcriptions"
+        ]
+      }
+    },
     "/api/usage": {
       "get": {
         "operationId": "getUsage",
@@ -6033,6 +6162,9 @@
     },
     {
       "name": "credits"
+    },
+    {
+      "name": "transcriptions"
     },
     {
       "name": "audit"

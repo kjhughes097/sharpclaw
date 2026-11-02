@@ -56,6 +56,10 @@ public class ConfigurationValidationTests
     [InlineData("AgentMessaging:MaxAsksPerChain", "0", "MaxAsksPerChain")]
     [InlineData("AgentMessaging:AskTimeoutSeconds", "5", "AskTimeoutSeconds")]
     [InlineData("AgentMessaging:MaxReplyChars", "10", "MaxReplyChars")]
+    [InlineData("Transcription:ModelPath", "/nonexistent/ggml-base.en.bin", "Transcription:ModelPath '/nonexistent/ggml-base.en.bin' does not exist")]
+    [InlineData("Transcription:MaxSeconds", "0", "MaxSeconds")]
+    [InlineData("Transcription:Language", "English", "Language")]
+    [InlineData("Transcription:Threads", "0", "Threads")]
     public void Invalid_values_refuse_to_start(string key, string value, string expected)
     {
         var ex = Assert.Throws<OptionsValidationException>(() => Build(new() { [key] = value }));

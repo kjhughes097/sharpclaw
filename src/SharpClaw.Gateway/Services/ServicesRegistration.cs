@@ -3,6 +3,7 @@ using SharpClaw.Gateway.Services;
 using SharpClaw.Gateway.Egress;
 using SharpClaw.Gateway.GitHub;
 using SharpClaw.Gateway.Services.Broker;
+using SharpClaw.Gateway.Services.Transcription;
 
 namespace SharpClaw.Gateway;
 
@@ -50,6 +51,8 @@ public static class ServicesRegistration
         // Egress proxy network seams; tests register fakes first.
         builder.Services.TryAddSingleton<IEgressResolver, DnsEgressResolver>();
         builder.Services.TryAddSingleton<IEgressConnector, SocketEgressConnector>();
+        // Voice input; tests register a fake first so they need no model file.
+        builder.Services.TryAddSingleton<ITranscriber, WhisperTranscriber>();
         return builder;
     }
 }

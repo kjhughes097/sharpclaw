@@ -43,6 +43,7 @@ public sealed class GatewayMetrics : IDisposable
     private readonly Counter<long> _contextTruncations;
     private readonly Counter<long> _contextRejections;
     private readonly Histogram<int> _contextEstimatedTokens;
+    private readonly Histogram<double> _transcriptionDuration;
 
     private readonly ConcurrentDictionary<string, double> _lastSeenUnix = new();
 
@@ -83,6 +84,7 @@ public sealed class GatewayMetrics : IDisposable
         _contextRejections = _meter.CreateCounter<long>("sharpclaw.context.rejections", "{rejection}");
         _contextEstimatedTokens = _meter.CreateHistogram("sharpclaw.context.estimated_tokens", "{token}", null, null,
             new InstrumentAdvice<int> { HistogramBucketBoundaries = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000] });
+        _transcriptionDuration = _meter.CreateHistogram("sharpclaw.transcription.duration", "s", null, null, messageBuckets);
 
         _meter.CreateObservableGauge("sharpclaw.budget.remaining_usd", ObserveBudgetRemaining, "USD");
         _meter.CreateObservableGauge("sharpclaw.inbox.depth", ObserveInboxDepth, "{message}");
@@ -121,6 +123,10 @@ public sealed class GatewayMetrics : IDisposable
 
     public void RecordMessageDuration(string agent, double seconds) =>
         _messageDuration.Record(seconds, Tag("agent", agent));
+
+    /// <summary>Time to transcribe one voice recording (status <c>ok</c>|<c>error</c>).</summary>
+    public void RecordTranscription(string status, double seconds) =>
+        _transcriptionDuration.Record(seconds, Tag("status", status));
 
     /// <summary>Tool names come from a fixed set, so they are acceptable labels.</summary>
     public void RecordToolCall(string agent, string tool, string status) =>

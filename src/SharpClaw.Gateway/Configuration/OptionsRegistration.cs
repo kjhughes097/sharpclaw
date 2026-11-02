@@ -47,6 +47,8 @@ public static class OptionsRegistration
         builder.Services.AddSingleton<IValidateOptions<EgressOptions>, ProblemValidator<EgressOptions>>();
         Add<AgentMessagingOptions, AgentMessagingOptionsValidator>(builder, AgentMessagingOptions.Section);
         builder.Services.AddSingleton<IValidateOptions<AgentMessagingOptions>, ProblemValidator<AgentMessagingOptions>>();
+        Add<TranscriptionOptions, TranscriptionOptionsValidator>(builder, TranscriptionOptions.Section);
+        builder.Services.AddSingleton<IValidateOptions<TranscriptionOptions>, ProblemValidator<TranscriptionOptions>>();
         builder.Services.AddSingleton<IStartupCheck, SandboxSettingsCheck>();
         builder.Services.AddOptions<UiOptions>().Bind(builder.Configuration.GetSection(UiOptions.Section));
         return builder;
@@ -87,6 +89,7 @@ public static class OptionsRegistration
 [OptionsValidator] public sealed partial class EgressOptionsValidator : IValidateOptions<EgressOptions>;
 [OptionsValidator] public sealed partial class WebSearchOptionsValidator : IValidateOptions<WebSearchOptions>;
 [OptionsValidator] public sealed partial class AgentMessagingOptionsValidator : IValidateOptions<AgentMessagingOptions>;
+[OptionsValidator] public sealed partial class TranscriptionOptionsValidator : IValidateOptions<TranscriptionOptions>;
 
 /// <summary>
 /// Rules across the sandbox settings: the egress listener gets its own port, and a sandbox's proxy

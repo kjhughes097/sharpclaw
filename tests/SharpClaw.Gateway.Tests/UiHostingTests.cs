@@ -33,7 +33,7 @@ public sealed class UiHostingTests : IAsyncLifetime
         Assert.Equal("nosniff", resp.Headers.GetValues("X-Content-Type-Options").Single());
         Assert.Equal("DENY", resp.Headers.GetValues("X-Frame-Options").Single());
         Assert.Equal("no-referrer", resp.Headers.GetValues("Referrer-Policy").Single());
-        Assert.Equal("camera=(), microphone=(), geolocation=(), payment=()", resp.Headers.GetValues("Permissions-Policy").Single());
+        Assert.Equal("camera=(), microphone=(self), geolocation=(), payment=()", resp.Headers.GetValues("Permissions-Policy").Single());
         Assert.Equal("same-origin", resp.Headers.GetValues("Cross-Origin-Opener-Policy").Single());
         Assert.Equal("same-origin", resp.Headers.GetValues("Cross-Origin-Resource-Policy").Single());
         Assert.False(resp.Headers.Contains("Strict-Transport-Security"));
