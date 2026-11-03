@@ -22,6 +22,7 @@ public static class EndpointMapping
         UsageEndpoints.Map(client);
         ActivityEndpoints.Map(client);
         CreditsEndpoints.Map(client);
+        TranscriptionEndpoints.Map(client);
 
         // Agent listener: everything needs an agent token.
         var agent = app.MapGroup("/agent").RequireListener(Listener.Agent).AddEndpointFilter<AgentAuthFilter>();

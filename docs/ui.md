@@ -95,6 +95,26 @@ picker's `accept` and the pre-checks match; the gateway stays the authority.
 - **Resend** of a failed message downloads its files again (`refetchAttachments`) and posts them
   with the text.
 
+## Voice input
+
+[Voice spec](sharpclaw-voice-spec.md) section 4. The 🎤 button appears only when `GET /api/system`
+reports `transcriptionMaxSeconds`.
+
+- `features/chat/useVoiceInput.ts` owns the recording: `getUserMedia` → `MediaRecorder`, a 250 ms
+  timer for the elapsed time and the auto-stop, and a generation counter so a discarded recording
+  (or one from a thread you've left) never sends. The microphone's tracks are stopped as soon as
+  recording ends.
+- `features/chat/voice.ts` decodes the recording, resamples it to 16 kHz mono with an
+  `OfflineAudioContext`, writes the WAV (`encodeWav`) and posts it raw to `/api/transcriptions`.
+- `Composer` sends the transcript after any draft text, with any pending files; if the send fails
+  the text lands in the draft. `VoiceControls.tsx` renders the button, stop/discard and the status
+  or error line.
+- `getUserMedia` exists only on secure pages. Over plain HTTP the button stays visible and explains
+  this when clicked, so the rest of the UI never depends on it. In development
+  (`localhost:5173`) it works.
+- Tests (`tests/voice.test.tsx`) stub `MediaRecorder`, `getUserMedia`, `AudioContext` and
+  `OfflineAudioContext`.
+
 ## Approval details (external tools)
 
 Approvals for `sandbox_run`, `github_write` and `github_create_pr` carry a gateway-rendered

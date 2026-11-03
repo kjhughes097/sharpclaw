@@ -59,6 +59,7 @@ const MESSAGES: Record<
   approval_expired: () => 'An approval request expired before it was answered.',
   denied_by_user: () => 'You denied a tool request.',
   internal_error: () => 'Something went wrong. Try again.',
+  transcription_unavailable: () => 'Voice input is off on this gateway.',
 };
 
 /** Plain text for an API error code. */

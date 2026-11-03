@@ -22,7 +22,8 @@ public static class SystemEndpoints
         client.MapGet("/system", Get).WithName("getSystemInfo").WithTags("system").Produces<SystemInfoResponse>();
     }
 
-    private static IResult Get(TimeProvider time, IOptions<ProviderOptions> provider, IOptions<ModelsOptions> models)
+    private static IResult Get(TimeProvider time, IOptions<ProviderOptions> provider, IOptions<ModelsOptions> models,
+        IOptions<TranscriptionOptions> transcription)
     {
         var now = time.GetUtcNow().UtcDateTime;
         var nextMidnight = now.Date.AddDays(1);
@@ -30,7 +31,7 @@ public static class SystemEndpoints
             ? FakeProvider
             : OpenRouterProvider;
         return Results.Json(new SystemInfoResponse(Version, name, now, DateTime.SpecifyKind(nextMidnight, DateTimeKind.Utc),
-                models.Value.Allowed),
+                models.Value.Allowed, transcription.Value.Enabled ? transcription.Value.MaxSeconds : null),
             SharpClawJson.Options);
     }
 

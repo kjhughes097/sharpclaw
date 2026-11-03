@@ -20,10 +20,28 @@ COPY src/SharpClaw.Gateway/ src/SharpClaw.Gateway/
 RUN dotnet restore src/SharpClaw.Gateway/SharpClaw.Gateway.csproj
 RUN dotnet publish src/SharpClaw.Gateway/SharpClaw.Gateway.csproj -c Release -o /app -p:InformationalVersion=$GIT_SHA
 
+# 3. The speech-to-text model for voice input (voice spec section 1), pinned by sha256. Another
+#    model needs both args (e.g. WHISPER_MODEL=small.en plus its sha256 from Hugging Face);
+#    an empty WHISPER_MODEL builds an image without voice input.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS model
+ARG WHISPER_MODEL=base.en
+ARG WHISPER_MODEL_SHA256=a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002
+RUN mkdir -p /models && if [ -n "$WHISPER_MODEL" ]; then \
+      curl -fsSL -o "/models/ggml-$WHISPER_MODEL.bin" \
+        "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$WHISPER_MODEL.bin" && \
+      echo "$WHISPER_MODEL_SHA256  /models/ggml-$WHISPER_MODEL.bin" | sha256sum -c -; \
+    fi
+
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+ARG WHISPER_MODEL=base.en
+# whisper.cpp (voice input) needs the OpenMP runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app .
 COPY --from=ui /ui/dist ./wwwroot
+COPY --from=model /models ./models
+# Empty (voice input off) when the image was built without a model.
+ENV Transcription__ModelPath=${WHISPER_MODEL:+/app/models/ggml-${WHISPER_MODEL}.bin}
 
 # Kestrel endpoints are configured in code (8080 client, 8081 agent); disable the
 # image default so we do not double-bind a port.

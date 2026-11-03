@@ -2,6 +2,8 @@
 # Builds the gateway, agent and sandbox images from this checkout.
 #   scripts/build-images.sh            -> tags :<short-sha>[-dirty] and :latest
 #   scripts/build-images.sh --tag dev  -> tags :dev only
+# The gateway bundles the base.en whisper model for voice input; set WHISPER_MODEL (and
+# WHISPER_MODEL_SHA256) to choose another, or WHISPER_MODEL= to leave it out.
 # An install's compose.yml runs sharpclaw-*:${SHARPCLAW_TAG:-latest}.
 set -euo pipefail
 
@@ -23,6 +25,11 @@ fi
 for IMAGE in gateway agent sandbox; do
   ARGS=()
   for TAG in "${TAGS[@]}"; do ARGS+=(-t "sharpclaw-$IMAGE:$TAG"); done
+  # Voice input model (see docker/Dockerfile.gateway): WHISPER_MODEL= builds without one.
+  if [ "$IMAGE" = gateway ]; then
+    [ -z "${WHISPER_MODEL+set}" ] || ARGS+=(--build-arg "WHISPER_MODEL=$WHISPER_MODEL")
+    [ -z "${WHISPER_MODEL_SHA256:-}" ] || ARGS+=(--build-arg "WHISPER_MODEL_SHA256=$WHISPER_MODEL_SHA256")
+  fi
   docker build -f "$REPO/docker/Dockerfile.$IMAGE" --build-arg "GIT_SHA=$SHA" "${ARGS[@]}" "$REPO"
 done
 

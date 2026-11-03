@@ -18,6 +18,9 @@ public static class ErrorCodes
     public const string RateLimited = "rate_limited";
     public const string InternalError = "internal_error";
 
+    // ----- Voice input (voice spec) -----
+    public const string TranscriptionUnavailable = "transcription_unavailable";
+
     // ----- Tool broker (external tools spec) -----
     public const string ApprovalRequired = "approval_required";
     public const string ToolUnavailable = "tool_unavailable";

@@ -103,7 +103,8 @@ public static class UiHosting
             headers.XContentTypeOptions = "nosniff";
             headers.XFrameOptions = "DENY";
             headers["Referrer-Policy"] = "no-referrer";
-            headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()";
+            // The UI's own pages may use the microphone, for voice input; nothing else may.
+            headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(), payment=()";
             headers["Cross-Origin-Opener-Policy"] = "same-origin";
             headers["Cross-Origin-Resource-Policy"] = "same-origin";
             // Plain HTTP on the LAN: never Strict-Transport-Security or upgrade-insecure-requests.

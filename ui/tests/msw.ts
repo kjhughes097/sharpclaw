@@ -128,6 +128,7 @@ export const defaultHandlers = [
       utcNow: NOW,
       budgetResetAtUtc: '2026-10-26T00:00:00Z',
       models: [],
+      transcriptionMaxSeconds: null,
     }),
   ),
   http.get('*/api/approvals', () => HttpResponse.json({ approvals: [] })),
