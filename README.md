@@ -527,6 +527,13 @@ assistant's) and an empty `workspace/`; then `sharpclaw agents create <name> …
 for you: every agent it creates starts from the assistant's `agent.json` (plus every broker tool)
 and `soul.md` (with the agent's name as the heading), ready for you to edit.
 
+**Keeping souls across a reinstall.** `scripts/souls.sh backup [-d dir] [-b folder]` copies every
+agent's `soul.md` to `<folder>/<agent>/soul.md` (default `~/sharpclaw-backup`; it must be outside
+the install). After wiping and reinstalling, and recreating the agents (e.g. with
+`scripts/quickstart.sh`), `scripts/souls.sh restore [-d dir] [-b folder] [agent...]` copies them
+back over the new souls (all, or just the named agents). Agents that don't exist in the new install are skipped. Agents read
+their soul every turn, so no restart is needed. `dir` defaults to `~/sharpclaw`.
+
 **Upgrading.** `git pull && scripts/build-images.sh` in the repo, then `docker compose up -d` in
 the install. To pin or roll back, set `SHARPCLAW_TAG` in `.env` to an image tag
 (`docker images sharpclaw-gateway`). The installer never updates your files; re-running
