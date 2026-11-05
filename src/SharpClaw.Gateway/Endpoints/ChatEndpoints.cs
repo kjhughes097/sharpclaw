@@ -115,7 +115,10 @@ public static class ChatEndpoints
         }
 
         var maxCalls = svc.Chat.Value.MaxLlmCallsPerMessage;
-        var callsSoFar = await svc.Db.LlmCalls.CountAsync(c => c.CorrelationId == correlationId, ct);
+        // Only the turn's own model rounds count: risk assessments and web searches scale with the
+        // number of tool calls, and rejected rows would make an exhausted turn count against itself.
+        var callsSoFar = await svc.Db.LlmCalls.CountAsync(c => c.CorrelationId == correlationId
+            && c.Purpose == LlmCallPurpose.Chat && c.Status != LlmCallStatus.Rejected, ct);
         if (callsSoFar >= maxCalls)
         {
             logger.LogWarning("llm call rejected: loop_limit_exceeded calls={Calls} max={Max}", callsSoFar, maxCalls);
