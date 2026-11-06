@@ -233,8 +233,9 @@ for i in 1..maxToolIterations+1:
 - `ChatStreamEvent` gains `ToolCall(id, name, argumentsJson)`, emitted complete by providers.
 - For each tool call, publish `tool.requested` to the thread (unless purpose is `risk_assessment`).
 - When the call finishes with status `ok`, insert one `tool_calls` row per tool call (section 9).
-- **Loop backstop:** before calling the provider, if the number of `llm_calls` rows for this
-  correlation id is `>= Chat:MaxLlmCallsPerMessage` (default 20), record a `rejected` row with
+- **Loop backstop:** before calling the provider, if the number of accepted chat calls for this
+  correlation id (`llm_calls` rows with purpose `chat` and status other than `rejected`; risk
+  assessments and web searches don't count) is `>= Chat:MaxLlmCallsPerMessage` (default 20), record a `rejected` row with
   `error_code = loop_limit_exceeded` and return **429** `loop_limit_exceeded` (no `Retry-After`).
 - **Claim heartbeat:** every chat call, approval request and approval poll sets the correlation
   message's `claimed_at` to now, so long tool turns and approval waits are not requeued by the claim
@@ -339,7 +340,7 @@ Add `purpose` (text, default `chat`). The table stays append-only.
 | Key | Default | Notes |
 |---|---|---|
 | `Approvals:TimeoutSeconds` | `300` | Pending approvals expire after this |
-| `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop per correlation id |
+| `Chat:MaxLlmCallsPerMessage` | `20` | Loop backstop: accepted chat calls per correlation id |
 
 Agent: `AGENT_CONFIG_PATH` (default `/config/agent.json`), see section 4.
 
@@ -360,7 +361,8 @@ labels. Add dashboard panels for tool calls by status and approvals by status.
   `finish_reason: tool_calls`; `tool_calls` rows recorded; `tool.requested` published without
   arguments; `risk_assessment` purpose suppresses SSE deltas; `tool_choice` validation; invalid tool
   names rejected; FakeProvider tool-call scripting; OpenRouter fragment accumulation.
-- **Loop backstop:** the 21st call for a correlation id gets 429 `loop_limit_exceeded`.
+- **Loop backstop:** the 21st chat call for a correlation id gets 429 `loop_limit_exceeded`; risk
+  assessments and rejected calls don't count toward it.
 - **Approvals:** no subscriber → denied immediately; approve and deny paths; expiry after the
   timeout (fake clock); 409 on a decided approval; foreign ids 404; long poll wakes on decision;
   heartbeat keeps the message claimed.

@@ -42,6 +42,33 @@ public class LoopBackstopTests
     }
 
     [Fact]
+    public async Task Only_accepted_chat_calls_count_toward_the_limit()
+    {
+        await using var fx = await GatewayFixture.CreateAsync(
+            extraConfig: new Dictionary<string, string?> { ["Chat:MaxLlmCallsPerMessage"] = "2" });
+        var (agent, token) = await fx.CreateAgentAsync(budget: 10);
+        var thread = await fx.CreateThreadAsync(agent.Id);
+        await fx.PostUserMessageAsync(thread, "hello");
+        var corr = (await fx.ClaimAsync(token))!.Id;
+        var payload = new { model = "ignored", stream = true, messages = new[] { new { role = "user", content = "hi" } } };
+
+        // Risk assessments (one per tool call in smart mode) don't use up the turn's rounds.
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(HttpStatusCode.OK,
+                (await fx.ChatRawAsync(token, corr, thread, payload, LlmCallPurpose.RiskAssessment)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await fx.ChatAsync(token, corr, thread)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await fx.ChatAsync(token, corr, thread)).StatusCode);
+
+        // Rejected rows don't count either, so the limit stays at exactly two accepted chat calls.
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await fx.ChatAsync(token, corr, thread)).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await fx.ChatAsync(token, corr, thread)).StatusCode);
+
+        using var db = fx.NewDb();
+        Assert.Equal(2, await db.LlmCalls.CountAsync(c => c.Status == LlmCallStatus.Rejected));
+    }
+
+    [Fact]
     public async Task Default_limit_is_twenty()
     {
         await using var fx = await GatewayFixture.CreateAsync();
